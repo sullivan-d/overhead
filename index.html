@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#070b14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Overhead">
+<title>Overhead</title>
+<style>
+  :root {
+    --void: #070b14;
+    --panel: #0e1626;
+    --sweep: #1ee0a8;
+    --sweep-dim: #1ee0a833;
+    --ring: #1c2c44;
+    --ink: #e8eef7;
+    --ink-soft: #8ba0bd;
+    --ink-faint: #4a5d78;
+    --hot: #ff5c6c;
+    --gold: #f5c451;
+    --grid-line: #16243a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    background: var(--void);
+    color: var(--ink);
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+    overscroll-behavior: none;
+  }
+  body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 14px 18px 10px; border-bottom: 1px solid var(--grid-line); flex-shrink: 0;
+  }
+  .brand { font-weight: 700; letter-spacing: 0.16em; font-size: 13px; text-transform: uppercase; }
+  .brand b { color: var(--sweep); }
+  .status { font-size: 10.5px; letter-spacing: 0.06em; color: var(--ink-soft); text-align: right; line-height: 1.5; }
+  .status .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); margin-right: 5px; vertical-align: middle; }
+  .status.live .dot { background: var(--sweep); box-shadow: 0 0 8px var(--sweep); animation: pulse 2s ease-in-out infinite; }
+  .status.paused .dot { background: var(--gold); }
+  .status.error .dot { background: var(--hot); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+  .stage { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 12px; }
+  #radar { display: block; touch-action: none; }
+
+  .controls { position: absolute; top: 16px; left: 16px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+  .rng-label { font-size: 9.5px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
+  .rng-btns { display: flex; gap: 4px; align-items: center; }
+  .rng-btns button {
+    background: var(--panel); border: 1px solid var(--ring); color: var(--ink-soft);
+    font-family: inherit; font-size: 11px; padding: 5px 9px; border-radius: 4px; cursor: pointer; transition: all 0.15s;
+  }
+  .rng-btns button.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
+
+  .heading-ctl { margin-top: 4px; }
+  .heading-ctl button {
+    background: var(--panel); border: 1px solid var(--ring); color: var(--ink-soft);
+    font-family: inherit; font-size: 10px; letter-spacing: 0.04em; padding: 6px 9px;
+    border-radius: 4px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 5px;
+  }
+  .heading-ctl button.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
+
+  .count { position: absolute; top: 16px; right: 16px; text-align: right; z-index: 5; }
+  .count .n { font-size: 30px; font-weight: 700; line-height: 1; }
+  .count .l { font-size: 9.5px; letter-spacing: 0.12em; color: var(--ink-faint); text-transform: uppercase; margin-top: 3px; }
+
+  .here {
+    position: absolute; bottom: 12px; left: 16px; z-index: 5;
+    font-size: 9.5px; letter-spacing: 0.05em; color: var(--ink-faint); max-width: 60%;
+  }
+  .here button {
+    background: none; border: none; color: var(--sweep); font-family: inherit; font-size: 9.5px;
+    cursor: pointer; padding: 0; text-decoration: underline; letter-spacing: 0.05em;
+  }
+
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; background: var(--panel);
+    border-top: 1px solid var(--sweep); border-radius: 16px 16px 0 0; padding: 18px 20px 24px;
+    transform: translateY(110%); transition: transform 0.32s cubic-bezier(.2,.8,.2,1); z-index: 20; box-shadow: 0 -12px 40px #0008;
+  }
+  .sheet.open { transform: translateY(0); }
+  .sheet-grip { width: 38px; height: 4px; background: var(--ring); border-radius: 2px; margin: 0 auto 14px; }
+  .sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .sheet-call { font-size: 22px; font-weight: 700; letter-spacing: 0.05em; color: var(--sweep); }
+  .sheet-type { font-size: 12px; color: var(--ink-soft); margin-top: 3px; min-height: 15px; }
+  .sheet-close { background: none; border: 1px solid var(--ring); color: var(--ink-soft); width: 30px; height: 30px; border-radius: 50%; font-size: 15px; cursor: pointer; flex-shrink: 0; }
+  .sheet-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px 12px; margin-top: 18px; }
+  .stat .k { font-size: 9px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
+  .stat .v { font-size: 17px; font-weight: 600; margin-top: 3px; }
+  .stat .v small { font-size: 10px; color: var(--ink-soft); font-weight: 400; }
+
+  .gate { position: absolute; inset: 0; background: var(--void); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 30px; z-index: 40; }
+  .gate h1 { font-size: 17px; letter-spacing: 0.12em; font-weight: 700; text-transform: uppercase; }
+  .gate h1 b { color: var(--sweep); }
+  .gate p { font-size: 12.5px; color: var(--ink-soft); max-width: 320px; line-height: 1.7; }
+  .gate button.primary { background: var(--sweep); color: var(--void); border: none; font-family: inherit; font-weight: 700; font-size: 13px; letter-spacing: 0.06em; padding: 13px 26px; border-radius: 6px; cursor: pointer; text-transform: uppercase; }
+  .gate.hidden { display: none; }
+  .gate-err { color: var(--hot); font-size: 11.5px; min-height: 16px; }
+
+  .addr-block { display: none; flex-direction: column; gap: 10px; width: 100%; max-width: 340px; }
+  .addr-block.show { display: flex; }
+  .addr-row { display: flex; gap: 6px; }
+  .addr-block input {
+    flex: 1; background: var(--panel); border: 1px solid var(--ring); color: var(--ink);
+    font-family: inherit; font-size: 13px; padding: 11px 12px; border-radius: 6px; outline: none;
+  }
+  .addr-block input:focus { border-color: var(--sweep); }
+  .addr-block button.go { background: var(--sweep); color: var(--void); border: none; font-family: inherit; font-weight: 700; font-size: 13px; padding: 0 18px; border-radius: 6px; cursor: pointer; }
+  .addr-or { font-size: 10px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
+  .addr-results { list-style: none; text-align: left; max-height: 180px; overflow-y: auto; width: 100%; max-width: 340px; }
+  .addr-results li { padding: 10px 12px; border: 1px solid var(--grid-line); border-radius: 6px; margin-bottom: 6px; font-size: 12px; color: var(--ink-soft); cursor: pointer; line-height: 1.4; }
+  .addr-results li:hover, .addr-results li:active { border-color: var(--sweep); color: var(--ink); }
+
+  .hint { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; font-size: 9.5px; letter-spacing: 0.08em; color: var(--ink-faint); z-index: 3; pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">OVER<b>HEAD</b></div>
+  <div class="status" id="status"><span class="dot"></span><span id="status-txt">standby</span></div>
+</header>
+
+<div class="stage">
+  <div class="controls">
+    <span class="rng-label">range</span>
+    <div class="rng-btns" id="rng">
+      <button data-km="20">20</button>
+      <button data-km="50" class="on">50</button>
+      <button data-km="100">100</button>
+      <span class="rng-label">km</span>
+    </div>
+    <div class="heading-ctl">
+      <button id="heading-btn" title="Rotate radar to the way you're facing">
+        <svg class="compass-ico" viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M12 2 9.5 9.5 2 12l7.5 2.5L12 22l2.5-7.5L22 12l-7.5-2.5z"/></svg>
+        <span id="heading-label">heading up</span>
+      </button>
+    </div>
+  </div>
+  <div class="count"><div class="n" id="count-n">0</div><div class="l">aircraft</div></div>
+
+  <canvas id="radar"></canvas>
+  <div class="here" id="here"></div>
+  <div class="hint" id="hint">tap an aircraft for details</div>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="sheet-grip"></div>
+  <div class="sheet-head">
+    <div>
+      <div class="sheet-call" id="d-call">—</div>
+      <div class="sheet-type" id="d-type">looking up type…</div>
+    </div>
+    <button class="sheet-close" id="d-close">&times;</button>
+  </div>
+  <div class="sheet-grid">
+    <div class="stat"><div class="k">altitude</div><div class="v" id="d-alt">—</div></div>
+    <div class="stat"><div class="k">speed</div><div class="v" id="d-spd">—</div></div>
+    <div class="stat"><div class="k">heading</div><div class="v" id="d-hdg">—</div></div>
+    <div class="stat"><div class="k">distance</div><div class="v" id="d-dist">—</div></div>
+    <div class="stat"><div class="k">country</div><div class="v" id="d-cty">—</div></div>
+    <div class="stat"><div class="k">climb</div><div class="v" id="d-vr">—</div></div>
+  </div>
+</div>
+
+<div class="gate" id="gate">
+  <h1>Over<b>head</b></h1>
+  <p>A live radar of the aircraft in your sky. No sign-up, no key. Data from the open OpenSky Network.</p>
+  <button class="primary" id="gate-btn">Use my location</button>
+
+  <div class="addr-or" id="addr-or" style="display:none">or enter an address</div>
+  <div class="addr-block" id="addr-block">
+    <div class="addr-row">
+      <input id="addr-input" type="text" placeholder="City, street, or place" autocomplete="off">
+      <button class="go" id="addr-go">Go</button>
+    </div>
+  </div>
+  <ul class="addr-results" id="addr-results"></ul>
+  <div class="gate-err" id="gate-err"></div>
+  <button class="primary" id="addr-toggle" style="background:none;color:var(--ink-soft);border:1px solid var(--ring);font-weight:400;text-transform:none;letter-spacing:0;padding:9px 18px;font-size:11.5px">Location not working? Enter an address</button>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const POLL_MS = 30000;
+  const RANGE_KM_DEFAULT = 50;
+  const OPENSKY = "https://opensky-network.org/api/states/all";
+  const HEXDB = "https://hexdb.io/api/v1/aircraft/";
+  const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+
+  const I = { icao:0, call:1, country:2, lon:5, lat:6, baroAlt:7, onGround:8, vel:9, track:10, vrate:11, geoAlt:13, cat:17 };
+
+  let me = null, placeName = "", rangeKm = RANGE_KM_DEFAULT;
+  let planes = new Map();
+  const typeCache = new Map();
+  let selected = null, pollTimer = null, lastFetch = 0, dailyCount = 0;
+
+  // heading-up mode (device compass)
+  let headingUp = false;          // toggle on/off
+  let deviceHeading = 0;          // smoothed compass bearing, degrees from north
+  let rawHeading = 0;             // latest raw reading
+  let orientationBound = false;   // listener attached?
+  let headingAvailable = false;   // have we received any reading?
+
+  const cv = document.getElementById("radar"), ctx = cv.getContext("2d");
+  let cssSize = 0, DPR = 1, cx = 0, cy = 0, R = 0;
+
+  function resize() {
+    const stage = cv.parentElement;
+    const avail = Math.min(stage.clientWidth, stage.clientHeight) - 24;
+    cssSize = Math.max(220, avail);
+    DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+    cv.width = cssSize * DPR; cv.height = cssSize * DPR;
+    cv.style.width = cssSize + "px"; cv.style.height = cssSize + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    cx = cssSize / 2; cy = cssSize / 2; R = cssSize / 2 - 6;
+  }
+  window.addEventListener("resize", resize);
+
+  const toRad = d => d * Math.PI / 180;
+  function haversineKm(a, b) {
+    const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
+    const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2;
+    return 6371 * 2 * Math.asin(Math.sqrt(s));
+  }
+  function bearing(a, b) {
+    const dLon = toRad(b.lon - a.lon);
+    const y = Math.sin(dLon) * Math.cos(toRad(b.lat));
+    const x = Math.cos(toRad(a.lat))*Math.sin(toRad(b.lat)) - Math.sin(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.cos(dLon);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+  function project(p) {
+    const dist = haversineKm(me, { lat: p.lat, lon: p.lon });
+    const brg = bearing(me, { lat: p.lat, lon: p.lon });
+    const r = Math.min(dist / rangeKm, 1.06) * R;
+    // In heading-up mode, subtract the device heading so the direction you
+    // face sits at the top. In north-up mode, displayHeading is 0.
+    const ang = toRad(brg - 90 - displayHeading());
+    return { x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang), dist };
+  }
+
+  // the rotation currently applied to the scene (0 when heading-up is off)
+  function displayHeading() {
+    return (headingUp && headingAvailable) ? deviceHeading : 0;
+  }
+  function bbox() {
+    const dLat = (rangeKm * 1.15) / 111;
+    const dLon = (rangeKm * 1.15) / (111 * Math.cos(toRad(me.lat)));
+    return { lamin: me.lat - dLat, lamax: me.lat + dLat, lomin: me.lon - dLon, lomax: me.lon + dLon };
+  }
+
+  const statusEl = document.getElementById("status"), statusTxt = document.getElementById("status-txt");
+  function setStatus(cls, txt) { statusEl.className = "status " + cls; statusTxt.textContent = txt; }
+
+  async function poll() {
+    if (!me || document.hidden) return;
+    const b = bbox();
+    const url = `${OPENSKY}?lamin=${b.lamin.toFixed(4)}&lomin=${b.lomin.toFixed(4)}&lamax=${b.lamax.toFixed(4)}&lomax=${b.lomax.toFixed(4)}&extended=1`;
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      dailyCount++;
+      if (res.status === 429) { setStatus("error", "rate limit · waiting"); return; }
+      if (!res.ok) { setStatus("error", "network error " + res.status); return; }
+      const data = await res.json();
+      ingest(data.states || []);
+      lastFetch = Date.now();
+      setStatus("live", `live · ${planes.size} · req ${dailyCount}`);
+    } catch { setStatus("error", "offline · retrying"); }
+  }
+
+  function ingest(states) {
+    const seen = new Set(), now = Date.now();
+    for (const s of states) {
+      const lat = s[I.lat], lon = s[I.lon];
+      if (lat == null || lon == null || s[I.onGround]) continue;
+      const icao = s[I.icao];
+      seen.add(icao);
+      const prev = planes.get(icao);
+      planes.set(icao, {
+        icao, call: (s[I.call] || "").trim() || "—", country: s[I.country] || "—",
+        lat, lon, alt: s[I.baroAlt] ?? s[I.geoAlt], vel: s[I.vel],
+        track: s[I.track] ?? 0, vrate: s[I.vrate], cat: s[I.cat],
+        _prevLat: prev ? prev.lat : lat, _prevLon: prev ? prev.lon : lon, _t0: now, seen: now
+      });
+      if (!typeCache.has(icao)) lookupType(icao);
+    }
+    for (const [icao, p] of planes) if (!seen.has(icao) && now - p.seen > 90000) planes.delete(icao);
+    document.getElementById("count-n").textContent = planes.size;
+  }
+
+  async function lookupType(icao) {
+    typeCache.set(icao, null);
+    try {
+      const res = await fetch(HEXDB + icao.toUpperCase());
+      if (!res.ok) { typeCache.set(icao, { model: "", owner: "" }); return; }
+      const j = await res.json();
+      typeCache.set(icao, { model: j.Type || j.ICAOTypeCode || "", owner: j.RegisteredOwners || "" });
+      if (selected === icao) renderSheet();
+    } catch { typeCache.set(icao, { model: "", owner: "" }); }
+  }
+
+  function categoryLabel(cat) {
+    const m = { 2:"light",3:"small",4:"medium",5:"large",6:"heavy",7:"high-perf",8:"helicopter",9:"glider",10:"airship",14:"drone" };
+    return m[cat] || "";
+  }
+
+  function draw(ts) {
+    smoothHeading();
+    ctx.clearRect(0, 0, cssSize, cssSize);
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+      ctx.strokeStyle = i === 3 ? "#1c2c44" : "#14202f";
+      ctx.beginPath(); ctx.arc(cx, cy, (R * i) / 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#3a4d68"; ctx.font = "9px ui-monospace, monospace";
+      ctx.fillText(Math.round((rangeKm * i) / 3) + "km", cx + 3, cy - (R * i) / 3 + 11);
+    }
+    ctx.strokeStyle = "#101c2e";
+    ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+
+    ctx.fillStyle = "#4a5d78"; ctx.font = "bold 11px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    // cardinal letters rotate with the scene so N always points to true north
+    const rot = toRad(displayHeading());
+    const card = [["N",0],["E",90],["S",180],["W",270]];
+    for (const [ltr, deg] of card) {
+      const a = toRad(deg - 90) - rot;
+      const lx = cx + (R - 9) * Math.cos(a);
+      const ly = cy + (R - 9) * Math.sin(a);
+      ctx.fillText(ltr, lx, ly);
+    }
+    ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
+
+    // heading-up: a marker at top edge showing "the way you're facing"
+    if (headingUp && headingAvailable) {
+      ctx.fillStyle = "#1ee0a8";
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - R - 2);
+      ctx.lineTo(cx - 6, cy - R + 9);
+      ctx.lineTo(cx + 6, cy - R + 9);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    const sweepAng = (ts / 1000 * 0.6) % (Math.PI * 2);
+    ctx.save(); ctx.translate(cx, cy);
+    for (let k = 0; k < 26; k++) {
+      const a = sweepAng - k * 0.025;
+      ctx.strokeStyle = `rgba(30,224,168,${0.10 * (1 - k / 26)})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(R * Math.cos(a), R * Math.sin(a)); ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(30,224,168,0.55)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(R * Math.cos(sweepAng), R * Math.sin(sweepAng)); ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = "#1ee0a8"; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(30,224,168,0.4)"; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
+
+    const now = Date.now();
+    for (const p of planes.values()) {
+      const f = Math.min((now - p._t0) / POLL_MS, 1);
+      const lat = p._prevLat + (p.lat - p._prevLat) * f;
+      const lon = p._prevLon + (p.lon - p._prevLon) * f;
+      const proj = project({ lat, lon });
+      if (proj.dist > rangeKm * 1.06) continue;
+      drawPlane(proj.x, proj.y, p.track - displayHeading(), p.icao === selected, p);
+    }
+    requestAnimationFrame(draw);
+  }
+
+  function drawPlane(x, y, heading, sel, p) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(toRad(heading));
+    ctx.fillStyle = sel ? "#ff5c6c" : "#e8eef7";
+    ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(6, 5); ctx.lineTo(0, 2.5); ctx.lineTo(-6, 5); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    if (sel) { ctx.strokeStyle = "#ff5c6c"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.fillStyle = sel ? "#ff5c6c" : "rgba(139,160,189,0.65)";
+    ctx.font = (sel ? "bold " : "") + "9px ui-monospace, monospace";
+    ctx.fillText(p.call === "—" ? "" : p.call, x + 9, y + 3);
+  }
+
+  function hitTest(px, py) {
+    const now = Date.now(); let best = null, bestD = 22;
+    for (const p of planes.values()) {
+      const f = Math.min((now - p._t0) / POLL_MS, 1);
+      const lat = p._prevLat + (p.lat - p._prevLat) * f;
+      const lon = p._prevLon + (p.lon - p._prevLon) * f;
+      const proj = project({ lat, lon });
+      const d = Math.hypot(proj.x - px, proj.y - py);
+      if (d < bestD) { bestD = d; best = p.icao; }
+    }
+    return best;
+  }
+  cv.addEventListener("pointerdown", (e) => {
+    const rect = cv.getBoundingClientRect();
+    const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit) { selected = hit; openSheet(); }
+  });
+
+  const sheet = document.getElementById("sheet");
+  const fmtAlt = m => m == null ? "—" : `${Math.round(m * 3.281).toLocaleString("en-US")}<small> ft</small>`;
+  const fmtSpd = v => v == null ? "—" : `${Math.round(v * 1.944)}<small> kt</small>`;
+  const fmtVr = v => v == null ? "—" : (Math.abs(v) < 0.5 ? "level" : (v > 0 ? "▲ " : "▼ ") + `${Math.abs(Math.round(v * 196.85))}<small> ft/min</small>`);
+
+  function openSheet() { renderSheet(); sheet.classList.add("open"); }
+  function renderSheet() {
+    const p = planes.get(selected);
+    if (!p) { sheet.classList.remove("open"); return; }
+    document.getElementById("d-call").textContent = p.call;
+    const t = typeCache.get(p.icao); let typeLine;
+    if (t === undefined || t === null) typeLine = "looking up type…";
+    else {
+      const parts = [];
+      if (t.model) parts.push(t.model);
+      if (t.owner) parts.push(t.owner);
+      if (p.cat && categoryLabel(p.cat)) parts.push(categoryLabel(p.cat));
+      typeLine = parts.length ? parts.join(" · ") : "type unknown";
+    }
+    document.getElementById("d-type").innerHTML = typeLine;
+    document.getElementById("d-alt").innerHTML = fmtAlt(p.alt);
+    document.getElementById("d-spd").innerHTML = fmtSpd(p.vel);
+    document.getElementById("d-hdg").innerHTML = `${Math.round(p.track)}<small>°</small>`;
+    document.getElementById("d-dist").innerHTML = `${haversineKm(me, { lat: p.lat, lon: p.lon }).toFixed(1)}<small> km</small>`;
+    document.getElementById("d-cty").textContent = p.country;
+    document.getElementById("d-vr").innerHTML = fmtVr(p.vrate);
+  }
+  document.getElementById("d-close").addEventListener("click", () => { sheet.classList.remove("open"); selected = null; });
+
+  document.getElementById("rng").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-km]"); if (!btn) return;
+    document.querySelectorAll("#rng button").forEach(b => b.classList.remove("on"));
+    btn.classList.add("on"); rangeKm = +btn.dataset.km; poll();
+  });
+
+  // ---------- compass / heading-up ----------
+  function onOrientation(e) {
+    let h = null;
+    // iOS gives a ready-made compass heading
+    if (typeof e.webkitCompassHeading === "number" && !isNaN(e.webkitCompassHeading)) {
+      h = e.webkitCompassHeading;            // already degrees clockwise from north
+    } else if (e.absolute === true && typeof e.alpha === "number") {
+      h = 360 - e.alpha;                     // alpha is counter-clockwise; convert
+    } else if (typeof e.alpha === "number") {
+      h = 360 - e.alpha;                     // non-absolute fallback (less accurate)
+    }
+    if (h == null || isNaN(h)) return;
+    h = (h + 360) % 360;
+    rawHeading = h;
+    headingAvailable = true;
+  }
+
+  // smooth the noisy magnetometer toward the raw reading each frame
+  function smoothHeading() {
+    if (!headingAvailable) return;
+    let diff = ((rawHeading - deviceHeading + 540) % 360) - 180; // shortest signed path
+    deviceHeading = (deviceHeading + diff * 0.15 + 360) % 360;
+  }
+
+  function bindOrientation() {
+    if (orientationBound) return Promise.resolve(true);
+    // iOS 13+ requires explicit permission from a user gesture
+    const DOE = window.DeviceOrientationEvent;
+    if (DOE && typeof DOE.requestPermission === "function") {
+      return DOE.requestPermission().then(state => {
+        if (state === "granted") {
+          window.addEventListener("deviceorientation", onOrientation, true);
+          orientationBound = true;
+          return true;
+        }
+        return false;
+      }).catch(() => false);
+    }
+    // Android / others: try absolute first, then generic
+    if ("ondeviceorientationabsolute" in window) {
+      window.addEventListener("deviceorientationabsolute", onOrientation, true);
+    }
+    window.addEventListener("deviceorientation", onOrientation, true);
+    orientationBound = true;
+    return Promise.resolve(true);
+  }
+
+  const headingBtn = document.getElementById("heading-btn");
+  const headingLabel = document.getElementById("heading-label");
+  headingBtn.addEventListener("click", async () => {
+    if (!headingUp) {
+      const ok = await bindOrientation();
+      if (!ok) { headingLabel.textContent = "no compass"; setTimeout(() => { headingLabel.textContent = "heading up"; }, 2000); return; }
+      headingUp = true;
+      headingBtn.classList.add("on");
+      headingLabel.textContent = "heading up ✓";
+    } else {
+      headingUp = false;
+      headingBtn.classList.remove("on");
+      headingLabel.textContent = "heading up";
+    }
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { clearInterval(pollTimer); pollTimer = null; setStatus("paused", "paused · tab hidden"); }
+    else if (me) startPolling();
+  });
+
+  function startPolling() {
+    if (pollTimer) return;
+    if (Date.now() - lastFetch > POLL_MS) poll();
+    else setStatus("live", `live · ${planes.size}`);
+    pollTimer = setInterval(poll, POLL_MS);
+  }
+
+  function begin(lat, lon, name) {
+    me = { lat, lon }; placeName = name || "";
+    document.getElementById("gate").classList.add("hidden");
+    const here = document.getElementById("here");
+    here.innerHTML = (placeName ? placeName + " · " : "") + '<button id="change-loc">change</button>';
+    document.getElementById("change-loc")?.addEventListener("click", reopenGate);
+    resize(); setStatus("live", "connecting…"); startPolling(); requestAnimationFrame(draw);
+  }
+
+  function reopenGate() {
+    clearInterval(pollTimer); pollTimer = null; me = null; planes.clear();
+    document.getElementById("count-n").textContent = "0";
+    document.getElementById("gate").classList.remove("hidden");
+    setStatus("paused", "standby");
+  }
+
+  // ---------- location gate ----------
+  const gate = document.getElementById("gate"), gateErr = document.getElementById("gate-err");
+  const addrBlock = document.getElementById("addr-block"), addrOr = document.getElementById("addr-or");
+  const addrInput = document.getElementById("addr-input"), addrResults = document.getElementById("addr-results");
+
+  function showAddressFallback() { addrBlock.classList.add("show"); addrOr.style.display = "block"; document.getElementById("addr-toggle").style.display = "none"; addrInput.focus(); }
+
+  document.getElementById("gate-btn").addEventListener("click", () => {
+    gateErr.textContent = "locating…";
+    if (!navigator.geolocation) { gateErr.textContent = "geolocation unavailable on this device"; showAddressFallback(); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => begin(pos.coords.latitude, pos.coords.longitude, "my location"),
+      err => {
+        gateErr.textContent = err.code === 1 ? "location blocked — use an address instead" : "couldn't get location — use an address instead";
+        showAddressFallback();
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    );
+  });
+  document.getElementById("addr-toggle").addEventListener("click", showAddressFallback);
+
+  async function geocode() {
+    const q = addrInput.value.trim();
+    if (!q) return;
+    gateErr.textContent = "searching…"; addrResults.innerHTML = "";
+    try {
+      const res = await fetch(`${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=0`, {
+        headers: { "Accept": "application/json" }
+      });
+      const list = await res.json();
+      gateErr.textContent = "";
+      if (!list.length) { gateErr.textContent = "no match found — try a city or postcode"; return; }
+      addrResults.innerHTML = "";
+      for (const r of list) {
+        const li = document.createElement("li");
+        li.textContent = r.display_name;
+        li.addEventListener("click", () => begin(+r.lat, +r.lon, r.display_name.split(",")[0]));
+        addrResults.appendChild(li);
+      }
+    } catch { gateErr.textContent = "address lookup failed — check connection"; }
+  }
+  document.getElementById("addr-go").addEventListener("click", geocode);
+  addrInput.addEventListener("keydown", e => { if (e.key === "Enter") geocode(); });
+
+  cv.addEventListener("pointerdown", () => { const h = document.getElementById("hint"); if (h) h.style.opacity = "0"; }, { once: true });
+
+  // ---------- register service worker ----------
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  }
+})();
+</script>
+</body>
+</html>
