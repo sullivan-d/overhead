@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#070b14">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
 <title>Overhead</title>
@@ -171,7 +173,7 @@
 
 <div class="gate" id="gate">
   <h1>Over<b>head</b></h1>
-  <p>A live radar of the aircraft in your sky. No sign-up, no key. Data from the open OpenSky Network.</p>
+  <p>A live radar of the aircraft in your sky. No sign-up, no key. Data from the open <a href="https://adsb.fi" target="_blank" rel="noopener" style="color:var(--sweep)">adsb.fi</a> network.</p>
   <button class="primary" id="gate-btn">Use my location</button>
 
   <div class="addr-or" id="addr-or" style="display:none">or enter an address</div>
@@ -192,15 +194,16 @@
 
   const POLL_MS = 30000;
   const RANGE_KM_DEFAULT = 50;
-  const OPENSKY = "https://opensky-network.org/api/states/all";
-  const HEXDB = "https://hexdb.io/api/v1/aircraft/";
+  // adsb.fi open data — keyless, browser-friendly, ADSBExchange v2 format.
+  // Returns aircraft within a radius (nautical miles, max 250) of a point,
+  // including the aircraft type inline, so no separate type lookup is needed.
+  // Please keep the attribution link in the footer (their terms ask for it).
+  const ADSBFI = "https://opendata.adsb.fi/api/v3/lat/";
   const NOMINATIM = "https://nominatim.openstreetmap.org/search";
-
-  const I = { icao:0, call:1, country:2, lon:5, lat:6, baroAlt:7, onGround:8, vel:9, track:10, vrate:11, geoAlt:13, cat:17 };
+  const NM_PER_KM = 0.539957;
 
   let me = null, placeName = "", rangeKm = RANGE_KM_DEFAULT;
   let planes = new Map();
-  const typeCache = new Map();
   let selected = null, pollTimer = null, lastFetch = 0, dailyCount = 0;
 
   // heading-up mode (device compass)
@@ -251,64 +254,92 @@
   function displayHeading() {
     return (headingUp && headingAvailable) ? deviceHeading : 0;
   }
-  function bbox() {
-    const dLat = (rangeKm * 1.15) / 111;
-    const dLon = (rangeKm * 1.15) / (111 * Math.cos(toRad(me.lat)));
-    return { lamin: me.lat - dLat, lamax: me.lat + dLat, lomin: me.lon - dLon, lomax: me.lon + dLon };
-  }
 
   const statusEl = document.getElementById("status"), statusTxt = document.getElementById("status-txt");
   function setStatus(cls, txt) { statusEl.className = "status " + cls; statusTxt.textContent = txt; }
 
   async function poll() {
     if (!me || document.hidden) return;
-    const b = bbox();
-    const url = `${OPENSKY}?lamin=${b.lamin.toFixed(4)}&lomin=${b.lomin.toFixed(4)}&lamax=${b.lamax.toFixed(4)}&lomax=${b.lomax.toFixed(4)}&extended=1`;
+    // radius query: a bit larger than the visible range, in nautical miles, capped at 250
+    const distNm = Math.min(Math.ceil(rangeKm * 1.15 * NM_PER_KM), 250);
+    const url = `${ADSBFI}${me.lat.toFixed(4)}/lon/${me.lon.toFixed(4)}/dist/${distNm}`;
     try {
       const res = await fetch(url, { cache: "no-store" });
       dailyCount++;
       if (res.status === 429) { setStatus("error", "rate limit · waiting"); return; }
       if (!res.ok) { setStatus("error", "network error " + res.status); return; }
       const data = await res.json();
-      ingest(data.states || []);
+      ingest(data.ac || data.aircraft || []);
       lastFetch = Date.now();
       setStatus("live", `live · ${planes.size} · req ${dailyCount}`);
     } catch { setStatus("error", "offline · retrying"); }
   }
 
-  function ingest(states) {
+  // ADSBExchange v2 alt_baro can be the string "ground" for aircraft on the runway
+  function altMeters(v) {
+    if (v == null || v === "ground") return null;
+    const ft = typeof v === "number" ? v : parseFloat(v);
+    return isNaN(ft) ? null : ft * 0.3048;   // feet -> meters
+  }
+
+  function ingest(list) {
     const seen = new Set(), now = Date.now();
-    for (const s of states) {
-      const lat = s[I.lat], lon = s[I.lon];
-      if (lat == null || lon == null || s[I.onGround]) continue;
-      const icao = s[I.icao];
+    for (const a of list) {
+      const lat = a.lat, lon = a.lon;
+      if (lat == null || lon == null) continue;
+      if (a.alt_baro === "ground") continue;
+      const icao = a.hex;
+      if (!icao) continue;
       seen.add(icao);
       const prev = planes.get(icao);
+      // ground speed (kt) -> m/s ; baro_rate (ft/min) -> m/s
+      const velMs  = a.gs != null ? a.gs * 0.514444 : null;
+      const vrMs   = a.baro_rate != null ? a.baro_rate * 0.00508 : (a.geom_rate != null ? a.geom_rate * 0.00508 : null);
       planes.set(icao, {
-        icao, call: (s[I.call] || "").trim() || "—", country: s[I.country] || "—",
-        lat, lon, alt: s[I.baroAlt] ?? s[I.geoAlt], vel: s[I.vel],
-        track: s[I.track] ?? 0, vrate: s[I.vrate], cat: s[I.cat],
+        icao,
+        call: (a.flight || a.r || "").trim() || "—",
+        country: a.r ? regCountry(a.r) : "—",   // best-effort from registration prefix
+        lat, lon,
+        alt: altMeters(a.alt_baro ?? a.alt_geom),
+        vel: velMs,
+        track: (a.track ?? a.true_heading ?? 0),
+        vrate: vrMs,
+        // type info is INLINE now — no second request
+        typeCode: a.t || "",
+        typeDesc: a.desc || "",
+        cat: catFromLetter(a.category),
         _prevLat: prev ? prev.lat : lat, _prevLon: prev ? prev.lon : lon, _t0: now, seen: now
       });
-      if (!typeCache.has(icao)) lookupType(icao);
     }
     for (const [icao, p] of planes) if (!seen.has(icao) && now - p.seen > 90000) planes.delete(icao);
     document.getElementById("count-n").textContent = planes.size;
   }
 
-  async function lookupType(icao) {
-    typeCache.set(icao, null);
-    try {
-      const res = await fetch(HEXDB + icao.toUpperCase());
-      if (!res.ok) { typeCache.set(icao, { model: "", owner: "" }); return; }
-      const j = await res.json();
-      typeCache.set(icao, { model: j.Type || j.ICAOTypeCode || "", owner: j.RegisteredOwners || "" });
-      if (selected === icao) renderSheet();
-    } catch { typeCache.set(icao, { model: "", owner: "" }); }
+  // ADSBExchange "category" is a letter+digit like "A3"; map to our numeric scale
+  function catFromLetter(c) {
+    if (!c || c.length < 2) return null;
+    const map = { A1:2, A2:3, A3:4, A4:5, A5:6, A6:7, A7:8, B1:12, B2:10, B4:14, B6:14, B7:15 };
+    return map[c] || null;
+  }
+
+  // very rough country guess from registration prefix (purely cosmetic)
+  function regCountry(reg) {
+    const r = reg.toUpperCase();
+    if (r.startsWith("F-")) return "France";
+    if (r.startsWith("G-")) return "United Kingdom";
+    if (r.startsWith("D-")) return "Germany";
+    if (r.startsWith("N")) return "United States";
+    if (r.startsWith("EC-")) return "Spain";
+    if (r.startsWith("I-")) return "Italy";
+    if (r.startsWith("PH-")) return "Netherlands";
+    if (r.startsWith("OO-")) return "Belgium";
+    if (r.startsWith("HB-")) return "Switzerland";
+    if (r.startsWith("EI-")) return "Ireland";
+    return "—";
   }
 
   function categoryLabel(cat) {
-    const m = { 2:"light",3:"small",4:"medium",5:"large",6:"heavy",7:"high-perf",8:"helicopter",9:"glider",10:"airship",14:"drone" };
+    const m = { 2:"light",3:"small",4:"medium",5:"large",6:"heavy",7:"high-perf",8:"helicopter",9:"glider",10:"airship",12:"ultralight",14:"drone",15:"space" };
     return m[cat] || "";
   }
 
@@ -414,16 +445,12 @@
     const p = planes.get(selected);
     if (!p) { sheet.classList.remove("open"); return; }
     document.getElementById("d-call").textContent = p.call;
-    const t = typeCache.get(p.icao); let typeLine;
-    if (t === undefined || t === null) typeLine = "looking up type…";
-    else {
-      const parts = [];
-      if (t.model) parts.push(t.model);
-      if (t.owner) parts.push(t.owner);
-      if (p.cat && categoryLabel(p.cat)) parts.push(categoryLabel(p.cat));
-      typeLine = parts.length ? parts.join(" · ") : "type unknown";
-    }
-    document.getElementById("d-type").innerHTML = typeLine;
+    // type is delivered inline by adsb.fi — no async lookup
+    const parts = [];
+    if (p.typeDesc) parts.push(p.typeDesc);          // e.g. "Airbus A320"
+    else if (p.typeCode) parts.push(p.typeCode);     // fallback ICAO code e.g. "A320"
+    if (p.cat && categoryLabel(p.cat)) parts.push(categoryLabel(p.cat));
+    document.getElementById("d-type").innerHTML = parts.length ? parts.join(" · ") : "type unknown";
     document.getElementById("d-alt").innerHTML = fmtAlt(p.alt);
     document.getElementById("d-spd").innerHTML = fmtSpd(p.vel);
     document.getElementById("d-hdg").innerHTML = `${Math.round(p.track)}<small>°</small>`;

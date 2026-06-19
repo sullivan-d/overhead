@@ -1,7 +1,7 @@
 # Deploy Overhead to GitHub Pages
 
 This puts the app on a public **https://** URL. That fixes every `file://` error
-you saw (manifest, service worker, geolocation, OpenSky CORS) and lets anyone
+you saw (manifest, service worker, geolocation, API CORS) and lets anyone
 install it from any device with no setup.
 
 ## One-time setup
@@ -53,7 +53,7 @@ The service worker cache is versioned (`overhead-v1` in `sw.js`); if you make
 big changes and want to force everyone to refresh, bump it to `overhead-v2`.
 
 ## Reminders
-- Live aircraft data always comes from OpenSky over the internet — that part
+- Live aircraft data always comes from adsb.fi over the internet — that part
   can't be offline. The app *shell* works offline once loaded (service worker).
-- Anonymous OpenSky budget is ~400 requests/day per visitor; polling is every 30s
+- adsb.fi is rate-limited to ~1 request/second; we poll every 30s
   and pauses when the tab is hidden.

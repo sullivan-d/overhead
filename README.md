@@ -4,8 +4,7 @@ A self-contained web app that shows aircraft flying near you on an animated rada
 No accounts, no API keys, no paid services. No build step.
 
 ## Data sources (all free, no auth)
-- **OpenSky Network** — live aircraft positions (anonymous bounding-box query)
-- **hexdb.io** — aircraft type / operator lookup by ICAO24 hex
+- **adsb.fi** — live aircraft positions + type, keyless (radius query, ADSBExchange v2 format)
 - **OpenStreetMap Nominatim** — address geocoding (the location fallback)
 
 ## Files
@@ -52,8 +51,8 @@ Then visit `http://<pi-ip>:8080` from your phone on the same WiFi.
   radar stays north-up.
 
 ## Rate limits & battery
-- Polls OpenSky every **30 s**. Anonymous OpenSky budget is ~400 requests/day,
-  so continuous use lasts roughly 3 hours/day. The status bar shows a live `req` counter.
+- Polls adsb.fi every **30 s** (their limit is ~1 request/second, so we are well under),
+  The status bar shows a live `req` counter.
 - Polling **stops the instant the app is hidden** (tab switch, lock, minimize) via the
   Page Visibility API, and resumes when visible. Nothing runs in the background.
-- The service worker explicitly does **not** cache OpenSky/hexdb/Nominatim — live data is always fresh.
+- The service worker explicitly does **not** cache adsb.fi/Nominatim — live data is always fresh.

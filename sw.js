@@ -33,7 +33,7 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   // Live data hosts: always go to network, never cache, never intercept offline.
-  const liveHosts = ["opensky-network.org", "hexdb.io", "nominatim.openstreetmap.org"];
+  const liveHosts = ["adsb.fi", "opendata.adsb.fi", "nominatim.openstreetmap.org"];
   if (liveHosts.some((h) => url.hostname.includes(h))) {
     return; // let the browser handle it normally
   }
