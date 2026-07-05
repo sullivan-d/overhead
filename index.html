@@ -77,12 +77,6 @@
     position: absolute; bottom: 12px; left: 16px; z-index: 5;
     font-size: 9.5px; letter-spacing: 0.05em; color: var(--ink-faint); max-width: 60%;
   }
-  .daynight {
-    position: absolute; bottom: 12px; right: 16px; z-index: 5;
-    font-size: 11px; letter-spacing: 0.05em; color: var(--ink-faint);
-    display: flex; align-items: center; gap: 5px;
-  }
-  .daynight svg { display: block; }
   .here button {
     background: none; border: none; color: var(--sweep); font-family: inherit; font-size: 9.5px;
     cursor: pointer; padding: 0; text-decoration: underline; letter-spacing: 0.05em;
@@ -156,19 +150,6 @@
 
   <canvas id="radar"></canvas>
   <div class="here" id="here"></div>
-  <div class="daynight" id="daynight" style="display:none">
-    <svg id="dn-sun" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" style="color:var(--gold)">
-      <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>
-      <line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/>
-      <line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/>
-      <line x1="4.2" y1="4.2" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.8" y2="19.8"/>
-      <line x1="4.2" y1="19.8" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.8" y2="4.2"/>
-    </svg>
-    <svg id="dn-moon" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="color:var(--ink-soft);display:none">
-      <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 1 0 10.5 10.5z"/>
-    </svg>
-    <span id="dn-label"></span>
-  </div>
   <div class="hint" id="hint">tap an aircraft for details</div>
 </div>
 
@@ -438,6 +419,8 @@
     ctx.fillStyle = "#1ee0a8"; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "rgba(30,224,168,0.4)"; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
 
+    drawCelestial();
+
     const now = Date.now();
     for (const p of planes.values()) {
       const f = Math.min((now - p._t0) / POLL_MS, 1);
@@ -463,10 +446,102 @@
     }
   }
 
+  // Sun/moon are drawn pinned to the outer ring at their true compass bearing
+  // (they're effectively infinitely far away) — a fixed reference point you
+  // can use to orient yourself even without heading-up mode, the same way
+  // you'd glance at the sun in the sky.
+  function edgePoint(azDeg) {
+    const ang = toRad(azDeg - 90 - displayHeading());
+    return { x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang) };
+  }
+  function drawCelestial() {
+    if (sunPos && sunPos.alt > -0.83) drawSunIcon(edgePoint(sunPos.az));
+    if (moonPos && moonPos.alt > -0.3) drawMoonIcon(edgePoint(moonPos.az));
+  }
+  function drawSunIcon(pt) {
+    ctx.save(); ctx.translate(pt.x, pt.y);
+    ctx.fillStyle = "#f5c451"; ctx.strokeStyle = "#f5c451"; ctx.lineWidth = 1.3; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
+    for (let k = 0; k < 8; k++) {
+      const a = (Math.PI / 4) * k;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 6, Math.sin(a) * 6);
+      ctx.lineTo(Math.cos(a) * 9, Math.sin(a) * 9);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.fillStyle = "#f5c451"; ctx.font = "9px ui-monospace, monospace";
+    ctx.fillText("sun", pt.x + 11, pt.y + 3);
+  }
+  function drawMoonIcon(pt) {
+    ctx.save(); ctx.translate(pt.x, pt.y);
+    ctx.fillStyle = "#8ba0bd";
+    ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#070b14";
+    ctx.beginPath(); ctx.arc(2.6, -1.5, 5.2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = "#8ba0bd"; ctx.font = "9px ui-monospace, monospace";
+    ctx.fillText("moon", pt.x + 11, pt.y + 3);
+  }
+
+  // One of 4 distinct pictograms instead of a generic triangle, picked from
+  // the friendly type bucket. Rare categories (drone/airship/glider/unknown)
+  // fall back to the "hobby" shape rather than adding a 5th icon.
+  function iconForType(label) {
+    if (label === "Commercial Airliner") return "airliner";
+    if (label === "Private Jet") return "jet";
+    if (label === "Helicopter") return "heli";
+    return "hobby";
+  }
+  function drawIconPath(type) {
+    switch (type) {
+      case "airliner": // big swept-wing delta with a distinct tailplane
+        ctx.beginPath();
+        ctx.moveTo(0, -9); ctx.lineTo(1.6, -3); ctx.lineTo(9, 4); ctx.lineTo(2, 2.3);
+        ctx.lineTo(2, 7); ctx.lineTo(0.8, 5.5); ctx.lineTo(-0.8, 5.5); ctx.lineTo(-2, 7);
+        ctx.lineTo(-2, 2.3); ctx.lineTo(-9, 4); ctx.lineTo(-1.6, -3);
+        ctx.closePath(); ctx.fill();
+        break;
+      case "jet": // smaller, sleeker delta — narrower wings, pointed nose
+        ctx.beginPath();
+        ctx.moveTo(0, -9); ctx.lineTo(1, -4.5); ctx.lineTo(6, 1.5); ctx.lineTo(1.1, 1.8);
+        ctx.lineTo(1.1, 6.5); ctx.lineTo(0, 5.2); ctx.lineTo(-1.1, 6.5); ctx.lineTo(-1.1, 1.8);
+        ctx.lineTo(-6, 1.5); ctx.lineTo(-1, -4.5);
+        ctx.closePath(); ctx.fill();
+        break;
+      case "hobby": { // high-wing Cessna-style cross: straight wings, prop hub
+        ctx.lineWidth = 1.4; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(0, 6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-7, -1); ctx.lineTo(7, -1); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-3, 6); ctx.lineTo(3, 6); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, -8, 1.3, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      case "heli": // rotor disc + blades, body, tail boom
+        ctx.lineWidth = 1.3; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.arc(0, -3, 6, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-6, -3); ctx.lineTo(6, -3); ctx.moveTo(0, -9); ctx.lineTo(0, 3); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 1, 2.6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(0, 3); ctx.lineTo(0, 8); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-1.8, 8); ctx.lineTo(1.8, 8); ctx.stroke();
+        break;
+    }
+  }
+
+  // Bigger when low, smaller when high — altitude is otherwise invisible on a
+  // flat map, and low/close aircraft were easy to miss among high/far ones.
+  function altScale(altM) {
+    if (altM == null) return 1;
+    const t = Math.max(0, Math.min(1, altM / 12000)); // 0 at ground, 1 at ~cruise altitude
+    return 1.6 - t * (1.6 - 0.55);
+  }
+
   function drawPlane(x, y, heading, sel, p) {
-    ctx.save(); ctx.translate(x, y); ctx.rotate(toRad(heading));
+    const scale = altScale(p.alt);
+    ctx.save(); ctx.translate(x, y); ctx.rotate(toRad(heading)); ctx.scale(scale, scale);
     ctx.fillStyle = sel ? "#ff5c6c" : "#e8eef7";
-    ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(6, 5); ctx.lineTo(0, 2.5); ctx.lineTo(-6, 5); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = sel ? "#ff5c6c" : "#e8eef7";
+    drawIconPath(iconForType(friendlyType(p)));
     ctx.restore();
     if (sel) { ctx.strokeStyle = "#ff5c6c"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.stroke(); }
     ctx.fillStyle = sel ? "#ff5c6c" : "rgba(139,160,189,0.65)";
@@ -644,41 +719,72 @@
     here.innerHTML = (placeName ? placeName + " · " : "") + '<button id="change-loc">change</button>';
     document.getElementById("change-loc")?.addEventListener("click", reopenGate);
     resize(); setStatus("live", "connecting…"); startPolling(); requestAnimationFrame(draw);
-    document.getElementById("daynight").style.display = "flex";
-    updateDayNight(); dayNightTimer = setInterval(updateDayNight, 60000);
+    updateCelestial(); celestialTimer = setInterval(updateCelestial, 60000);
   }
 
   function reopenGate() {
     clearInterval(pollTimer); pollTimer = null; me = null; planes.clear();
-    clearInterval(dayNightTimer); dayNightTimer = null;
+    clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
     document.getElementById("count-n").textContent = "0";
-    document.getElementById("daynight").style.display = "none";
     document.getElementById("gate").classList.remove("hidden");
     setStatus("paused", "standby");
   }
 
-  // ---------- day / night indicator ----------
-  // A coarse solar-altitude estimate (ignores the equation of time — a few
-  // minutes of error, irrelevant for a "is it light out" icon) so the sun/moon
-  // icon reflects the actual sun position at the user's location, not just a
-  // fixed hour cutoff.
-  let dayNightTimer = null;
-  function sunAltitudeDeg(lat, lon, date) {
-    const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 86400000);
-    const decl = 23.44 * Math.sin(toRad(360 / 365 * (dayOfYear - 81)));
-    const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
-    const solarHours = utcHours + lon / 15; // apparent solar time from longitude
-    const hourAngle = (solarHours - 12) * 15;
-    const latR = toRad(lat), declR = toRad(decl), haR = toRad(hourAngle);
-    const sinAlt = Math.sin(latR) * Math.sin(declR) + Math.cos(latR) * Math.cos(declR) * Math.cos(haR);
-    return Math.asin(Math.max(-1, Math.min(1, sinAlt))) * 180 / Math.PI;
+  // ---------- sun & moon position ----------
+  // Low-precision geocentric positions (the standard simplified formulas used
+  // by amateur-astronomy tools like suncalc — accurate to a fraction of a
+  // degree, plenty for placing an icon on a radar). Everything below is pure
+  // math on the device clock + the user's lat/lon; no network call.
+  let celestialTimer = null;
+  let sunPos = null, moonPos = null; // { alt, az } in degrees, recomputed every 60s
+
+  function daysSinceJ2000(date) {
+    return (date.getTime() - Date.UTC(2000, 0, 1, 12, 0, 0)) / 86400000;
   }
-  function updateDayNight() {
+  // right ascension / declination of the Sun, degrees
+  function sunEquatorial(d) {
+    const M = (357.529 + 0.98560028 * d) % 360;              // mean anomaly
+    const L0 = (280.459 + 0.98564736 * d) % 360;              // mean longitude
+    const L = (L0 + 1.915 * Math.sin(toRad(M)) + 0.020 * Math.sin(toRad(2 * M))) % 360; // apparent ecliptic longitude
+    const e = 23.439 - 0.00000036 * d;                        // obliquity of the ecliptic
+    const lonR = toRad(L), eR = toRad(e);
+    const ra = Math.atan2(Math.cos(eR) * Math.sin(lonR), Math.cos(lonR));
+    const dec = Math.asin(Math.sin(eR) * Math.sin(lonR));
+    return { raDeg: (ra * 180 / Math.PI + 360) % 360, decDeg: dec * 180 / Math.PI };
+  }
+  // right ascension / declination of the Moon, degrees
+  function moonEquatorial(d) {
+    const L = (218.316 + 13.176396 * d) % 360;  // mean longitude
+    const M = (134.963 + 13.064993 * d) % 360;  // mean anomaly
+    const F = (93.272 + 13.229350 * d) % 360;   // mean distance from ascending node
+    const lon = L + 6.289 * Math.sin(toRad(M)); // ecliptic longitude approx
+    const lat = 5.128 * Math.sin(toRad(F));     // ecliptic latitude approx
+    const e = 23.4397;                          // obliquity (near-constant, low precision)
+    const lonR = toRad(lon), latR = toRad(lat), eR = toRad(e);
+    const ra = Math.atan2(Math.sin(lonR) * Math.cos(eR) - Math.tan(latR) * Math.sin(eR), Math.cos(lonR));
+    const dec = Math.asin(Math.sin(latR) * Math.cos(eR) + Math.cos(latR) * Math.sin(eR) * Math.sin(lonR));
+    return { raDeg: (ra * 180 / Math.PI + 360) % 360, decDeg: dec * 180 / Math.PI };
+  }
+  // Greenwich Mean Sidereal Time, degrees
+  function gmstDeg(d) { return (280.46061837 + 360.98564736629 * d + 360000) % 360; }
+  // convert equatorial (RA/Dec) + local sidereal time to horizontal (alt/az from true north)
+  function toHorizontal(raDeg, decDeg, latDeg, lstDeg) {
+    const haR = toRad((lstDeg - raDeg + 360) % 360);
+    const latR = toRad(latDeg), decR = toRad(decDeg);
+    const sinAlt = Math.sin(latR) * Math.sin(decR) + Math.cos(latR) * Math.cos(decR) * Math.cos(haR);
+    const alt = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
+    const cosAz = (Math.sin(decR) - Math.sin(alt) * Math.sin(latR)) / (Math.cos(alt) * Math.cos(latR));
+    let az = Math.acos(Math.max(-1, Math.min(1, cosAz)));
+    if (Math.sin(haR) > 0) az = 2 * Math.PI - az;
+    return { alt: alt * 180 / Math.PI, az: az * 180 / Math.PI };
+  }
+  function updateCelestial() {
     if (!me) return;
-    const isDay = sunAltitudeDeg(me.lat, me.lon, new Date()) > -0.83; // standard sunrise/sunset altitude
-    document.getElementById("dn-sun").style.display = isDay ? "block" : "none";
-    document.getElementById("dn-moon").style.display = isDay ? "none" : "block";
-    document.getElementById("dn-label").textContent = isDay ? "day" : "night";
+    const d = daysSinceJ2000(new Date());
+    const lst = (gmstDeg(d) + me.lon + 360) % 360; // local sidereal time, degrees
+    const sun = sunEquatorial(d), moon = moonEquatorial(d);
+    sunPos = toHorizontal(sun.raDeg, sun.decDeg, me.lat, lst);
+    moonPos = toHorizontal(moon.raDeg, moon.decDeg, me.lat, lst);
   }
 
   // ---------- location gate ----------
