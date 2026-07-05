@@ -138,9 +138,10 @@
   <div class="controls">
     <span class="rng-label">range</span>
     <div class="rng-btns" id="rng">
+      <button data-km="5">5</button>
+      <button data-km="10">10</button>
       <button data-km="20" class="on">20</button>
       <button data-km="50">50</button>
-      <button data-km="100">100</button>
       <span class="rng-label">km</span>
     </div>
   </div>
@@ -245,6 +246,19 @@
   window.addEventListener("resize", resize);
 
   const toRad = d => d * Math.PI / 180;
+
+  // 3D tilt (like Google Maps' navigation view): engages automatically with
+  // heading-up, since that's when "which way is forward" actually matters.
+  // Implemented as a vertical squish of the ground-plane elements (rings,
+  // crosshair, sweep, trails) around the center — turns the circle into an
+  // ellipse, the classic look of a flat disc viewed at an angle. Markers
+  // (planes, sun/moon, text) are repositioned to match but drawn upright
+  // ("billboarded"), so nothing gets flattened into illegibility.
+  const TILT_COS = Math.cos(toRad(52)); // 52° tilt when fully engaged
+  const TILT_TAU_MS = 350;
+  let tiltFactor = 0;    // 0 = flat top-down, 1 = fully tilted
+  let currentSquish = 1; // 1 - tiltFactor*(1-TILT_COS), recomputed each frame
+  function squishY(y) { return cy + (y - cy) * currentSquish; }
   function haversineKm(a, b) {
     const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
     const raw = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2;
@@ -278,7 +292,7 @@
   // the freshest fix means the display is only as stale as the data itself
   // (a few seconds), not the 30s poll cycle on top of that.
   function estimatedPosition(p, nowMs) {
-    const dtSec = Math.min(Math.max((nowMs - p.seen) / 1000, 0), 90); // capped so a stalled poll doesn't extrapolate forever
+    const dtSec = Math.min(Math.max((nowMs - p.posTime) / 1000, 0), 90); // capped so a stalled poll doesn't extrapolate forever
     if (!p.vel || dtSec === 0) return { lat: p.lat, lon: p.lon };
     return destinationPoint(p.lat, p.lon, p.track, (p.vel * dtSec) / 1000);
   }
@@ -355,7 +369,15 @@
         typeDesc: a.desc || "",
         cat: catFromLetter(a.category),
         trail,
-        seen: now
+        seen: now, // last time WE heard about this aircraft at all — drives 90s removal
+        // airplanes.live reports seen_pos: how many seconds old THIS position
+        // fix already was when the response was generated. Anchoring dead
+        // reckoning at our own ingest time ignored that — a position that
+        // was already, say, 3-5s stale on arrival meant we still under-
+        // corrected by that much. Kept separate from `seen` above because
+        // MLAT-derived fixes can have a much larger seen_pos without the
+        // aircraft actually having gone quiet — that shouldn't trigger removal.
+        posTime: now - Math.round((a.seen_pos || 0) * 1000)
       });
     }
     for (const [icao, p] of planes) if (!seen.has(icao) && now - p.seen > 90000) planes.delete(icao);
@@ -409,34 +431,42 @@
     const dtMs = lastDrawTs == null ? 16 : Math.min(ts - lastDrawTs, 100);
     lastDrawTs = ts;
     smoothHeading(dtMs);
+
+    // tilt engages/disengages smoothly together with heading-up mode
+    const tiltTarget = (headingUp && headingAvailable) ? 1 : 0;
+    tiltFactor += (tiltTarget - tiltFactor) * (1 - Math.exp(-dtMs / TILT_TAU_MS));
+    currentSquish = 1 - tiltFactor * (1 - TILT_COS);
+
     // Needle always points to true north on screen, like Google Maps' compass:
     // as the radar rotates by displayHeading(), the needle counter-rotates.
     compassNeedle.style.transform = `rotate(${-displayHeading()}deg)`;
     ctx.clearRect(0, 0, cssSize, cssSize);
+
+    // gather visible aircraft once; used for both the ground-plane trail pass
+    // and the billboarded icon pass below, and shields the whole frame from
+    // one malformed record (see comment further down)
+    const now = Date.now();
+    const visible = [];
+    for (const p of planes.values()) {
+      try {
+        const proj = project(estimatedPosition(p, now));
+        if (proj.dist <= rangeKm * RANGE_MARGIN) visible.push({ p, proj });
+      } catch (e) { console.warn("skipped projecting aircraft", p.icao, e); }
+    }
+
+    // ---- ground plane: squished vertically when tilted, like a flat disc
+    // viewed at an angle. Everything here is a plain shape, no text, so
+    // flattening it doesn't hurt legibility.
+    ctx.save();
+    ctx.translate(cx, cy); ctx.scale(1, currentSquish); ctx.translate(-cx, -cy);
     ctx.lineWidth = 1;
     for (let i = 1; i <= 3; i++) {
       ctx.strokeStyle = i === 3 ? "#1c2c44" : "#14202f";
       ctx.beginPath(); ctx.arc(cx, cy, (R * i) / 3, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = "#3a4d68"; ctx.font = "9px ui-monospace, monospace";
-      ctx.fillText(Math.round((rangeKm * i) / 3) + "km", cx + 3, cy - (R * i) / 3 + 11);
     }
     ctx.strokeStyle = "#101c2e";
     ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
 
-    ctx.fillStyle = "#4a5d78"; ctx.font = "bold 11px ui-monospace, monospace";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    // cardinal letters rotate with the scene so N always points to true north
-    const rot = toRad(displayHeading());
-    const card = [["N",0],["E",90],["S",180],["W",270]];
-    for (const [ltr, deg] of card) {
-      const a = toRad(deg - 90) - rot;
-      const lx = cx + (R - 9) * Math.cos(a);
-      const ly = cy + (R - 9) * Math.sin(a);
-      ctx.fillText(ltr, lx, ly);
-    }
-    ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
-
-    // heading-up: a marker at top edge showing "the way you're facing"
     if (headingUp && headingAvailable) {
       ctx.fillStyle = "#1ee0a8";
       ctx.beginPath();
@@ -461,18 +491,37 @@
     ctx.fillStyle = "#1ee0a8"; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "rgba(30,224,168,0.4)"; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
 
+    for (const { p, proj } of visible) {
+      try { drawTrail(p, proj); } catch (e) { console.warn("skipped trail", p.icao, e); }
+    }
+    ctx.restore(); // end ground-plane squish
+
+    // ---- billboarded content: text and icons, repositioned to match the
+    // tilt but drawn upright so nothing gets flattened into illegibility —
+    // same idea as how map pins/labels stay readable in a tilted 3D map.
+    ctx.fillStyle = "#3a4d68"; ctx.font = "9px ui-monospace, monospace";
+    for (let i = 1; i <= 3; i++) {
+      ctx.fillText(Math.round((rangeKm * i) / 3) + "km", cx + 3, squishY(cy - (R * i) / 3) + 11);
+    }
+
+    ctx.fillStyle = "#4a5d78"; ctx.font = "bold 11px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    // cardinal letters rotate with the scene so N always points to true north
+    const rot = toRad(displayHeading());
+    const card = [["N",0],["E",90],["S",180],["W",270]];
+    for (const [ltr, deg] of card) {
+      const a = toRad(deg - 90) - rot;
+      const lx = cx + (R - 9) * Math.cos(a);
+      const ly = cy + (R - 9) * Math.sin(a);
+      ctx.fillText(ltr, lx, squishY(ly));
+    }
+    ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
+
     drawCelestial();
 
-    const now = Date.now();
-    for (const p of planes.values()) {
-      // one malformed aircraft record must never abort the whole loop — that
-      // used to mean requestAnimationFrame below never got called again,
-      // silently freezing the entire radar for every other aircraft too
+    for (const { p, proj } of visible) {
       try {
-        const proj = project(estimatedPosition(p, now));
-        if (proj.dist > rangeKm * RANGE_MARGIN) continue;
-        drawTrail(p, proj);
-        drawPlane(proj.x, proj.y, p.track - displayHeading(), p.icao === selected, p, proj.dist);
+        drawPlane(proj.x, squishY(proj.y), p.track - displayHeading(), p.icao === selected, p, proj.dist);
       } catch (e) { console.warn("skipped rendering aircraft", p.icao, e); }
     }
     requestAnimationFrame(draw);
@@ -499,8 +548,14 @@
     return { x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang) };
   }
   function drawCelestial() {
-    if (sunPos && sunPos.alt > -0.83) drawSunIcon(edgePoint(sunPos.az));
-    if (moonPos && moonPos.alt > -0.3) drawMoonIcon(edgePoint(moonPos.az));
+    if (sunPos && sunPos.alt > -0.83) {
+      const pt = edgePoint(sunPos.az);
+      drawSunIcon({ x: pt.x, y: squishY(pt.y) });
+    }
+    if (moonPos && moonPos.alt > -0.3) {
+      const pt = edgePoint(moonPos.az);
+      drawMoonIcon({ x: pt.x, y: squishY(pt.y) });
+    }
   }
   function drawSunIcon(pt) {
     ctx.save(); ctx.translate(pt.x, pt.y);
@@ -546,12 +601,16 @@
         ctx.lineTo(-2, 2.3); ctx.lineTo(-9, 4); ctx.lineTo(-1.6, -3);
         ctx.closePath(); ctx.fill();
         break;
-      case "jet": // smaller, sleeker delta — narrower wings, pointed nose
+      case "jet": // long slender dart with small rear-mounted wings and a
+                  // T-tail — a business-jet silhouette, not just a smaller
+                  // delta (that read too close to the airliner shape)
         ctx.beginPath();
-        ctx.moveTo(0, -9); ctx.lineTo(1, -4.5); ctx.lineTo(6, 1.5); ctx.lineTo(1.1, 1.8);
-        ctx.lineTo(1.1, 6.5); ctx.lineTo(0, 5.2); ctx.lineTo(-1.1, 6.5); ctx.lineTo(-1.1, 1.8);
-        ctx.lineTo(-6, 1.5); ctx.lineTo(-1, -4.5);
+        ctx.moveTo(0, -9); ctx.lineTo(1.1, -4); ctx.lineTo(1.1, 6);
+        ctx.lineTo(-1.1, 6); ctx.lineTo(-1.1, -4);
         ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(1.1, 2.5); ctx.lineTo(6, 6); ctx.lineTo(1.1, 4.5); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-1.1, 2.5); ctx.lineTo(-6, 6); ctx.lineTo(-1.1, 4.5); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-3, 9); ctx.lineTo(3, 9); ctx.lineTo(0, 6.5); ctx.closePath(); ctx.fill();
         break;
       case "hobby": { // high-wing Cessna-style cross: straight wings, prop hub
         ctx.lineWidth = 1.4; ctx.lineCap = "round";
@@ -606,7 +665,8 @@
     for (const p of planes.values()) {
       try {
         const proj = project(estimatedPosition(p, now));
-        const d = Math.hypot(proj.x - px, proj.y - py);
+        // must match the billboarded position planes are actually drawn at
+        const d = Math.hypot(proj.x - px, squishY(proj.y) - py);
         if (d < bestD) { bestD = d; best = p.icao; }
       } catch (e) { console.warn("skipped hit-testing aircraft", p.icao, e); }
     }
