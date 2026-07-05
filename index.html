@@ -205,6 +205,11 @@
   const NOMINATIM = "https://nominatim.openstreetmap.org/search";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
+  // How far beyond the displayed range ring to fetch AND render. Used for both
+  // so nothing counted in the header is silently excluded from the canvas —
+  // they used to differ (fetch 1.15x, render cutoff 1.06x), which meant some
+  // aircraft the counter included never appeared on screen.
+  const RANGE_MARGIN = 1.1;
 
   let me = null, placeName = "", rangeKm = RANGE_KM_DEFAULT;
   let planes = new Map();
@@ -244,10 +249,32 @@
     const x = Math.cos(toRad(a.lat))*Math.sin(toRad(b.lat)) - Math.sin(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.cos(dLon);
     return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
   }
+  // point reached by travelling distKm from (lat,lon) along bearingDeg (great circle)
+  function destinationPoint(lat, lon, bearingDeg, distKm) {
+    const delta = distKm / 6371, theta = toRad(bearingDeg);
+    const phi1 = toRad(lat), lambda1 = toRad(lon);
+    const phi2 = Math.asin(Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(theta));
+    const lambda2 = lambda1 + Math.atan2(
+      Math.sin(theta) * Math.sin(delta) * Math.cos(phi1),
+      Math.cos(delta) - Math.sin(phi1) * Math.sin(phi2)
+    );
+    return { lat: phi2 * 180 / Math.PI, lon: lambda2 * 180 / Math.PI };
+  }
+  // Dead-reckon forward from the last real fix using its ground speed and
+  // track, instead of trailing behind: previously we blended from the OLD fix
+  // toward the NEW one over the next 30s, so the displayed position always
+  // lagged reality by up to a full poll interval. Extrapolating forward from
+  // the freshest fix means the display is only as stale as the data itself
+  // (a few seconds), not the 30s poll cycle on top of that.
+  function estimatedPosition(p, nowMs) {
+    const dtSec = Math.min(Math.max((nowMs - p.seen) / 1000, 0), 90); // capped so a stalled poll doesn't extrapolate forever
+    if (!p.vel || dtSec === 0) return { lat: p.lat, lon: p.lon };
+    return destinationPoint(p.lat, p.lon, p.track, (p.vel * dtSec) / 1000);
+  }
   function project(p) {
     const dist = haversineKm(me, { lat: p.lat, lon: p.lon });
     const brg = bearing(me, { lat: p.lat, lon: p.lon });
-    const r = Math.min(dist / rangeKm, 1.06) * R;
+    const r = Math.min(dist / rangeKm, RANGE_MARGIN) * R;
     // In heading-up mode, subtract the device heading so the direction you
     // face sits at the top. In north-up mode, displayHeading is 0.
     const ang = toRad(brg - 90 - displayHeading());
@@ -264,8 +291,8 @@
 
   async function poll() {
     if (!me || document.hidden) return;
-    // radius query: a bit larger than the visible range, in nautical miles, capped at 250
-    const distNm = Math.min(Math.ceil(rangeKm * 1.15 * NM_PER_KM), 250);
+    // radius query: matches the render cutoff (RANGE_MARGIN), in nautical miles, capped at 250
+    const distNm = Math.min(Math.ceil(rangeKm * RANGE_MARGIN * NM_PER_KM), 250);
     const url = `${API}${me.lat.toFixed(4)}/${me.lon.toFixed(4)}/${distNm}`;
     try {
       const res = await fetch(url, { cache: "no-store" });
@@ -317,7 +344,7 @@
         typeDesc: a.desc || "",
         cat: catFromLetter(a.category),
         trail,
-        _prevLat: prev ? prev.lat : lat, _prevLon: prev ? prev.lon : lon, _t0: now, seen: now
+        seen: now
       });
     }
     for (const [icao, p] of planes) if (!seen.has(icao) && now - p.seen > 90000) planes.delete(icao);
@@ -423,11 +450,8 @@
 
     const now = Date.now();
     for (const p of planes.values()) {
-      const f = Math.min((now - p._t0) / POLL_MS, 1);
-      const lat = p._prevLat + (p.lat - p._prevLat) * f;
-      const lon = p._prevLon + (p.lon - p._prevLon) * f;
-      const proj = project({ lat, lon });
-      if (proj.dist > rangeKm * 1.06) continue;
+      const proj = project(estimatedPosition(p, now));
+      if (proj.dist > rangeKm * RANGE_MARGIN) continue;
       drawTrail(p, proj);
       drawPlane(proj.x, proj.y, p.track - displayHeading(), p.icao === selected, p);
     }
@@ -530,10 +554,13 @@
 
   // Bigger when low, smaller when high — altitude is otherwise invisible on a
   // flat map, and low/close aircraft were easy to miss among high/far ones.
+  // Range is intentionally mild: a wide range (previously 1.6x-0.55x) made
+  // high-cruising widebody jets — usually the biggest real aircraft — shrink
+  // to the smallest icons on screen, the opposite of what "biggest" suggests.
   function altScale(altM) {
     if (altM == null) return 1;
     const t = Math.max(0, Math.min(1, altM / 12000)); // 0 at ground, 1 at ~cruise altitude
-    return 1.6 - t * (1.6 - 0.55);
+    return 1.35 - t * (1.35 - 0.8);
   }
 
   function drawPlane(x, y, heading, sel, p) {
@@ -552,10 +579,7 @@
   function hitTest(px, py) {
     const now = Date.now(); let best = null, bestD = 22;
     for (const p of planes.values()) {
-      const f = Math.min((now - p._t0) / POLL_MS, 1);
-      const lat = p._prevLat + (p.lat - p._prevLat) * f;
-      const lon = p._prevLon + (p.lon - p._prevLon) * f;
-      const proj = project({ lat, lon });
+      const proj = project(estimatedPosition(p, now));
       const d = Math.hypot(proj.x - px, proj.y - py);
       if (d < bestD) { bestD = d; best = p.icao; }
     }
@@ -606,7 +630,7 @@
     document.getElementById("d-alt").innerHTML = fmtAlt(p.alt);
     document.getElementById("d-spd").innerHTML = fmtSpd(p.vel);
     document.getElementById("d-hdg").innerHTML = `${Math.round(p.track)}<small>°</small>`;
-    document.getElementById("d-dist").innerHTML = `${haversineKm(me, { lat: p.lat, lon: p.lon }).toFixed(1)}<small> km</small>`;
+    document.getElementById("d-dist").innerHTML = `${haversineKm(me, estimatedPosition(p, Date.now())).toFixed(1)}<small> km</small>`;
     document.getElementById("d-cty").textContent = p.country;
     document.getElementById("d-vr").innerHTML = fmtVr(p.vrate);
 
