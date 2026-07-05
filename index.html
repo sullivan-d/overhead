@@ -814,31 +814,38 @@
   // (manualRotation). A single finger that never becomes a second touch and
   // doesn't move far is treated as a tap-to-select.
   //
-  // The gesture LOCKS into either "tilt" or "rotate" once one of the two
-  // signals clears a threshold, rather than applying both simultaneously
-  // every move event — otherwise an attempted twist also drags the tilt
-  // around and vice versa, since real two-finger movement is never purely
-  // vertical or purely rotational.
+  // The gesture picks either "tilt" or "rotate" based on whichever signal is
+  // currently dominant, rather than applying both simultaneously every move
+  // event — real two-finger movement is never purely vertical or purely
+  // rotational, so without arbitration the two gestures fight each other.
+  //
+  // Critically, the choice is RECOVERABLE, not a one-shot permanent lock: an
+  // earlier version locked forever on the first threshold crossed, so if the
+  // very first bit of motion in an intended tilt drag read as a hair of
+  // rotation, tilt became completely unreachable for the rest of that touch
+  // no matter how much further you dragged — which is exactly what made
+  // going from flat back to 3D feel "impossible". Now the active mode can
+  // switch mid-gesture if the OTHER signal becomes clearly (MODE_SWITCH_
+  // MARGIN×) more dominant than the current one, re-baselining cleanly so
+  // the switch itself doesn't jump. Ties are biased toward tilt, since it's
+  // both the more commonly wanted gesture and the one that was losing.
   //
   // The rotate signal is measured in *tangential pixels traveled*
-  // (arc length = finger separation × angle swept), not raw degrees. Raw
+  // (arc length = finger separation × angle swept), not raw degrees — raw
   // degrees from atan2() of two touch points is wildly noise-sensitive when
-  // the fingers are close together on a phone screen: at a 50px separation,
-  // ordinary hand tremor of just 3px sideways already reads as ~3.4° — close
-  // enough to a naive threshold to falsely lock a straight tilt drag into
-  // "rotate". Scaling by the actual finger separation makes the same 3px of
-  // real-world jitter register as a tiny, threshold-safe arc at any finger
-  // spacing, while a deliberate twist still clears it easily. Below
-  // MIN_ROTATE_DIST_PX the two points are too close for the angle to mean
-  // anything at all, so rotate is disabled for that gesture entirely.
+  // the fingers are close together, since a few px of hand tremor reads as
+  // several degrees at typical finger spacing. Below MIN_ROTATE_DIST_PX the
+  // two points are too close for the angle to mean anything at all, so
+  // rotate is disabled for that gesture entirely.
   const activeTouches = new Map(); // pointerId -> {x, y}
   let gesture = null;              // {startAngle, startCentroidY, startDist, startTilt, startRotation, mode}
   let singleTouch = null;          // {id, x0, y0, moved}
   const angleBetween = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
-  const MIN_ROTATE_DIST_PX = 40; // fingers must start at least this far apart to rotate at all
-  const ROTATE_LOCK_ARC_PX = 12; // tangential travel past this many px locks into "rotate"
-  const TILT_LOCK_PX = 14;       // vertical drag past this many px locks into "tilt"
-  const TILT_GAIN_PX = 110;      // px of two-finger drag for the full 0..1 tilt range
+  const MIN_ROTATE_DIST_PX = 55;  // fingers must start well spread out to rotate at all
+  const ROTATE_LOCK_ARC_PX = 16;  // tangential travel past this many px can engage "rotate"
+  const TILT_LOCK_PX = 6;         // vertical drag past this many px can engage "tilt" — deliberately low
+  const TILT_GAIN_PX = 70;        // px of two-finger drag for the full 0..1 tilt range — high sensitivity
+  const MODE_SWITCH_MARGIN = 1.4; // how much more dominant the other signal must be to steal an active lock
 
   cv.addEventListener("pointerdown", (e) => {
     const hint = document.getElementById("hint"); if (hint) hint.style.opacity = "0";
@@ -868,30 +875,40 @@
       const angle = angleBetween(pts[0], pts[1]);
       const centroidY = (pts[0].y + pts[1].y) / 2;
       const dy = gesture.startCentroidY - centroidY; // fingers moving up = more tilt
-      let dAngle = ((angle - gesture.startAngle + 540) % 360) - 180; // shortest signed path
+      const dAngle = ((angle - gesture.startAngle + 540) % 360) - 180; // shortest signed path
       const rotateEligible = gesture.startDist > MIN_ROTATE_DIST_PX;
-      const arcPx = gesture.startDist * toRad(dAngle);
+      const arcPx = rotateEligible ? gesture.startDist * toRad(dAngle) : 0;
+      const tiltMag = Math.abs(dy), rotateMag = Math.abs(arcPx);
 
-      if (!gesture.mode) {
-        if (rotateEligible && Math.abs(arcPx) > ROTATE_LOCK_ARC_PX) {
-          gesture.mode = "rotate";
-          // A rotate gesture takes manual control of rotation. If heading-up
-          // was driving rotation, hand off from wherever the compass
-          // currently has the view pointed (no jump), and turn it off — the
-          // user has to tap the compass again to re-engage it, so it can't
-          // fight a live twist.
-          if (headingUp) {
-            headingUp = false;
-            headingBtn.classList.remove("on");
-            manualRotation = deviceHeading;
-          }
-          // re-baseline so the threshold's own delta isn't double-applied
-          gesture.startRotation = manualRotation;
-          gesture.startAngle = angle;
-          dAngle = 0;
-        } else if (Math.abs(dy) > TILT_LOCK_PX) {
-          gesture.mode = "tilt";
+      let nextMode = gesture.mode;
+      if (!nextMode) {
+        if (rotateMag > ROTATE_LOCK_ARC_PX && rotateMag > tiltMag) nextMode = "rotate";
+        else if (tiltMag > TILT_LOCK_PX) nextMode = "tilt";
+      } else if (nextMode === "rotate" && tiltMag > TILT_LOCK_PX && tiltMag > rotateMag * MODE_SWITCH_MARGIN) {
+        nextMode = "tilt";
+      } else if (nextMode === "tilt" && rotateMag > ROTATE_LOCK_ARC_PX && rotateMag > tiltMag * MODE_SWITCH_MARGIN) {
+        nextMode = "rotate";
+      }
+
+      if (nextMode !== gesture.mode) {
+        // A rotate gesture takes manual control of rotation. If heading-up
+        // was driving rotation, hand off from wherever the compass
+        // currently has the view pointed (no jump), and turn it off — the
+        // user has to tap the compass again to re-engage it, so it can't
+        // fight a live twist.
+        if (nextMode === "rotate" && headingUp) {
+          headingUp = false;
+          headingBtn.classList.remove("on");
+          manualRotation = deviceHeading;
         }
+        // re-baseline from right now so switching mode mid-gesture doesn't
+        // jump — the next move event computes fresh deltas from here
+        gesture.startTilt = desiredTilt;
+        gesture.startRotation = manualRotation;
+        gesture.startAngle = angle;
+        gesture.startCentroidY = centroidY;
+        gesture.mode = nextMode;
+        return;
       }
 
       if (gesture.mode === "tilt") {
