@@ -294,8 +294,17 @@
 
   function resize() {
     const stage = cv.parentElement;
-    const avail = Math.min(stage.clientWidth, stage.clientHeight) - 24;
-    cssSize = Math.max(220, avail);
+    // Fit the radar into the stage's CONTENT box (client size minus padding).
+    // The detail sheet, when open, adds bottom padding to the stage (see
+    // openSheet) so the radar shrinks and re-centers into the space above the
+    // sheet instead of being half-hidden behind it.
+    const cs = getComputedStyle(stage);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const availW = stage.clientWidth - padX;
+    const availH = stage.clientHeight - padY;
+    const avail = Math.min(availW, availH);
+    cssSize = Math.max(180, avail);
     DPR = Math.min(window.devicePixelRatio || 1, 2.5);
     cv.width = cssSize * DPR; cv.height = cssSize * DPR;
     cv.style.width = cssSize + "px"; cv.style.height = cssSize + "px";
@@ -313,9 +322,14 @@
   // circle into an ellipse, the classic look of a flat disc viewed at an
   // angle. Markers (planes, sun/moon, text) are repositioned to match but
   // drawn upright ("billboarded"), so nothing gets flattened into
-  // illegibility. A two-finger vertical drag on empty canvas space adjusts
+  // illegibility. A single-finger vertical drag on empty canvas space adjusts
   // `desiredTilt` directly (see the gesture handlers near the bottom).
-  const TILT_COS = Math.cos(toRad(52)); // 52° tilt when fully engaged
+  // Max tilt is deliberately steep (75°, nearly edge-on) so the altitude
+  // stack below reads clearly — the flatter the ground plane, the more the
+  // vertical altitude-lift stands out as height rather than reading as just
+  // more ground distance. desiredTilt=1 hits this max; drag down toward 0 for
+  // a more top-down view.
+  const TILT_COS = Math.cos(toRad(75)); // 75° tilt when fully engaged — nearly edge-on
   const TILT_TAU_MS = 350;
   let desiredTilt = 1;   // 0 = flat top-down, 1 = fully tilted — the target; 3D is the default view
   let tiltFactor = 0;    // smoothed current value, animates toward desiredTilt
@@ -328,7 +342,7 @@
   const MAX_ALT_KM_FOR_LIFT = 13; // roughly the ceiling of commercial cruise altitude
   function altitudeLiftPx(altM) {
     const t = Math.max(0, Math.min(1, ((altM || 0) / 1000) / MAX_ALT_KM_FOR_LIFT));
-    return t * R * 0.35 * tiltFactor;
+    return t * R * 0.5 * tiltFactor;
   }
   function haversineKm(a, b) {
     const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
@@ -835,7 +849,9 @@
     if (hit) {
       tapCandidate = { id: e.pointerId, x0: e.clientX, y0: e.clientY, hitIcao: hit, moved: false };
     } else {
-      orbit = { id: e.pointerId, x0: e.clientX, y0: e.clientY, startRotation: manualRotation, startTilt: desiredTilt, rotating: false };
+      // ox/oy are the fixed original down point (for tap detection); x0/y0 are
+      // gesture baselines that get re-baselined when rotation engages
+      orbit = { id: e.pointerId, ox: e.clientX, oy: e.clientY, x0: e.clientX, y0: e.clientY, startRotation: manualRotation, startTilt: desiredTilt, rotating: false, moved: false };
     }
   });
 
@@ -843,6 +859,7 @@
     if (orbit && e.pointerId === orbit.id) {
       const dx = e.clientX - orbit.x0;
       const dy = orbit.y0 - e.clientY; // dragging up = more tilt
+      if (!orbit.moved && Math.hypot(e.clientX - orbit.ox, e.clientY - orbit.oy) > 10) orbit.moved = true;
 
       if (!orbit.rotating && Math.abs(dx) > ROTATE_ENGAGE_PX) {
         orbit.rotating = true;
@@ -869,7 +886,12 @@
   });
 
   function endPointer(e) {
-    if (orbit && e.pointerId === orbit.id) orbit = null;
+    if (orbit && e.pointerId === orbit.id) {
+      // a tap on empty space (no drag) dismisses the open detail sheet —
+      // same "tap outside to close" convention as the sheet's own X button
+      if (!orbit.moved && sheet.classList.contains("open")) closeSheet();
+      orbit = null;
+    }
     if (tapCandidate && e.pointerId === tapCandidate.id) {
       if (!tapCandidate.moved) { selected = tapCandidate.hitIcao; openSheet(); }
       tapCandidate = null;
@@ -905,10 +927,28 @@
     return route;
   }
 
-  function openSheet() { renderSheet(); sheet.classList.add("open"); }
+  // Opening the sheet reserves room for it by padding the stage's bottom with
+  // the sheet's own height, then re-fitting the radar (resize reads that
+  // padding) so the whole radar sits centered in the space ABOVE the sheet
+  // instead of being half-covered by it. Closing restores the full stage.
+  const stageEl = cv.parentElement;
+  function openSheet() {
+    renderSheet();
+    sheet.classList.add("open");
+    // offsetHeight is valid even though the sheet animates via transform;
+    // measured after renderSheet so the height reflects the current content
+    stageEl.style.paddingBottom = sheet.offsetHeight + "px";
+    resize();
+  }
+  function closeSheet() {
+    sheet.classList.remove("open");
+    selected = null;
+    stageEl.style.paddingBottom = "";
+    resize();
+  }
   function renderSheet() {
     const p = planes.get(selected);
-    if (!p) { sheet.classList.remove("open"); return; }
+    if (!p) { closeSheet(); return; }
     document.getElementById("d-call").textContent = p.call;
     // lead with a plain-English category, keep the exact model as detail
     const parts = [friendlyType(p)];
@@ -931,7 +971,7 @@
       routeEl.textContent = (o && d) ? `${o} → ${d}` : "";
     });
   }
-  document.getElementById("d-close").addEventListener("click", () => { sheet.classList.remove("open"); selected = null; });
+  document.getElementById("d-close").addEventListener("click", closeSheet);
 
   document.getElementById("rng").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-km]"); if (!btn) return;
