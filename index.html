@@ -139,9 +139,8 @@
     <span class="rng-label">range</span>
     <div class="rng-btns" id="rng">
       <button data-km="5">5</button>
-      <button data-km="10">10</button>
-      <button data-km="20" class="on">20</button>
-      <button data-km="50">50</button>
+      <button data-km="10" class="on">10</button>
+      <button data-km="20">20</button>
       <span class="rng-label">km</span>
     </div>
   </div>
@@ -203,7 +202,7 @@
   "use strict";
 
   const POLL_MS = 30000;
-  const RANGE_KM_DEFAULT = 20;
+  const RANGE_KM_DEFAULT = 10;
   // airplanes.live open data — keyless, sends Access-Control-Allow-Origin so the
   // browser can call it directly (adsb.fi and OpenSky don't — verified 2026-07).
   // ADSBExchange v2 format: aircraft within a radius (nautical miles, max 250)
@@ -229,6 +228,10 @@
   let rawHeading = 0;             // latest raw reading
   let orientationBound = false;   // listener attached?
   let headingAvailable = false;   // have we received any reading?
+  // manual rotation, set by a two-finger twist on empty canvas space; only
+  // applied when heading-up is off (the compass already owns rotation then —
+  // letting both drive it at once would fight itself)
+  let manualRotation = 0;
 
   const cv = document.getElementById("radar"), ctx = cv.getContext("2d");
   let cssSize = 0, DPR = 1, cx = 0, cy = 0, R = 0;
@@ -247,18 +250,30 @@
 
   const toRad = d => d * Math.PI / 180;
 
-  // 3D tilt (like Google Maps' navigation view): engages automatically with
-  // heading-up, since that's when "which way is forward" actually matters.
-  // Implemented as a vertical squish of the ground-plane elements (rings,
-  // crosshair, sweep, trails) around the center — turns the circle into an
-  // ellipse, the classic look of a flat disc viewed at an angle. Markers
-  // (planes, sun/moon, text) are repositioned to match but drawn upright
-  // ("billboarded"), so nothing gets flattened into illegibility.
+  // 3D tilt (like Google Maps' navigation view): on by default and
+  // independent of heading-up — north-up and heading-up can each be viewed
+  // flat or tilted. Implemented as a vertical squish of the ground-plane
+  // elements (rings, crosshair, sweep, trails) around the center — turns the
+  // circle into an ellipse, the classic look of a flat disc viewed at an
+  // angle. Markers (planes, sun/moon, text) are repositioned to match but
+  // drawn upright ("billboarded"), so nothing gets flattened into
+  // illegibility. A two-finger vertical drag on empty canvas space adjusts
+  // `desiredTilt` directly (see the gesture handlers near the bottom).
   const TILT_COS = Math.cos(toRad(52)); // 52° tilt when fully engaged
   const TILT_TAU_MS = 350;
-  let tiltFactor = 0;    // 0 = flat top-down, 1 = fully tilted
+  let desiredTilt = 1;   // 0 = flat top-down, 1 = fully tilted — the target; 3D is the default view
+  let tiltFactor = 0;    // smoothed current value, animates toward desiredTilt
   let currentSquish = 1; // 1 - tiltFactor*(1-TILT_COS), recomputed each frame
   function squishY(y) { return cy + (y - cy) * currentSquish; }
+  // Aircraft float above their ground point in proportion to altitude, so the
+  // tilted view reads as a stack of altitudes rather than a flat plate with
+  // icons pasted on it. Scales with R so it holds at any screen size, and
+  // fades to zero automatically as the view flattens toward top-down.
+  const MAX_ALT_KM_FOR_LIFT = 13; // roughly the ceiling of commercial cruise altitude
+  function altitudeLiftPx(altM) {
+    const t = Math.max(0, Math.min(1, ((altM || 0) / 1000) / MAX_ALT_KM_FOR_LIFT));
+    return t * R * 0.35 * tiltFactor;
+  }
   function haversineKm(a, b) {
     const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
     const raw = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2;
@@ -306,9 +321,11 @@
     return { x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang), dist };
   }
 
-  // the rotation currently applied to the scene (0 when heading-up is off)
+  // the rotation currently applied to the scene: the device compass in
+  // heading-up mode, otherwise whatever the user last set with a two-finger
+  // twist (manualRotation — 0 until they turn it, i.e. north-up)
   function displayHeading() {
-    return (headingUp && headingAvailable) ? deviceHeading : 0;
+    return (headingUp && headingAvailable) ? deviceHeading : manualRotation;
   }
 
   const statusEl = document.getElementById("status"), statusTxt = document.getElementById("status-txt");
@@ -432,9 +449,9 @@
     lastDrawTs = ts;
     smoothHeading(dtMs);
 
-    // tilt engages/disengages smoothly together with heading-up mode
-    const tiltTarget = (headingUp && headingAvailable) ? 1 : 0;
-    tiltFactor += (tiltTarget - tiltFactor) * (1 - Math.exp(-dtMs / TILT_TAU_MS));
+    // tilt animates smoothly toward desiredTilt (1 by default, or wherever
+    // the user last dragged it with a two-finger gesture)
+    tiltFactor += (desiredTilt - tiltFactor) * (1 - Math.exp(-dtMs / TILT_TAU_MS));
     currentSquish = 1 - tiltFactor * (1 - TILT_COS);
 
     // Needle always points to true north on screen, like Google Maps' compass:
@@ -521,7 +538,21 @@
 
     for (const { p, proj } of visible) {
       try {
-        drawPlane(proj.x, squishY(proj.y), p.track - displayHeading(), p.icao === selected, p, proj.dist);
+        const groundY = squishY(proj.y);
+        const lift = altitudeLiftPx(p.alt);
+        const iconY = groundY - lift;
+        if (lift > 1) {
+          // faint stem + ground shadow: the aircraft floats above its actual
+          // ground track when tilted, like a pin dropped on a 3D map
+          ctx.setLineDash([2, 3]);
+          ctx.strokeStyle = p.icao === selected ? "rgba(255,92,108,0.35)" : "rgba(139,160,189,0.28)";
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(proj.x, groundY); ctx.lineTo(proj.x, iconY); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = "rgba(139,160,189,0.55)";
+          ctx.beginPath(); ctx.arc(proj.x, groundY, 2, 0, Math.PI * 2); ctx.fill();
+        }
+        drawPlane(proj.x, iconY, p.track - displayHeading(), p.icao === selected, p, proj.dist);
       } catch (e) { console.warn("skipped rendering aircraft", p.icao, e); }
     }
     requestAnimationFrame(draw);
@@ -665,18 +696,77 @@
     for (const p of planes.values()) {
       try {
         const proj = project(estimatedPosition(p, now));
-        // must match the billboarded position planes are actually drawn at
-        const d = Math.hypot(proj.x - px, squishY(proj.y) - py);
+        // must match the floating billboarded position planes are actually drawn at
+        const iconY = squishY(proj.y) - altitudeLiftPx(p.alt);
+        const d = Math.hypot(proj.x - px, iconY - py);
         if (d < bestD) { bestD = d; best = p.icao; }
       } catch (e) { console.warn("skipped hit-testing aircraft", p.icao, e); }
     }
     return best;
   }
+
+  // ---------- touch gestures: tap to select, two-finger tilt + rotate ----------
+  // Two fingers on empty canvas space drive the 3D view, the same convention
+  // as Google Maps: dragging both fingers vertically changes the tilt angle
+  // (desiredTilt), and twisting them around each other rotates the scene
+  // (manualRotation). Rotation only takes effect when heading-up is off —
+  // otherwise the compass is already driving rotation and the two would
+  // fight each other every frame. A single finger that never becomes a
+  // second touch and doesn't move far is treated as a tap-to-select.
+  const activeTouches = new Map(); // pointerId -> {x, y}
+  let gesture = null;              // {startAngle, startCentroidY, startTilt, startRotation}
+  let singleTouch = null;          // {id, x0, y0, moved}
+  const angleBetween = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+
   cv.addEventListener("pointerdown", (e) => {
-    const rect = cv.getBoundingClientRect();
-    const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
-    if (hit) { selected = hit; openSheet(); }
+    const hint = document.getElementById("hint"); if (hint) hint.style.opacity = "0";
+    cv.setPointerCapture(e.pointerId);
+    activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activeTouches.size === 2) {
+      const pts = [...activeTouches.values()];
+      gesture = {
+        startAngle: angleBetween(pts[0], pts[1]),
+        startCentroidY: (pts[0].y + pts[1].y) / 2,
+        startTilt: desiredTilt,
+        startRotation: manualRotation
+      };
+      singleTouch = null;
+    } else if (activeTouches.size === 1) {
+      singleTouch = { id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false };
+    }
   });
+
+  cv.addEventListener("pointermove", (e) => {
+    if (!activeTouches.has(e.pointerId)) return;
+    activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activeTouches.size === 2 && gesture) {
+      const pts = [...activeTouches.values()];
+      const dy = gesture.startCentroidY - (pts[0].y + pts[1].y) / 2; // fingers moving up = more tilt
+      desiredTilt = Math.max(0, Math.min(1, gesture.startTilt + dy / 150));
+      if (!headingUp) {
+        const dAngle = angleBetween(pts[0], pts[1]) - gesture.startAngle;
+        manualRotation = (gesture.startRotation + dAngle + 360) % 360;
+      }
+    } else if (singleTouch && e.pointerId === singleTouch.id) {
+      if (Math.hypot(e.clientX - singleTouch.x0, e.clientY - singleTouch.y0) > 10) singleTouch.moved = true;
+    }
+  });
+
+  function endTouch(e) {
+    if (!activeTouches.has(e.pointerId)) return;
+    activeTouches.delete(e.pointerId);
+    if (activeTouches.size < 2) gesture = null;
+    if (singleTouch && e.pointerId === singleTouch.id) {
+      if (!singleTouch.moved) {
+        const rect = cv.getBoundingClientRect();
+        const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+        if (hit) { selected = hit; openSheet(); }
+      }
+      singleTouch = null;
+    }
+  }
+  cv.addEventListener("pointerup", endTouch);
+  cv.addEventListener("pointercancel", endTouch);
 
   const sheet = document.getElementById("sheet");
   const fmtAlt = m => m == null ? "—" : `${Math.round(m).toLocaleString("en-US")}<small> m</small>`;
@@ -942,8 +1032,6 @@
   }
   document.getElementById("addr-go").addEventListener("click", geocode);
   addrInput.addEventListener("keydown", e => { if (e.key === "Enter") geocode(); });
-
-  cv.addEventListener("pointerdown", () => { const h = document.getElementById("hint"); if (h) h.style.opacity = "0"; }, { once: true });
 
   // ---------- register service worker ----------
   if ("serviceWorker" in navigator) {
