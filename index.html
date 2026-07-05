@@ -26,6 +26,22 @@
     --gold: #f5c451;
     --grid-line: #16243a;
   }
+  /* Light mode — a manual toggle (top-right, next to status), remembered in
+     localStorage. The canvas itself is also re-themed in JS (see THEMES in
+     the script), since canvas drawing calls don't read CSS variables. */
+  :root[data-theme="light"] {
+    --void: #eef1f6;
+    --panel: #ffffff;
+    --sweep: #0c8f6c;
+    --sweep-dim: #0c8f6c22;
+    --ring: #c7d0dd;
+    --ink: #1b2430;
+    --ink-soft: #54647a;
+    --ink-faint: #8492a6;
+    --hot: #c62839;
+    --gold: #a9740c;
+    --grid-line: #dde3ec;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     height: 100%;
@@ -42,6 +58,14 @@
   }
   .brand { font-weight: 700; letter-spacing: 0.16em; font-size: 13px; text-transform: uppercase; }
   .brand b { color: var(--sweep); }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .theme-btn {
+    background: none; border: 1px solid var(--ring); color: var(--ink-soft);
+    width: 24px; height: 24px; border-radius: 50%; cursor: pointer; padding: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 12px;
+    flex-shrink: 0; transition: border-color 0.15s;
+  }
+  .theme-btn:hover { border-color: var(--sweep); }
   .status { font-size: 10.5px; letter-spacing: 0.06em; color: var(--ink-soft); text-align: right; line-height: 1.5; }
   .status .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); margin-right: 5px; vertical-align: middle; }
   .status.live .dot { background: var(--sweep); box-shadow: 0 0 8px var(--sweep); animation: pulse 2s ease-in-out infinite; }
@@ -131,7 +155,10 @@
 <body>
 <header>
   <div class="brand">OVER<b>HEAD</b></div>
-  <div class="status" id="status"><span class="dot"></span><span id="status-txt">standby</span></div>
+  <div class="header-right">
+    <button class="theme-btn" id="theme-btn" title="Toggle light/dark theme">🌙</button>
+    <div class="status" id="status"><span class="dot"></span><span id="status-txt">standby</span></div>
+  </div>
 </header>
 
 <div class="stage">
@@ -203,6 +230,29 @@
 
   const POLL_MS = 30000;
   const RANGE_KM_DEFAULT = 10;
+
+  // Canvas drawing calls take literal color strings, not CSS variables, so
+  // light/dark mode needs its own JS-side palette mirroring the CSS one
+  // above. `theme` points at one of these and is only reassigned when the
+  // user toggles (see the theme-btn wiring near the bottom) — draw() reads
+  // it fresh every frame so a toggle re-colors the canvas immediately.
+  const THEMES = {
+    dark: {
+      ringMajor: "#1c2c44", ringMinor: "#14202f", crosshair: "#101c2e",
+      sweepHex: "#1ee0a8", sweepRgb: "30,224,168",
+      inkHex: "#e8eef7", inkSoftRgb: "139,160,189", rangeLabel: "#3a4d68", cardinal: "#4a5d78",
+      hotHex: "#ff5c6c", hotRgb: "255,92,108",
+      gold: "#f5c451", moonBody: "#8ba0bd", voidHex: "#070b14"
+    },
+    light: {
+      ringMajor: "#c7d0dd", ringMinor: "#dfe6ee", crosshair: "#d3dae4",
+      sweepHex: "#0c8f6c", sweepRgb: "12,143,108",
+      inkHex: "#1b2430", inkSoftRgb: "84,100,122", rangeLabel: "#8492a6", cardinal: "#54647a",
+      hotHex: "#c62839", hotRgb: "198,40,57",
+      gold: "#a9740c", moonBody: "#5c6b80", voidHex: "#eef1f6"
+    }
+  };
+  let theme = THEMES.dark;
   // airplanes.live open data — keyless, sends Access-Control-Allow-Origin so the
   // browser can call it directly (adsb.fi and OpenSky don't — verified 2026-07).
   // ADSBExchange v2 format: aircraft within a radius (nautical miles, max 250)
@@ -219,6 +269,12 @@
   const RANGE_MARGIN = 1.1;
 
   let me = null, placeName = "", rangeKm = RANGE_KM_DEFAULT;
+  // rangeKm is the authoritative selected range (drives fetch radius + the
+  // in-range count). displayRangeKm eases toward it so switching range
+  // animates — rings' km labels count smoothly and aircraft slide to their
+  // new positions instead of snapping instantly.
+  let displayRangeKm = RANGE_KM_DEFAULT;
+  const RANGE_TAU_MS = 300;
   let planes = new Map();
   let selected = null, pollTimer = null, lastFetch = 0, dailyCount = 0;
 
@@ -314,22 +370,49 @@
   function project(p) {
     const dist = haversineKm(me, { lat: p.lat, lon: p.lon });
     const brg = bearing(me, { lat: p.lat, lon: p.lon });
-    const r = Math.min(dist / rangeKm, RANGE_MARGIN) * R;
+    // uses the animating displayRangeKm (not rangeKm) so switching range
+    // smoothly zooms aircraft to their new positions instead of snapping
+    const r = Math.min(dist / displayRangeKm, RANGE_MARGIN) * R;
     // In heading-up mode, subtract the device heading so the direction you
     // face sits at the top. In north-up mode, displayHeading is 0.
     const ang = toRad(brg - 90 - displayHeading());
     return { x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang), dist };
   }
 
-  // the rotation currently applied to the scene: the device compass in
-  // heading-up mode, otherwise whatever the user last set with a two-finger
-  // twist (manualRotation — 0 until they turn it, i.e. north-up)
-  function displayHeading() {
-    return (headingUp && headingAvailable) ? deviceHeading : manualRotation;
+  // The rotation currently applied to the scene. currentDisplayHeading is a
+  // smoothed value that always eases toward its target (the device compass
+  // in heading-up mode, otherwise manualRotation), rather than snapping —
+  // this is what makes toggling heading-up on/off, or a two-finger twist
+  // taking over from the compass, animate instead of jump.
+  const ROTATION_TRANSITION_TAU_MS = 250;
+  let currentDisplayHeading = 0;
+  function updateDisplayHeading(dtMs) {
+    const target = (headingUp && headingAvailable) ? deviceHeading : manualRotation;
+    const diff = ((target - currentDisplayHeading + 540) % 360) - 180; // shortest signed path
+    const alpha = 1 - Math.exp(-dtMs / ROTATION_TRANSITION_TAU_MS);
+    currentDisplayHeading = (currentDisplayHeading + diff * alpha + 360) % 360;
   }
+  function displayHeading() { return currentDisplayHeading; }
 
   const statusEl = document.getElementById("status"), statusTxt = document.getElementById("status-txt");
   function setStatus(cls, txt) { statusEl.className = "status " + cls; statusTxt.textContent = txt; }
+
+  // The header count must reflect only aircraft within the *currently
+  // selected* range, not every aircraft still sitting in the `planes` Map.
+  // Without this, switching to a smaller range kept showing the old, larger
+  // count for up to 90s: the Map isn't pruned just for falling outside a new
+  // (smaller) range, only for going quiet entirely, so stale far-away
+  // aircraft from the previous wider fetch lingered and inflated the number
+  // even though the canvas correctly stopped drawing them.
+  function countInRange() {
+    const now = Date.now();
+    let n = 0;
+    for (const p of planes.values()) {
+      try { if (haversineKm(me, estimatedPosition(p, now)) <= rangeKm) n++; } catch { /* skip malformed */ }
+    }
+    return n;
+  }
+  function updateCountDisplay() { document.getElementById("count-n").textContent = countInRange(); }
 
   async function poll() {
     if (!me || document.hidden) return;
@@ -344,7 +427,7 @@
       const data = await res.json();
       ingest(data.ac || data.aircraft || []);
       lastFetch = Date.now();
-      setStatus("live", `live · ${planes.size} · req ${dailyCount}`);
+      setStatus("live", `live · ${countInRange()} · req ${dailyCount}`);
     } catch { setStatus("error", "offline · retrying"); }
   }
 
@@ -398,7 +481,7 @@
       });
     }
     for (const [icao, p] of planes) if (!seen.has(icao) && now - p.seen > 90000) planes.delete(icao);
-    document.getElementById("count-n").textContent = planes.size;
+    updateCountDisplay();
   }
 
   // ADSBExchange "category" is a letter+digit like "A3"; map to our numeric scale
@@ -448,11 +531,16 @@
     const dtMs = lastDrawTs == null ? 16 : Math.min(ts - lastDrawTs, 100);
     lastDrawTs = ts;
     smoothHeading(dtMs);
+    updateDisplayHeading(dtMs);
 
     // tilt animates smoothly toward desiredTilt (1 by default, or wherever
     // the user last dragged it with a two-finger gesture)
     tiltFactor += (desiredTilt - tiltFactor) * (1 - Math.exp(-dtMs / TILT_TAU_MS));
     currentSquish = 1 - tiltFactor * (1 - TILT_COS);
+
+    // range change (5/10/20km) also animates: displayRangeKm eases toward
+    // the selected rangeKm so switching zooms smoothly instead of snapping
+    displayRangeKm += (rangeKm - displayRangeKm) * (1 - Math.exp(-dtMs / RANGE_TAU_MS));
 
     // Needle always points to true north on screen, like Google Maps' compass:
     // as the radar rotates by displayHeading(), the needle counter-rotates.
@@ -461,13 +549,15 @@
 
     // gather visible aircraft once; used for both the ground-plane trail pass
     // and the billboarded icon pass below, and shields the whole frame from
-    // one malformed record (see comment further down)
+    // one malformed record (see comment further down). Uses displayRangeKm
+    // (not rangeKm) so aircraft slide off/on screen in step with the
+    // animated zoom rather than popping in/out the instant the button is hit.
     const now = Date.now();
     const visible = [];
     for (const p of planes.values()) {
       try {
         const proj = project(estimatedPosition(p, now));
-        if (proj.dist <= rangeKm * RANGE_MARGIN) visible.push({ p, proj });
+        if (proj.dist <= displayRangeKm * RANGE_MARGIN) visible.push({ p, proj });
       } catch (e) { console.warn("skipped projecting aircraft", p.icao, e); }
     }
 
@@ -478,14 +568,14 @@
     ctx.translate(cx, cy); ctx.scale(1, currentSquish); ctx.translate(-cx, -cy);
     ctx.lineWidth = 1;
     for (let i = 1; i <= 3; i++) {
-      ctx.strokeStyle = i === 3 ? "#1c2c44" : "#14202f";
+      ctx.strokeStyle = i === 3 ? theme.ringMajor : theme.ringMinor;
       ctx.beginPath(); ctx.arc(cx, cy, (R * i) / 3, 0, Math.PI * 2); ctx.stroke();
     }
-    ctx.strokeStyle = "#101c2e";
+    ctx.strokeStyle = theme.crosshair;
     ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
 
     if (headingUp && headingAvailable) {
-      ctx.fillStyle = "#1ee0a8";
+      ctx.fillStyle = theme.sweepHex;
       ctx.beginPath();
       ctx.moveTo(cx, cy - R - 2);
       ctx.lineTo(cx - 6, cy - R + 9);
@@ -498,15 +588,15 @@
     ctx.save(); ctx.translate(cx, cy);
     for (let k = 0; k < 26; k++) {
       const a = sweepAng - k * 0.025;
-      ctx.strokeStyle = `rgba(30,224,168,${0.10 * (1 - k / 26)})`; ctx.lineWidth = 2;
+      ctx.strokeStyle = `rgba(${theme.sweepRgb},${0.10 * (1 - k / 26)})`; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(R * Math.cos(a), R * Math.sin(a)); ctx.stroke();
     }
-    ctx.strokeStyle = "rgba(30,224,168,0.55)"; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = `rgba(${theme.sweepRgb},0.55)`; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(R * Math.cos(sweepAng), R * Math.sin(sweepAng)); ctx.stroke();
     ctx.restore();
 
-    ctx.fillStyle = "#1ee0a8"; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = "rgba(30,224,168,0.4)"; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = theme.sweepHex; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = `rgba(${theme.sweepRgb},0.4)`; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
 
     for (const { p, proj } of visible) {
       try { drawTrail(p, proj); } catch (e) { console.warn("skipped trail", p.icao, e); }
@@ -516,12 +606,12 @@
     // ---- billboarded content: text and icons, repositioned to match the
     // tilt but drawn upright so nothing gets flattened into illegibility —
     // same idea as how map pins/labels stay readable in a tilted 3D map.
-    ctx.fillStyle = "#3a4d68"; ctx.font = "9px ui-monospace, monospace";
+    ctx.fillStyle = theme.rangeLabel; ctx.font = "9px ui-monospace, monospace";
     for (let i = 1; i <= 3; i++) {
-      ctx.fillText(Math.round((rangeKm * i) / 3) + "km", cx + 3, squishY(cy - (R * i) / 3) + 11);
+      ctx.fillText(Math.round((displayRangeKm * i) / 3) + "km", cx + 3, squishY(cy - (R * i) / 3) + 11);
     }
 
-    ctx.fillStyle = "#4a5d78"; ctx.font = "bold 11px ui-monospace, monospace";
+    ctx.fillStyle = theme.cardinal; ctx.font = "bold 11px ui-monospace, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     // cardinal letters rotate with the scene so N always points to true north
     const rot = toRad(displayHeading());
@@ -545,11 +635,11 @@
           // faint stem + ground shadow: the aircraft floats above its actual
           // ground track when tilted, like a pin dropped on a 3D map
           ctx.setLineDash([2, 3]);
-          ctx.strokeStyle = p.icao === selected ? "rgba(255,92,108,0.35)" : "rgba(139,160,189,0.28)";
+          ctx.strokeStyle = p.icao === selected ? `rgba(${theme.hotRgb},0.35)` : `rgba(${theme.inkSoftRgb},0.28)`;
           ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(proj.x, groundY); ctx.lineTo(proj.x, iconY); ctx.stroke();
           ctx.setLineDash([]);
-          ctx.fillStyle = "rgba(139,160,189,0.55)";
+          ctx.fillStyle = `rgba(${theme.inkSoftRgb},0.55)`;
           ctx.beginPath(); ctx.arc(proj.x, groundY, 2, 0, Math.PI * 2); ctx.fill();
         }
         drawPlane(proj.x, iconY, p.track - displayHeading(), p.icao === selected, p, proj.dist);
@@ -564,7 +654,7 @@
     ctx.lineJoin = "round";
     for (let i = 1; i < pts.length; i++) {
       const age = 1 - i / (pts.length); // older segments (lower i) fade more
-      ctx.strokeStyle = p.icao === selected ? `rgba(255,92,108,${0.5 - age * 0.4})` : `rgba(30,224,168,${0.4 - age * 0.32})`;
+      ctx.strokeStyle = p.icao === selected ? `rgba(${theme.hotRgb},${0.5 - age * 0.4})` : `rgba(${theme.sweepRgb},${0.4 - age * 0.32})`;
       ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(pts[i - 1].x, pts[i - 1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
     }
@@ -590,7 +680,7 @@
   }
   function drawSunIcon(pt) {
     ctx.save(); ctx.translate(pt.x, pt.y);
-    ctx.fillStyle = "#f5c451"; ctx.strokeStyle = "#f5c451"; ctx.lineWidth = 1.3; ctx.lineCap = "round";
+    ctx.fillStyle = theme.gold; ctx.strokeStyle = theme.gold; ctx.lineWidth = 1.3; ctx.lineCap = "round";
     ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
     for (let k = 0; k < 8; k++) {
       const a = (Math.PI / 4) * k;
@@ -600,17 +690,19 @@
       ctx.stroke();
     }
     ctx.restore();
-    ctx.fillStyle = "#f5c451"; ctx.font = "9px ui-monospace, monospace";
+    ctx.fillStyle = theme.gold; ctx.font = "9px ui-monospace, monospace";
     ctx.fillText("sun", pt.x + 11, pt.y + 3);
   }
   function drawMoonIcon(pt) {
     ctx.save(); ctx.translate(pt.x, pt.y);
-    ctx.fillStyle = "#8ba0bd";
+    ctx.fillStyle = theme.moonBody;
     ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#070b14";
+    // the crescent "cutout" must match whatever's behind the canvas (the
+    // page background), or the illusion breaks — that's --void, themed too
+    ctx.fillStyle = theme.voidHex;
     ctx.beginPath(); ctx.arc(2.6, -1.5, 5.2, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
-    ctx.fillStyle = "#8ba0bd"; ctx.font = "9px ui-monospace, monospace";
+    ctx.fillStyle = theme.moonBody; ctx.font = "9px ui-monospace, monospace";
     ctx.fillText("moon", pt.x + 11, pt.y + 3);
   }
 
@@ -674,19 +766,19 @@
   function slantScale(altM, lateralDistKm) {
     const altKm = (altM || 0) / 1000;
     const slantKm = Math.hypot(lateralDistKm, altKm);
-    const t = Math.max(0, Math.min(1, slantKm / (rangeKm * RANGE_MARGIN)));
+    const t = Math.max(0, Math.min(1, slantKm / (displayRangeKm * RANGE_MARGIN)));
     return 1.4 - t * (1.4 - 0.7);
   }
 
   function drawPlane(x, y, heading, sel, p, lateralDistKm) {
     const scale = slantScale(p.alt, lateralDistKm);
     ctx.save(); ctx.translate(x, y); ctx.rotate(toRad(heading)); ctx.scale(scale, scale);
-    ctx.fillStyle = sel ? "#ff5c6c" : "#e8eef7";
-    ctx.strokeStyle = sel ? "#ff5c6c" : "#e8eef7";
+    ctx.fillStyle = sel ? theme.hotHex : theme.inkHex;
+    ctx.strokeStyle = sel ? theme.hotHex : theme.inkHex;
     drawIconPath(iconForType(friendlyType(p)));
     ctx.restore();
-    if (sel) { ctx.strokeStyle = "#ff5c6c"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.stroke(); }
-    ctx.fillStyle = sel ? "#ff5c6c" : "rgba(139,160,189,0.65)";
+    if (sel) { ctx.strokeStyle = theme.hotHex; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.fillStyle = sel ? theme.hotHex : `rgba(${theme.inkSoftRgb},0.65)`;
     ctx.font = (sel ? "bold " : "") + "9px ui-monospace, monospace";
     ctx.fillText(p.call === "—" ? "" : p.call, x + 9, y + 3);
   }
@@ -709,14 +801,22 @@
   // Two fingers on empty canvas space drive the 3D view, the same convention
   // as Google Maps: dragging both fingers vertically changes the tilt angle
   // (desiredTilt), and twisting them around each other rotates the scene
-  // (manualRotation). Rotation only takes effect when heading-up is off —
-  // otherwise the compass is already driving rotation and the two would
-  // fight each other every frame. A single finger that never becomes a
-  // second touch and doesn't move far is treated as a tap-to-select.
+  // (manualRotation). A single finger that never becomes a second touch and
+  // doesn't move far is treated as a tap-to-select.
+  //
+  // The gesture LOCKS into either "tilt" or "rotate" once one of the two
+  // signals clears a threshold, rather than applying both simultaneously
+  // every move event. Natural two-finger movement is never purely vertical
+  // or purely rotational — without locking, an attempted twist also drags
+  // the tilt around and vice versa, which is what made this "hard to move"
+  // before: the two gestures fought each other on every frame instead of
+  // picking one and committing to it for the rest of the touch.
   const activeTouches = new Map(); // pointerId -> {x, y}
-  let gesture = null;              // {startAngle, startCentroidY, startTilt, startRotation}
+  let gesture = null;              // {startAngle, startCentroidY, startTilt, startRotation, mode}
   let singleTouch = null;          // {id, x0, y0, moved}
   const angleBetween = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+  const ROTATE_LOCK_DEG = 10; // twist past this many degrees to lock into "rotate"
+  const TILT_LOCK_PX = 16;    // drag past this many px to lock into "tilt"
 
   cv.addEventListener("pointerdown", (e) => {
     const hint = document.getElementById("hint"); if (hint) hint.style.opacity = "0";
@@ -728,7 +828,8 @@
         startAngle: angleBetween(pts[0], pts[1]),
         startCentroidY: (pts[0].y + pts[1].y) / 2,
         startTilt: desiredTilt,
-        startRotation: manualRotation
+        startRotation: manualRotation,
+        mode: null
       };
       singleTouch = null;
     } else if (activeTouches.size === 1) {
@@ -741,10 +842,36 @@
     activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (activeTouches.size === 2 && gesture) {
       const pts = [...activeTouches.values()];
-      const dy = gesture.startCentroidY - (pts[0].y + pts[1].y) / 2; // fingers moving up = more tilt
-      desiredTilt = Math.max(0, Math.min(1, gesture.startTilt + dy / 150));
-      if (!headingUp) {
-        const dAngle = angleBetween(pts[0], pts[1]) - gesture.startAngle;
+      const angle = angleBetween(pts[0], pts[1]);
+      const centroidY = (pts[0].y + pts[1].y) / 2;
+      const dy = gesture.startCentroidY - centroidY; // fingers moving up = more tilt
+      let dAngle = ((angle - gesture.startAngle + 540) % 360) - 180; // shortest signed path
+
+      if (!gesture.mode) {
+        if (Math.abs(dAngle) > ROTATE_LOCK_DEG) {
+          gesture.mode = "rotate";
+          // A rotate gesture takes manual control of rotation. If heading-up
+          // was driving rotation, hand off from wherever the compass
+          // currently has the view pointed (no jump), and turn it off — the
+          // user has to tap the compass again to re-engage it, so it can't
+          // fight a live twist.
+          if (headingUp) {
+            headingUp = false;
+            headingBtn.classList.remove("on");
+            manualRotation = deviceHeading;
+          }
+          // re-baseline so the threshold's own delta isn't double-applied
+          gesture.startRotation = manualRotation;
+          gesture.startAngle = angle;
+          dAngle = 0;
+        } else if (Math.abs(dy) > TILT_LOCK_PX) {
+          gesture.mode = "tilt";
+        }
+      }
+
+      if (gesture.mode === "tilt") {
+        desiredTilt = Math.max(0, Math.min(1, gesture.startTilt + dy / 150));
+      } else if (gesture.mode === "rotate") {
         manualRotation = (gesture.startRotation + dAngle + 360) % 360;
       }
     } else if (singleTouch && e.pointerId === singleTouch.id) {
@@ -826,7 +953,11 @@
   document.getElementById("rng").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-km]"); if (!btn) return;
     document.querySelectorAll("#rng button").forEach(b => b.classList.remove("on"));
-    btn.classList.add("on"); rangeKm = +btn.dataset.km; poll();
+    btn.classList.add("on"); rangeKm = +btn.dataset.km;
+    // count updates immediately to the new range; displayRangeKm (used by
+    // project()) eases toward it over subsequent frames so rings and
+    // aircraft positions animate rather than snap
+    updateCountDisplay(); poll();
   });
 
   // ---------- compass / heading-up ----------
@@ -902,6 +1033,24 @@
     }
   });
 
+  // ---------- light/dark theme ----------
+  const THEME_KEY = "overhead-theme";
+  const themeBtn = document.getElementById("theme-btn");
+  const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+  function applyTheme(name) {
+    theme = THEMES[name] || THEMES.dark;
+    document.documentElement.setAttribute("data-theme", name);
+    themeBtn.textContent = name === "light" ? "🌙" : "☀️";
+    themeBtn.title = name === "light" ? "Switch to dark mode" : "Switch to light mode";
+    themeColorMeta?.setAttribute("content", theme.voidHex);
+  }
+  applyTheme(localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark");
+  themeBtn.addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+    localStorage.setItem(THEME_KEY, next);
+    applyTheme(next);
+  });
+
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { clearInterval(pollTimer); pollTimer = null; setStatus("paused", "paused · tab hidden"); }
     else if (me) startPolling();
@@ -910,7 +1059,7 @@
   function startPolling() {
     if (pollTimer) return;
     if (Date.now() - lastFetch > POLL_MS) poll();
-    else setStatus("live", `live · ${planes.size}`);
+    else setStatus("live", `live · ${countInRange()}`);
     pollTimer = setInterval(poll, POLL_MS);
   }
 
