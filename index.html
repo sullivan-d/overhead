@@ -61,13 +61,17 @@
   }
   .rng-btns button.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
 
-  .heading-ctl { margin-top: 4px; }
-  .heading-ctl button {
-    background: var(--panel); border: 1px solid var(--ring); color: var(--ink-soft);
-    font-family: inherit; font-size: 10px; letter-spacing: 0.04em; padding: 6px 9px;
-    border-radius: 4px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 5px;
+  .compass-btn {
+    position: absolute; bottom: 12px; right: 16px; z-index: 5;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--ring);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; padding: 0; transition: border-color 0.15s, box-shadow 0.15s;
   }
-  .heading-ctl button.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
+  .compass-btn.on { border-color: var(--sweep); box-shadow: 0 0 0 1px var(--sweep-dim); }
+  .compass-btn.denied { border-color: var(--hot); box-shadow: 0 0 0 1px #ff5c6c33; }
+  .compass-btn svg { display: block; }
+  #compass-needle { transition: transform 0.1s linear; transform-origin: 12px 12px; }
 
   .count { position: absolute; top: 16px; right: 16px; text-align: right; z-index: 5; }
   .count .n { font-size: 30px; font-weight: 700; line-height: 1; }
@@ -134,22 +138,25 @@
   <div class="controls">
     <span class="rng-label">range</span>
     <div class="rng-btns" id="rng">
-      <button data-km="20">20</button>
-      <button data-km="50" class="on">50</button>
+      <button data-km="20" class="on">20</button>
+      <button data-km="50">50</button>
       <button data-km="100">100</button>
       <span class="rng-label">km</span>
-    </div>
-    <div class="heading-ctl">
-      <button id="heading-btn" title="Rotate radar to the way you're facing">
-        <svg class="compass-ico" viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M12 2 9.5 9.5 2 12l7.5 2.5L12 22l2.5-7.5L22 12l-7.5-2.5z"/></svg>
-        <span id="heading-label">heading up</span>
-      </button>
     </div>
   </div>
   <div class="count"><div class="n" id="count-n">0</div><div class="l">aircraft</div></div>
 
   <canvas id="radar"></canvas>
   <div class="here" id="here"></div>
+  <button class="compass-btn" id="heading-btn" title="Tap to rotate the radar to the way you're facing">
+    <svg viewBox="0 0 24 24" width="24" height="24">
+      <circle cx="12" cy="12" r="10.5" fill="none" stroke="var(--ring)" stroke-width="1"/>
+      <g id="compass-needle">
+        <path d="M12 3 L15 12 L12 10.3 L9 12 Z" fill="var(--hot)"/>
+        <path d="M12 21 L9 12 L12 13.7 L15 12 Z" fill="var(--ink-soft)"/>
+      </g>
+    </svg>
+  </button>
   <div class="hint" id="hint">tap an aircraft for details</div>
 </div>
 
@@ -195,7 +202,7 @@
   "use strict";
 
   const POLL_MS = 30000;
-  const RANGE_KM_DEFAULT = 50;
+  const RANGE_KM_DEFAULT = 20;
   // airplanes.live open data — keyless, sends Access-Control-Allow-Origin so the
   // browser can call it directly (adsb.fi and OpenSky don't — verified 2026-07).
   // ADSBExchange v2 format: aircraft within a radius (nautical miles, max 250)
@@ -240,7 +247,11 @@
   const toRad = d => d * Math.PI / 180;
   function haversineKm(a, b) {
     const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
-    const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2;
+    const raw = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2;
+    // mathematically raw is always <=1, but float rounding can push it just
+    // over — asin() of >1 is NaN, which used to propagate into canvas calls
+    // and throw, silently killing the whole render loop for every aircraft
+    const s = Math.min(1, Math.max(0, raw));
     return 6371 * 2 * Math.asin(Math.sqrt(s));
   }
   function bearing(a, b) {
@@ -392,11 +403,15 @@
     return p.typeDesc || p.typeCode || "Aircraft";
   }
 
+  const compassNeedle = document.getElementById("compass-needle");
   let lastDrawTs = null;
   function draw(ts) {
     const dtMs = lastDrawTs == null ? 16 : Math.min(ts - lastDrawTs, 100);
     lastDrawTs = ts;
     smoothHeading(dtMs);
+    // Needle always points to true north on screen, like Google Maps' compass:
+    // as the radar rotates by displayHeading(), the needle counter-rotates.
+    compassNeedle.style.transform = `rotate(${-displayHeading()}deg)`;
     ctx.clearRect(0, 0, cssSize, cssSize);
     ctx.lineWidth = 1;
     for (let i = 1; i <= 3; i++) {
@@ -450,10 +465,15 @@
 
     const now = Date.now();
     for (const p of planes.values()) {
-      const proj = project(estimatedPosition(p, now));
-      if (proj.dist > rangeKm * RANGE_MARGIN) continue;
-      drawTrail(p, proj);
-      drawPlane(proj.x, proj.y, p.track - displayHeading(), p.icao === selected, p);
+      // one malformed aircraft record must never abort the whole loop — that
+      // used to mean requestAnimationFrame below never got called again,
+      // silently freezing the entire radar for every other aircraft too
+      try {
+        const proj = project(estimatedPosition(p, now));
+        if (proj.dist > rangeKm * RANGE_MARGIN) continue;
+        drawTrail(p, proj);
+        drawPlane(proj.x, proj.y, p.track - displayHeading(), p.icao === selected, p, proj.dist);
+      } catch (e) { console.warn("skipped rendering aircraft", p.icao, e); }
     }
     requestAnimationFrame(draw);
   }
@@ -552,19 +572,24 @@
     }
   }
 
-  // Bigger when low, smaller when high — altitude is otherwise invisible on a
-  // flat map, and low/close aircraft were easy to miss among high/far ones.
-  // Range is intentionally mild: a wide range (previously 1.6x-0.55x) made
-  // high-cruising widebody jets — usually the biggest real aircraft — shrink
-  // to the smallest icons on screen, the opposite of what "biggest" suggests.
-  function altScale(altM) {
-    if (altM == null) return 1;
-    const t = Math.max(0, Math.min(1, altM / 12000)); // 0 at ground, 1 at ~cruise altitude
-    return 1.35 - t * (1.35 - 0.8);
+  // Bigger when close, smaller when far — flat lateral distance alone ignored
+  // altitude entirely (a plane straight overhead at 300m looked the same size
+  // as one 20km away at the same lateral position), so scale by the actual
+  // slant range: the straight-line distance from you to the aircraft in 3D
+  // (Pythagoras on ground distance + altitude), not either alone. Normalized
+  // to the current range ring so the effect holds at any zoom level.
+  // Range is intentionally mild: a wide range (previously 1.6x-0.55x on
+  // altitude alone) made high-cruising widebody jets — usually the biggest
+  // real aircraft — shrink to the smallest icons on screen.
+  function slantScale(altM, lateralDistKm) {
+    const altKm = (altM || 0) / 1000;
+    const slantKm = Math.hypot(lateralDistKm, altKm);
+    const t = Math.max(0, Math.min(1, slantKm / (rangeKm * RANGE_MARGIN)));
+    return 1.4 - t * (1.4 - 0.7);
   }
 
-  function drawPlane(x, y, heading, sel, p) {
-    const scale = altScale(p.alt);
+  function drawPlane(x, y, heading, sel, p, lateralDistKm) {
+    const scale = slantScale(p.alt, lateralDistKm);
     ctx.save(); ctx.translate(x, y); ctx.rotate(toRad(heading)); ctx.scale(scale, scale);
     ctx.fillStyle = sel ? "#ff5c6c" : "#e8eef7";
     ctx.strokeStyle = sel ? "#ff5c6c" : "#e8eef7";
@@ -579,9 +604,11 @@
   function hitTest(px, py) {
     const now = Date.now(); let best = null, bestD = 22;
     for (const p of planes.values()) {
-      const proj = project(estimatedPosition(p, now));
-      const d = Math.hypot(proj.x - px, proj.y - py);
-      if (d < bestD) { bestD = d; best = p.icao; }
+      try {
+        const proj = project(estimatedPosition(p, now));
+        const d = Math.hypot(proj.x - px, proj.y - py);
+        if (d < bestD) { bestD = d; best = p.icao; }
+      } catch (e) { console.warn("skipped hit-testing aircraft", p.icao, e); }
     }
     return best;
   }
@@ -709,18 +736,19 @@
   }
 
   const headingBtn = document.getElementById("heading-btn");
-  const headingLabel = document.getElementById("heading-label");
   headingBtn.addEventListener("click", async () => {
     if (!headingUp) {
       const ok = await bindOrientation();
-      if (!ok) { headingLabel.textContent = "no compass"; setTimeout(() => { headingLabel.textContent = "heading up"; }, 2000); return; }
+      if (!ok) {
+        headingBtn.classList.add("denied");
+        setTimeout(() => headingBtn.classList.remove("denied"), 1200);
+        return;
+      }
       headingUp = true;
       headingBtn.classList.add("on");
-      headingLabel.textContent = "heading up ✓";
     } else {
       headingUp = false;
       headingBtn.classList.remove("on");
-      headingLabel.textContent = "heading up";
     }
   });
 
