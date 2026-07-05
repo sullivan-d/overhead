@@ -77,6 +77,12 @@
     position: absolute; bottom: 12px; left: 16px; z-index: 5;
     font-size: 9.5px; letter-spacing: 0.05em; color: var(--ink-faint); max-width: 60%;
   }
+  .daynight {
+    position: absolute; bottom: 12px; right: 16px; z-index: 5;
+    font-size: 11px; letter-spacing: 0.05em; color: var(--ink-faint);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .daynight svg { display: block; }
   .here button {
     background: none; border: none; color: var(--sweep); font-family: inherit; font-size: 9.5px;
     cursor: pointer; padding: 0; text-decoration: underline; letter-spacing: 0.05em;
@@ -92,6 +98,7 @@
   .sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .sheet-call { font-size: 22px; font-weight: 700; letter-spacing: 0.05em; color: var(--sweep); }
   .sheet-type { font-size: 12px; color: var(--ink-soft); margin-top: 3px; min-height: 15px; }
+  .sheet-route { font-size: 11px; color: var(--sweep); margin-top: 4px; letter-spacing: 0.04em; min-height: 14px; }
   .sheet-close { background: none; border: 1px solid var(--ring); color: var(--ink-soft); width: 30px; height: 30px; border-radius: 50%; font-size: 15px; cursor: pointer; flex-shrink: 0; }
   .sheet-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px 12px; margin-top: 18px; }
   .stat .k { font-size: 9px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
@@ -149,6 +156,19 @@
 
   <canvas id="radar"></canvas>
   <div class="here" id="here"></div>
+  <div class="daynight" id="daynight" style="display:none">
+    <svg id="dn-sun" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" style="color:var(--gold)">
+      <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>
+      <line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/>
+      <line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/>
+      <line x1="4.2" y1="4.2" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.8" y2="19.8"/>
+      <line x1="4.2" y1="19.8" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.8" y2="4.2"/>
+    </svg>
+    <svg id="dn-moon" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="color:var(--ink-soft);display:none">
+      <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 1 0 10.5 10.5z"/>
+    </svg>
+    <span id="dn-label"></span>
+  </div>
   <div class="hint" id="hint">tap an aircraft for details</div>
 </div>
 
@@ -158,6 +178,7 @@
     <div>
       <div class="sheet-call" id="d-call">—</div>
       <div class="sheet-type" id="d-type">looking up type…</div>
+      <div class="sheet-route" id="d-route"></div>
     </div>
     <button class="sheet-close" id="d-close">&times;</button>
   </div>
@@ -202,6 +223,7 @@
   const API = "https://api.airplanes.live/v2/point/";
   const NOMINATIM = "https://nominatim.openstreetmap.org/search";
   const NM_PER_KM = 0.539957;
+  const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
 
   let me = null, placeName = "", rangeKm = RANGE_KM_DEFAULT;
   let planes = new Map();
@@ -296,9 +318,13 @@
       // ground speed (kt) -> m/s ; baro_rate (ft/min) -> m/s
       const velMs  = a.gs != null ? a.gs * 0.514444 : null;
       const vrMs   = a.baro_rate != null ? a.baro_rate * 0.00508 : (a.geom_rate != null ? a.geom_rate * 0.00508 : null);
+      // trail: remember the last few real fixes (not interpolated frames) so
+      // we can draw a fading line behind the plane showing where it's been
+      const trail = prev ? [...prev.trail, { lat: prev.lat, lon: prev.lon }].slice(-TRAIL_LEN) : [];
       planes.set(icao, {
         icao,
         call: (a.flight || a.r || "").trim() || "—",
+        flightCallsign: (a.flight || "").trim(), // used for the route lookup; blank for GA aircraft with no flight number
         country: a.r ? regCountry(a.r) : "—",   // best-effort from registration prefix
         lat, lon,
         alt: altMeters(a.alt_baro ?? a.alt_geom),
@@ -309,6 +335,7 @@
         typeCode: a.t || "",
         typeDesc: a.desc || "",
         cat: catFromLetter(a.category),
+        trail,
         _prevLat: prev ? prev.lat : lat, _prevLon: prev ? prev.lon : lon, _t0: now, seen: now
       });
     }
@@ -339,13 +366,29 @@
     return "—";
   }
 
-  function categoryLabel(cat) {
-    const m = { 2:"light",3:"small",4:"medium",5:"large",6:"heavy",7:"high-perf",8:"helicopter",9:"glider",10:"airship",12:"ultralight",14:"drone",15:"space" };
-    return m[cat] || "";
+  // A plain-English bucket instead of an ICAO type code or wake-category letter,
+  // e.g. "Private Jet" rather than "A320" or "medium".
+  const JET_HINTS = ["citation","learjet","gulfstream","falcon","challenger","global","phenom","hawker","legacy","lineage"];
+  function friendlyType(p) {
+    const cat = p.cat, desc = (p.typeDesc || "").toLowerCase();
+    if (cat === 8) return "Helicopter";
+    if (cat === 9 || cat === 12) return "Small Hobby Plane";
+    if (cat === 14) return "Drone";
+    if (cat === 15) return "Space Vehicle";
+    if (cat === 10) return "Airship";
+    if (cat === 4 || cat === 5 || cat === 6) return "Commercial Airliner";
+    if (cat === 2 || cat === 3 || cat === 7) {
+      if (JET_HINTS.some(k => desc.includes(k))) return "Private Jet";
+      return "Small Hobby Plane";
+    }
+    return p.typeDesc || p.typeCode || "Aircraft";
   }
 
+  let lastDrawTs = null;
   function draw(ts) {
-    smoothHeading();
+    const dtMs = lastDrawTs == null ? 16 : Math.min(ts - lastDrawTs, 100);
+    lastDrawTs = ts;
+    smoothHeading(dtMs);
     ctx.clearRect(0, 0, cssSize, cssSize);
     ctx.lineWidth = 1;
     for (let i = 1; i <= 3; i++) {
@@ -402,9 +445,22 @@
       const lon = p._prevLon + (p.lon - p._prevLon) * f;
       const proj = project({ lat, lon });
       if (proj.dist > rangeKm * 1.06) continue;
+      drawTrail(p, proj);
       drawPlane(proj.x, proj.y, p.track - displayHeading(), p.icao === selected, p);
     }
     requestAnimationFrame(draw);
+  }
+
+  function drawTrail(p, headProj) {
+    if (!p.trail.length) return;
+    const pts = [...p.trail.map(project), headProj];
+    ctx.lineJoin = "round";
+    for (let i = 1; i < pts.length; i++) {
+      const age = 1 - i / (pts.length); // older segments (lower i) fade more
+      ctx.strokeStyle = p.icao === selected ? `rgba(255,92,108,${0.5 - age * 0.4})` : `rgba(30,224,168,${0.4 - age * 0.32})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(pts[i - 1].x, pts[i - 1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
+    }
   }
 
   function drawPlane(x, y, heading, sel, p) {
@@ -437,27 +493,57 @@
   });
 
   const sheet = document.getElementById("sheet");
-  const fmtAlt = m => m == null ? "—" : `${Math.round(m * 3.281).toLocaleString("en-US")}<small> ft</small>`;
-  const fmtSpd = v => v == null ? "—" : `${Math.round(v * 1.944)}<small> kt</small>`;
-  const fmtVr = v => v == null ? "—" : (Math.abs(v) < 0.5 ? "level" : (v > 0 ? "▲ " : "▼ ") + `${Math.abs(Math.round(v * 196.85))}<small> ft/min</small>`);
+  const fmtAlt = m => m == null ? "—" : `${Math.round(m).toLocaleString("en-US")}<small> m</small>`;
+  const fmtSpd = v => v == null ? "—" : `${Math.round(v * 3.6)}<small> km/h</small>`;
+  const fmtVr = v => v == null ? "—" : (Math.abs(v) < 0.5 ? "level" : (v > 0 ? "▲ " : "▼ ") + `${Math.abs(Math.round(v * 60))}<small> m/min</small>`);
+
+  // Route (origin -> destination) isn't in the ADS-B feed itself; adsbdb.com
+  // maps a flight's callsign to its filed route, keyless and CORS-enabled
+  // (verified 2026-07-05). Looked up on demand (sheet open), not on every poll,
+  // and cached per callsign since a route doesn't change flight-to-flight.
+  const ROUTE_API = "https://api.adsbdb.com/v0/callsign/";
+  const routeCache = new Map();
+  async function fetchRoute(callsign) {
+    if (!callsign) return null;
+    if (routeCache.has(callsign)) return routeCache.get(callsign);
+    let route = null;
+    try {
+      const res = await fetch(`${ROUTE_API}${encodeURIComponent(callsign)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const fr = data?.response?.flightroute;
+        if (fr) route = { origin: fr.origin, destination: fr.destination };
+      }
+    } catch { /* leave route null — shown as no route available */ }
+    routeCache.set(callsign, route);
+    return route;
+  }
 
   function openSheet() { renderSheet(); sheet.classList.add("open"); }
   function renderSheet() {
     const p = planes.get(selected);
     if (!p) { sheet.classList.remove("open"); return; }
     document.getElementById("d-call").textContent = p.call;
-    // type is delivered inline by airplanes.live — no async lookup
-    const parts = [];
+    // lead with a plain-English category, keep the exact model as detail
+    const parts = [friendlyType(p)];
     if (p.typeDesc) parts.push(p.typeDesc);          // e.g. "Airbus A320"
-    else if (p.typeCode) parts.push(p.typeCode);     // fallback ICAO code e.g. "A320"
-    if (p.cat && categoryLabel(p.cat)) parts.push(categoryLabel(p.cat));
-    document.getElementById("d-type").innerHTML = parts.length ? parts.join(" · ") : "type unknown";
+    document.getElementById("d-type").innerHTML = parts.join(" · ");
     document.getElementById("d-alt").innerHTML = fmtAlt(p.alt);
     document.getElementById("d-spd").innerHTML = fmtSpd(p.vel);
     document.getElementById("d-hdg").innerHTML = `${Math.round(p.track)}<small>°</small>`;
     document.getElementById("d-dist").innerHTML = `${haversineKm(me, { lat: p.lat, lon: p.lon }).toFixed(1)}<small> km</small>`;
     document.getElementById("d-cty").textContent = p.country;
     document.getElementById("d-vr").innerHTML = fmtVr(p.vrate);
+
+    const routeEl = document.getElementById("d-route");
+    routeEl.textContent = p.flightCallsign ? "route…" : "";
+    fetchRoute(p.flightCallsign).then(route => {
+      if (selected !== p.icao) return; // sheet moved on to another aircraft
+      if (!route) { routeEl.textContent = ""; return; }
+      const o = route.origin?.iata_code || route.origin?.icao_code;
+      const d = route.destination?.iata_code || route.destination?.icao_code;
+      routeEl.textContent = (o && d) ? `${o} → ${d}` : "";
+    });
   }
   document.getElementById("d-close").addEventListener("click", () => { sheet.classList.remove("open"); selected = null; });
 
@@ -484,11 +570,15 @@
     headingAvailable = true;
   }
 
-  // smooth the noisy magnetometer toward the raw reading each frame
-  function smoothHeading() {
+  // smooth the noisy magnetometer toward the raw reading, at a rate tied to
+  // real elapsed time (not frames) so it looks the same at any frame rate —
+  // this is the same time-constant approach Google Maps uses for its compass.
+  const HEADING_TAU_MS = 400; // higher = smoother/slower to catch up
+  function smoothHeading(dtMs) {
     if (!headingAvailable) return;
     let diff = ((rawHeading - deviceHeading + 540) % 360) - 180; // shortest signed path
-    deviceHeading = (deviceHeading + diff * 0.15 + 360) % 360;
+    const alpha = 1 - Math.exp(-dtMs / HEADING_TAU_MS);
+    deviceHeading = (deviceHeading + diff * alpha + 360) % 360;
   }
 
   function bindOrientation() {
@@ -506,10 +596,15 @@
       }).catch(() => false);
     }
     // Android / others: try absolute first, then generic
+    // Only bind ONE event type. Binding both "deviceorientationabsolute" and
+    // plain "deviceorientation" made the heading jump: the plain event's alpha
+    // is relative to wherever the device was pointed at page load, not true
+    // north, so the two sources disagreed and fought each other every frame.
     if ("ondeviceorientationabsolute" in window) {
       window.addEventListener("deviceorientationabsolute", onOrientation, true);
+    } else {
+      window.addEventListener("deviceorientation", onOrientation, true);
     }
-    window.addEventListener("deviceorientation", onOrientation, true);
     orientationBound = true;
     return Promise.resolve(true);
   }
@@ -549,13 +644,41 @@
     here.innerHTML = (placeName ? placeName + " · " : "") + '<button id="change-loc">change</button>';
     document.getElementById("change-loc")?.addEventListener("click", reopenGate);
     resize(); setStatus("live", "connecting…"); startPolling(); requestAnimationFrame(draw);
+    document.getElementById("daynight").style.display = "flex";
+    updateDayNight(); dayNightTimer = setInterval(updateDayNight, 60000);
   }
 
   function reopenGate() {
     clearInterval(pollTimer); pollTimer = null; me = null; planes.clear();
+    clearInterval(dayNightTimer); dayNightTimer = null;
     document.getElementById("count-n").textContent = "0";
+    document.getElementById("daynight").style.display = "none";
     document.getElementById("gate").classList.remove("hidden");
     setStatus("paused", "standby");
+  }
+
+  // ---------- day / night indicator ----------
+  // A coarse solar-altitude estimate (ignores the equation of time — a few
+  // minutes of error, irrelevant for a "is it light out" icon) so the sun/moon
+  // icon reflects the actual sun position at the user's location, not just a
+  // fixed hour cutoff.
+  let dayNightTimer = null;
+  function sunAltitudeDeg(lat, lon, date) {
+    const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 86400000);
+    const decl = 23.44 * Math.sin(toRad(360 / 365 * (dayOfYear - 81)));
+    const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+    const solarHours = utcHours + lon / 15; // apparent solar time from longitude
+    const hourAngle = (solarHours - 12) * 15;
+    const latR = toRad(lat), declR = toRad(decl), haR = toRad(hourAngle);
+    const sinAlt = Math.sin(latR) * Math.sin(declR) + Math.cos(latR) * Math.cos(declR) * Math.cos(haR);
+    return Math.asin(Math.max(-1, Math.min(1, sinAlt))) * 180 / Math.PI;
+  }
+  function updateDayNight() {
+    if (!me) return;
+    const isDay = sunAltitudeDeg(me.lat, me.lon, new Date()) > -0.83; // standard sunrise/sunset altitude
+    document.getElementById("dn-sun").style.display = isDay ? "block" : "none";
+    document.getElementById("dn-moon").style.display = isDay ? "none" : "block";
+    document.getElementById("dn-label").textContent = isDay ? "day" : "night";
   }
 
   // ---------- location gate ----------
