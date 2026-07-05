@@ -324,14 +324,17 @@
   // drawn upright ("billboarded"), so nothing gets flattened into
   // illegibility. A single-finger vertical drag on empty canvas space adjusts
   // `desiredTilt` directly (see the gesture handlers near the bottom).
-  // Max tilt is deliberately steep (75°, nearly edge-on) so the altitude
-  // stack below reads clearly — the flatter the ground plane, the more the
-  // vertical altitude-lift stands out as height rather than reading as just
-  // more ground distance. desiredTilt=1 hits this max; drag down toward 0 for
-  // a more top-down view.
-  const TILT_COS = Math.cos(toRad(75)); // 75° tilt when fully engaged — nearly edge-on
+  // The view opens at TILT_DEFAULT_DEG and can be dragged up to TILT_MAX_DEG
+  // (flatter / more edge-on, which makes the altitude-lift stack read more
+  // clearly as height) or down toward 0° (top-down).
+  const TILT_MAX_DEG = 72;      // steepest tilt the user can drag to
+  const TILT_DEFAULT_DEG = 52;  // tilt shown on load
+  const TILT_COS = Math.cos(toRad(TILT_MAX_DEG));
   const TILT_TAU_MS = 350;
-  let desiredTilt = 1;   // 0 = flat top-down, 1 = fully tilted — the target; 3D is the default view
+  // desiredTilt is 0..1 and linear in the vertical SQUISH, not in the angle,
+  // so invert cos() to find the fraction that yields TILT_DEFAULT_DEG:
+  //   squish = 1 - t*(1 - cos(max))  and we want squish = cos(default)
+  let desiredTilt = (1 - Math.cos(toRad(TILT_DEFAULT_DEG))) / (1 - Math.cos(toRad(TILT_MAX_DEG)));
   let tiltFactor = 0;    // smoothed current value, animates toward desiredTilt
   let currentSquish = 1; // 1 - tiltFactor*(1-TILT_COS), recomputed each frame
   function squishY(y) { return cy + (y - cy) * currentSquish; }
