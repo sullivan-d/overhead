@@ -84,6 +84,12 @@
     font-family: inherit; font-size: 11px; padding: 5px 9px; border-radius: 4px; cursor: pointer; transition: all 0.15s;
   }
   .rng-btns button.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
+  .eye-btn {
+    background: var(--panel); border: 1px solid var(--ring); color: var(--ink-soft);
+    font-family: inherit; font-size: 10px; letter-spacing: 0.04em; padding: 5px 9px;
+    border-radius: 4px; cursor: pointer; transition: all 0.15s; text-align: left; margin-top: 2px;
+  }
+  .eye-btn.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
 
   .compass-btn {
     position: absolute; bottom: 12px; right: 16px; z-index: 5;
@@ -170,6 +176,7 @@
       <button data-km="20">20</button>
       <span class="rng-label">km</span>
     </div>
+    <button class="eye-btn on" id="eye-btn" title="Show only aircraft large/close enough to actually see with the naked eye. Tap to also show ones too far or too small to spot.">👁 naked-eye only</button>
   </div>
   <div class="count"><div class="n" id="count-n">0</div><div class="l">aircraft</div></div>
 
@@ -277,6 +284,12 @@
   const RANGE_TAU_MS = 300;
   let planes = new Map();
   let selected = null, pollTimer = null, lastFetch = 0, dailyCount = 0;
+  // Naked-eye visibility filter: on by default, hides aircraft too small/far
+  // to actually spot in the sky (see nakedEyeVisible below). The radar plots
+  // by ground distance, but whether you can SEE a plane depends on slant
+  // distance + its physical size — so a ground-distance range ring alone
+  // shows planes you can't see. This filters those out.
+  let visibleOnly = true;
 
   // heading-up mode (device compass)
   let headingUp = false;          // toggle on/off
@@ -435,7 +448,10 @@
     const now = Date.now();
     let n = 0;
     for (const p of planes.values()) {
-      try { if (haversineKm(me, estimatedPosition(p, now)) <= rangeKm) n++; } catch { /* skip malformed */ }
+      try {
+        const gd = haversineKm(me, estimatedPosition(p, now));
+        if (gd <= rangeKm && (!visibleOnly || nakedEyeVisible(p, gd))) n++;
+      } catch { /* skip malformed */ }
     }
     return n;
   }
@@ -552,6 +568,35 @@
     return p.typeDesc || p.typeCode || "Aircraft";
   }
 
+  // ----- naked-eye visibility -----
+  // Whether a plane is big/close enough to actually spot with the unaided eye.
+  // The key quantity is APPARENT (angular) size = physical wingspan ÷ slant
+  // distance (true 3D line-of-sight, not ground distance). Below a few
+  // arc-minutes it's too small a speck to pick out of the sky. This is what
+  // makes a distant airliner visible (big) while a nearer light plane isn't
+  // (small), and it's the honest basis for "show what I can see, hide the
+  // rest" — a ground-distance range ring can't capture it on its own.
+  const ARCMIN_PER_RAD = 3437.75;
+  const NAKED_EYE_ARCMIN = 2.5; // apparent size below which we treat a plane as unspottable (tunable)
+  // Rough wingspan (or rotor diameter) in metres, from the friendly-type
+  // bucket, with a widebody bump for the big long-haul jets.
+  const WIDEBODY_RE = /7[45]7|767|777|787|a3[345]0|a380|md-?11|dc-?10|il-?96|747/i;
+  function wingspanM(p) {
+    const label = friendlyType(p);
+    if (label === "Commercial Airliner") return WIDEBODY_RE.test(p.typeDesc || p.typeCode || "") ? 60 : 34;
+    if (label === "Private Jet") return 18;
+    if (label === "Helicopter") return 14;
+    if (label === "Drone") return 2;
+    if (label === "Airship") return 30;
+    return 11; // small hobby plane / unknown — assume a light single
+  }
+  function nakedEyeVisible(p, groundDistKm) {
+    const slantKm = Math.hypot(groundDistKm, (p.alt || 0) / 1000);
+    if (slantKm <= 0.001) return true; // essentially on top of you
+    const arcmin = (wingspanM(p) / (slantKm * 1000)) * ARCMIN_PER_RAD;
+    return arcmin >= NAKED_EYE_ARCMIN;
+  }
+
   const compassNeedle = document.getElementById("compass-needle");
   let lastDrawTs = null;
   function draw(ts) {
@@ -584,7 +629,9 @@
     for (const p of planes.values()) {
       try {
         const proj = project(estimatedPosition(p, now));
-        if (proj.dist <= displayRangeKm * RANGE_MARGIN) visible.push({ p, proj });
+        if (proj.dist > displayRangeKm * RANGE_MARGIN) continue;
+        if (visibleOnly && !nakedEyeVisible(p, proj.dist)) continue; // too small/far to actually see
+        visible.push({ p, proj });
       } catch (e) { console.warn("skipped projecting aircraft", p.icao, e); }
     }
 
@@ -815,6 +862,8 @@
     for (const p of planes.values()) {
       try {
         const proj = project(estimatedPosition(p, now));
+        if (proj.dist > displayRangeKm * RANGE_MARGIN) continue;      // not drawn — off range
+        if (visibleOnly && !nakedEyeVisible(p, proj.dist)) continue;  // not drawn — filtered out
         // must match the floating billboarded position planes are actually drawn at
         const iconY = squishY(proj.y) - altitudeLiftPx(p.alt);
         const d = Math.hypot(proj.x - px, iconY - py);
@@ -984,6 +1033,14 @@
     // project()) eases toward it over subsequent frames so rings and
     // aircraft positions animate rather than snap
     updateCountDisplay(); poll();
+  });
+
+  const eyeBtn = document.getElementById("eye-btn");
+  eyeBtn.addEventListener("click", () => {
+    visibleOnly = !visibleOnly;
+    eyeBtn.classList.toggle("on", visibleOnly);
+    eyeBtn.textContent = visibleOnly ? "👁 naked-eye only" : "👁 show all";
+    updateCountDisplay();
   });
 
   // ---------- compass / heading-up ----------
