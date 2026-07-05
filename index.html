@@ -378,6 +378,16 @@
     const ang = toRad(brg - 90 - displayHeading());
     return { x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang), dist };
   }
+  // Pixel radius of range ring i (1, 2, or 3 — thirds of the selected range),
+  // using the exact same distance->pixel formula as project(). Ring i always
+  // represents the real-world distance `rangeKm * i / 3` (the FINAL/target
+  // range, not the animating one), so its label can show that number
+  // immediately — but its drawn PIXEL position moves as displayRangeKm eases
+  // toward rangeKm, since that's the term this shares with project(). That's
+  // what makes the range rings themselves visibly shrink/grow into place
+  // during a range switch, in lockstep with aircraft repositioning, instead
+  // of only the label text changing while the rings sit frozen at R*i/3.
+  function ringRadiusPx(i) { return ((rangeKm * i) / 3 / displayRangeKm) * R; }
 
   // The rotation currently applied to the scene. currentDisplayHeading is a
   // smoothed value that always eases toward its target (the device compass
@@ -569,7 +579,7 @@
     ctx.lineWidth = 1;
     for (let i = 1; i <= 3; i++) {
       ctx.strokeStyle = i === 3 ? theme.ringMajor : theme.ringMinor;
-      ctx.beginPath(); ctx.arc(cx, cy, (R * i) / 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, ringRadiusPx(i), 0, Math.PI * 2); ctx.stroke();
     }
     ctx.strokeStyle = theme.crosshair;
     ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
@@ -608,7 +618,7 @@
     // same idea as how map pins/labels stay readable in a tilted 3D map.
     ctx.fillStyle = theme.rangeLabel; ctx.font = "9px ui-monospace, monospace";
     for (let i = 1; i <= 3; i++) {
-      ctx.fillText(Math.round((displayRangeKm * i) / 3) + "km", cx + 3, squishY(cy - (R * i) / 3) + 11);
+      ctx.fillText(Math.round((rangeKm * i) / 3) + "km", cx + 3, squishY(cy - ringRadiusPx(i)) + 11);
     }
 
     ctx.fillStyle = theme.cardinal; ctx.font = "bold 11px ui-monospace, monospace";
@@ -806,17 +816,29 @@
   //
   // The gesture LOCKS into either "tilt" or "rotate" once one of the two
   // signals clears a threshold, rather than applying both simultaneously
-  // every move event. Natural two-finger movement is never purely vertical
-  // or purely rotational — without locking, an attempted twist also drags
-  // the tilt around and vice versa, which is what made this "hard to move"
-  // before: the two gestures fought each other on every frame instead of
-  // picking one and committing to it for the rest of the touch.
+  // every move event — otherwise an attempted twist also drags the tilt
+  // around and vice versa, since real two-finger movement is never purely
+  // vertical or purely rotational.
+  //
+  // The rotate signal is measured in *tangential pixels traveled*
+  // (arc length = finger separation × angle swept), not raw degrees. Raw
+  // degrees from atan2() of two touch points is wildly noise-sensitive when
+  // the fingers are close together on a phone screen: at a 50px separation,
+  // ordinary hand tremor of just 3px sideways already reads as ~3.4° — close
+  // enough to a naive threshold to falsely lock a straight tilt drag into
+  // "rotate". Scaling by the actual finger separation makes the same 3px of
+  // real-world jitter register as a tiny, threshold-safe arc at any finger
+  // spacing, while a deliberate twist still clears it easily. Below
+  // MIN_ROTATE_DIST_PX the two points are too close for the angle to mean
+  // anything at all, so rotate is disabled for that gesture entirely.
   const activeTouches = new Map(); // pointerId -> {x, y}
-  let gesture = null;              // {startAngle, startCentroidY, startTilt, startRotation, mode}
+  let gesture = null;              // {startAngle, startCentroidY, startDist, startTilt, startRotation, mode}
   let singleTouch = null;          // {id, x0, y0, moved}
   const angleBetween = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
-  const ROTATE_LOCK_DEG = 10; // twist past this many degrees to lock into "rotate"
-  const TILT_LOCK_PX = 16;    // drag past this many px to lock into "tilt"
+  const MIN_ROTATE_DIST_PX = 40; // fingers must start at least this far apart to rotate at all
+  const ROTATE_LOCK_ARC_PX = 12; // tangential travel past this many px locks into "rotate"
+  const TILT_LOCK_PX = 14;       // vertical drag past this many px locks into "tilt"
+  const TILT_GAIN_PX = 110;      // px of two-finger drag for the full 0..1 tilt range
 
   cv.addEventListener("pointerdown", (e) => {
     const hint = document.getElementById("hint"); if (hint) hint.style.opacity = "0";
@@ -827,6 +849,7 @@
       gesture = {
         startAngle: angleBetween(pts[0], pts[1]),
         startCentroidY: (pts[0].y + pts[1].y) / 2,
+        startDist: Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y),
         startTilt: desiredTilt,
         startRotation: manualRotation,
         mode: null
@@ -846,9 +869,11 @@
       const centroidY = (pts[0].y + pts[1].y) / 2;
       const dy = gesture.startCentroidY - centroidY; // fingers moving up = more tilt
       let dAngle = ((angle - gesture.startAngle + 540) % 360) - 180; // shortest signed path
+      const rotateEligible = gesture.startDist > MIN_ROTATE_DIST_PX;
+      const arcPx = gesture.startDist * toRad(dAngle);
 
       if (!gesture.mode) {
-        if (Math.abs(dAngle) > ROTATE_LOCK_DEG) {
+        if (rotateEligible && Math.abs(arcPx) > ROTATE_LOCK_ARC_PX) {
           gesture.mode = "rotate";
           // A rotate gesture takes manual control of rotation. If heading-up
           // was driving rotation, hand off from wherever the compass
@@ -870,7 +895,7 @@
       }
 
       if (gesture.mode === "tilt") {
-        desiredTilt = Math.max(0, Math.min(1, gesture.startTilt + dy / 150));
+        desiredTilt = Math.max(0, Math.min(1, gesture.startTilt + dy / TILT_GAIN_PX));
       } else if (gesture.mode === "rotate") {
         manualRotation = (gesture.startRotation + dAngle + 360) % 360;
       }
