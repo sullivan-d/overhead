@@ -807,135 +807,76 @@
     return best;
   }
 
-  // ---------- touch gestures: tap to select, two-finger tilt + rotate ----------
-  // Two fingers on empty canvas space drive the 3D view, the same convention
-  // as Google Maps: dragging both fingers vertically changes the tilt angle
-  // (desiredTilt), and twisting them around each other rotates the scene
-  // (manualRotation). A single finger that never becomes a second touch and
-  // doesn't move far is treated as a tap-to-select.
-  //
-  // The gesture picks either "tilt" or "rotate" based on whichever signal is
-  // currently dominant, rather than applying both simultaneously every move
-  // event — real two-finger movement is never purely vertical or purely
-  // rotational, so without arbitration the two gestures fight each other.
-  //
-  // Critically, the choice is RECOVERABLE, not a one-shot permanent lock: an
-  // earlier version locked forever on the first threshold crossed, so if the
-  // very first bit of motion in an intended tilt drag read as a hair of
-  // rotation, tilt became completely unreachable for the rest of that touch
-  // no matter how much further you dragged — which is exactly what made
-  // going from flat back to 3D feel "impossible". Now the active mode can
-  // switch mid-gesture if the OTHER signal becomes clearly (MODE_SWITCH_
-  // MARGIN×) more dominant than the current one, re-baselining cleanly so
-  // the switch itself doesn't jump. Ties are biased toward tilt, since it's
-  // both the more commonly wanted gesture and the one that was losing.
-  //
-  // The rotate signal is measured in *tangential pixels traveled*
-  // (arc length = finger separation × angle swept), not raw degrees — raw
-  // degrees from atan2() of two touch points is wildly noise-sensitive when
-  // the fingers are close together, since a few px of hand tremor reads as
-  // several degrees at typical finger spacing. Below MIN_ROTATE_DIST_PX the
-  // two points are too close for the angle to mean anything at all, so
-  // rotate is disabled for that gesture entirely.
-  const activeTouches = new Map(); // pointerId -> {x, y}
-  let gesture = null;              // {startAngle, startCentroidY, startDist, startTilt, startRotation, mode}
-  let singleTouch = null;          // {id, x0, y0, moved}
-  const angleBetween = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
-  const MIN_ROTATE_DIST_PX = 55;  // fingers must start well spread out to rotate at all
-  const ROTATE_LOCK_ARC_PX = 16;  // tangential travel past this many px can engage "rotate"
-  const TILT_LOCK_PX = 6;         // vertical drag past this many px can engage "tilt" — deliberately low
-  const TILT_GAIN_PX = 70;        // px of two-finger drag for the full 0..1 tilt range — high sensitivity
-  const MODE_SWITCH_MARGIN = 1.4; // how much more dominant the other signal must be to steal an active lock
+  // ---------- touch: tap to select, single-finger drag to orbit ----------
+  // Three rounds of two-finger tilt+rotate tuning (noisy angle-between-two-
+  // points detection, permanent-lock bugs, arbitration thresholds) never
+  // stopped it from "fighting". Replaced entirely with a single-finger drag:
+  // horizontal movement rotates, vertical movement tilts, both read directly
+  // off ONE point's dx/dy. There's no ambiguity to arbitrate — a diagonal
+  // drag is supposed to do both at once, proportionally, which is exactly
+  // what independent axes give for free. A touch that starts ON an aircraft
+  // (hitTest positive) is reserved for tap-to-select and never orbits, even
+  // if it moves; a touch starting on empty space orbits as soon as it
+  // records any vertical movement, or (past a small threshold, to avoid
+  // killing heading-up from a stray px of horizontal noise) horizontal
+  // movement. A touch on empty space that never moves does nothing.
+  let orbit = null;         // {id, x0, startRotation, startTilt, rotating}
+  let tapCandidate = null;  // {id, x0, y0, hitIcao, moved}
+  const ROTATE_ENGAGE_PX = 8;      // horizontal drag past this many px takes over rotation
+  const ROTATE_GAIN_DEG_PER_PX = 0.4; // degrees of rotation per px of horizontal drag
+  const TILT_GAIN_PX = 70;         // px of vertical drag for the full 0..1 tilt range
 
   cv.addEventListener("pointerdown", (e) => {
+    if (orbit || tapCandidate) return; // one active touch/drag at a time
     const hint = document.getElementById("hint"); if (hint) hint.style.opacity = "0";
     cv.setPointerCapture(e.pointerId);
-    activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (activeTouches.size === 2) {
-      const pts = [...activeTouches.values()];
-      gesture = {
-        startAngle: angleBetween(pts[0], pts[1]),
-        startCentroidY: (pts[0].y + pts[1].y) / 2,
-        startDist: Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y),
-        startTilt: desiredTilt,
-        startRotation: manualRotation,
-        mode: null
-      };
-      singleTouch = null;
-    } else if (activeTouches.size === 1) {
-      singleTouch = { id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false };
+    const rect = cv.getBoundingClientRect();
+    const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit) {
+      tapCandidate = { id: e.pointerId, x0: e.clientX, y0: e.clientY, hitIcao: hit, moved: false };
+    } else {
+      orbit = { id: e.pointerId, x0: e.clientX, y0: e.clientY, startRotation: manualRotation, startTilt: desiredTilt, rotating: false };
     }
   });
 
   cv.addEventListener("pointermove", (e) => {
-    if (!activeTouches.has(e.pointerId)) return;
-    activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (activeTouches.size === 2 && gesture) {
-      const pts = [...activeTouches.values()];
-      const angle = angleBetween(pts[0], pts[1]);
-      const centroidY = (pts[0].y + pts[1].y) / 2;
-      const dy = gesture.startCentroidY - centroidY; // fingers moving up = more tilt
-      const dAngle = ((angle - gesture.startAngle + 540) % 360) - 180; // shortest signed path
-      const rotateEligible = gesture.startDist > MIN_ROTATE_DIST_PX;
-      const arcPx = rotateEligible ? gesture.startDist * toRad(dAngle) : 0;
-      const tiltMag = Math.abs(dy), rotateMag = Math.abs(arcPx);
+    if (orbit && e.pointerId === orbit.id) {
+      const dx = e.clientX - orbit.x0;
+      const dy = orbit.y0 - e.clientY; // dragging up = more tilt
 
-      let nextMode = gesture.mode;
-      if (!nextMode) {
-        if (rotateMag > ROTATE_LOCK_ARC_PX && rotateMag > tiltMag) nextMode = "rotate";
-        else if (tiltMag > TILT_LOCK_PX) nextMode = "tilt";
-      } else if (nextMode === "rotate" && tiltMag > TILT_LOCK_PX && tiltMag > rotateMag * MODE_SWITCH_MARGIN) {
-        nextMode = "tilt";
-      } else if (nextMode === "tilt" && rotateMag > ROTATE_LOCK_ARC_PX && rotateMag > tiltMag * MODE_SWITCH_MARGIN) {
-        nextMode = "rotate";
-      }
-
-      if (nextMode !== gesture.mode) {
-        // A rotate gesture takes manual control of rotation. If heading-up
-        // was driving rotation, hand off from wherever the compass
-        // currently has the view pointed (no jump), and turn it off — the
-        // user has to tap the compass again to re-engage it, so it can't
-        // fight a live twist.
-        if (nextMode === "rotate" && headingUp) {
+      if (!orbit.rotating && Math.abs(dx) > ROTATE_ENGAGE_PX) {
+        orbit.rotating = true;
+        // A rotate drag takes manual control. If heading-up was driving
+        // rotation, hand off from wherever the compass currently has the
+        // view pointed (no jump) and turn it off — the user taps the
+        // compass again to re-engage it, so it can't fight a live drag.
+        if (headingUp) {
           headingUp = false;
           headingBtn.classList.remove("on");
-          manualRotation = deviceHeading;
+          orbit.startRotation = deviceHeading;
         }
-        // re-baseline from right now so switching mode mid-gesture doesn't
-        // jump — the next move event computes fresh deltas from here
-        gesture.startTilt = desiredTilt;
-        gesture.startRotation = manualRotation;
-        gesture.startAngle = angle;
-        gesture.startCentroidY = centroidY;
-        gesture.mode = nextMode;
-        return;
+        orbit.x0 = e.clientX; // re-baseline so the engage threshold itself isn't double-applied
       }
-
-      if (gesture.mode === "tilt") {
-        desiredTilt = Math.max(0, Math.min(1, gesture.startTilt + dy / TILT_GAIN_PX));
-      } else if (gesture.mode === "rotate") {
-        manualRotation = (gesture.startRotation + dAngle + 360) % 360;
+      if (orbit.rotating) {
+        manualRotation = (orbit.startRotation + (e.clientX - orbit.x0) * ROTATE_GAIN_DEG_PER_PX + 360) % 360;
       }
-    } else if (singleTouch && e.pointerId === singleTouch.id) {
-      if (Math.hypot(e.clientX - singleTouch.x0, e.clientY - singleTouch.y0) > 10) singleTouch.moved = true;
+      // tilt always applies directly, no threshold — vertical drag has no
+      // conflicting gesture to guard against, so it can be fully sensitive
+      desiredTilt = Math.max(0, Math.min(1, orbit.startTilt + dy / TILT_GAIN_PX));
+    } else if (tapCandidate && e.pointerId === tapCandidate.id) {
+      if (Math.hypot(e.clientX - tapCandidate.x0, e.clientY - tapCandidate.y0) > 10) tapCandidate.moved = true;
     }
   });
 
-  function endTouch(e) {
-    if (!activeTouches.has(e.pointerId)) return;
-    activeTouches.delete(e.pointerId);
-    if (activeTouches.size < 2) gesture = null;
-    if (singleTouch && e.pointerId === singleTouch.id) {
-      if (!singleTouch.moved) {
-        const rect = cv.getBoundingClientRect();
-        const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
-        if (hit) { selected = hit; openSheet(); }
-      }
-      singleTouch = null;
+  function endPointer(e) {
+    if (orbit && e.pointerId === orbit.id) orbit = null;
+    if (tapCandidate && e.pointerId === tapCandidate.id) {
+      if (!tapCandidate.moved) { selected = tapCandidate.hitIcao; openSheet(); }
+      tapCandidate = null;
     }
   }
-  cv.addEventListener("pointerup", endTouch);
-  cv.addEventListener("pointercancel", endTouch);
+  cv.addEventListener("pointerup", endPointer);
+  cv.addEventListener("pointercancel", endPointer);
 
   const sheet = document.getElementById("sheet");
   const fmtAlt = m => m == null ? "—" : `${Math.round(m).toLocaleString("en-US")}<small> m</small>`;
