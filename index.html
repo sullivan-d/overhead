@@ -173,7 +173,7 @@
 
 <div class="gate" id="gate">
   <h1>Over<b>head</b></h1>
-  <p>A live radar of the aircraft in your sky. No sign-up, no key. Data from the open <a href="https://adsb.fi" target="_blank" rel="noopener" style="color:var(--sweep)">adsb.fi</a> network.</p>
+  <p>A live radar of the aircraft in your sky. No sign-up, no key. Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.</p>
   <button class="primary" id="gate-btn">Use my location</button>
 
   <div class="addr-or" id="addr-or" style="display:none">or enter an address</div>
@@ -194,11 +194,12 @@
 
   const POLL_MS = 30000;
   const RANGE_KM_DEFAULT = 50;
-  // adsb.fi open data — keyless, browser-friendly, ADSBExchange v2 format.
-  // Returns aircraft within a radius (nautical miles, max 250) of a point,
-  // including the aircraft type inline, so no separate type lookup is needed.
+  // airplanes.live open data — keyless, sends Access-Control-Allow-Origin so the
+  // browser can call it directly (adsb.fi and OpenSky don't — verified 2026-07).
+  // ADSBExchange v2 format: aircraft within a radius (nautical miles, max 250)
+  // of a point, type inline, so no separate lookup is needed.
   // Please keep the attribution link in the footer (their terms ask for it).
-  const ADSBFI = "https://opendata.adsb.fi/api/v3/lat/";
+  const API = "https://api.airplanes.live/v2/point/";
   const NOMINATIM = "https://nominatim.openstreetmap.org/search";
   const NM_PER_KM = 0.539957;
 
@@ -262,7 +263,7 @@
     if (!me || document.hidden) return;
     // radius query: a bit larger than the visible range, in nautical miles, capped at 250
     const distNm = Math.min(Math.ceil(rangeKm * 1.15 * NM_PER_KM), 250);
-    const url = `${ADSBFI}${me.lat.toFixed(4)}/lon/${me.lon.toFixed(4)}/dist/${distNm}`;
+    const url = `${API}${me.lat.toFixed(4)}/${me.lon.toFixed(4)}/${distNm}`;
     try {
       const res = await fetch(url, { cache: "no-store" });
       dailyCount++;
@@ -445,7 +446,7 @@
     const p = planes.get(selected);
     if (!p) { sheet.classList.remove("open"); return; }
     document.getElementById("d-call").textContent = p.call;
-    // type is delivered inline by adsb.fi — no async lookup
+    // type is delivered inline by airplanes.live — no async lookup
     const parts = [];
     if (p.typeDesc) parts.push(p.typeDesc);          // e.g. "Airbus A320"
     else if (p.typeCode) parts.push(p.typeCode);     // fallback ICAO code e.g. "A320"

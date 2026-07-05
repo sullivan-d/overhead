@@ -4,7 +4,7 @@ A self-contained web app that shows aircraft flying near you on an animated rada
 No accounts, no API keys, no paid services. No build step.
 
 ## Data sources (all free, no auth)
-- **adsb.fi** — live aircraft positions + type, keyless (radius query, ADSBExchange v2 format)
+- **airplanes.live** — live aircraft positions + type, keyless (radius query, ADSBExchange v2 format)
 - **OpenStreetMap Nominatim** — address geocoding (the location fallback)
 
 ## Files
@@ -51,8 +51,8 @@ Then visit `http://<pi-ip>:8080` from your phone on the same WiFi.
   radar stays north-up.
 
 ## Rate limits & battery
-- Polls adsb.fi every **30 s** (their limit is ~1 request/second, so we are well under),
+- Polls airplanes.live every **30 s** (their limit is ~1 request/second, so we are well under),
   The status bar shows a live `req` counter.
 - Polling **stops the instant the app is hidden** (tab switch, lock, minimize) via the
   Page Visibility API, and resumes when visible. Nothing runs in the background.
-- The service worker explicitly does **not** cache adsb.fi/Nominatim — live data is always fresh.
+- The service worker explicitly does **not** cache airplanes.live/Nominatim — live data is always fresh.

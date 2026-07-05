@@ -49,11 +49,11 @@ Share the URL with anyone — they install it the same way.
 
 ## Updating later
 Edit a file and commit (or re-upload). Pages redeploys in ~1 minute.
-The service worker cache is versioned (`overhead-v1` in `sw.js`); if you make
+The service worker cache is versioned (`overhead-v3` in `sw.js`); if you make
 big changes and want to force everyone to refresh, bump it to `overhead-v2`.
 
 ## Reminders
-- Live aircraft data always comes from adsb.fi over the internet — that part
+- Live aircraft data always comes from airplanes.live over the internet — that part
   can't be offline. The app *shell* works offline once loaded (service worker).
-- adsb.fi is rate-limited to ~1 request/second; we poll every 30s
+- airplanes.live is rate-limited to ~1 request/second; we poll every 30s
   and pauses when the tab is hidden.
