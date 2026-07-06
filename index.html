@@ -147,11 +147,13 @@
   .gate h1 { font-size: 17px; letter-spacing: 0.12em; font-weight: 700; text-transform: uppercase; }
   .gate h1 b { color: var(--sweep); }
   .gate p { font-size: 12.5px; color: var(--ink-soft); max-width: 320px; line-height: 1.7; }
+  /* deliberately a quiet footnote at the very bottom of the gate — a boxed
+     card above the button read as too prominent (Sullivan's feedback) */
   .gate-why {
-    font-size: 11px; color: var(--ink-soft); max-width: 320px; line-height: 1.65; text-align: left;
-    border: 1px solid var(--grid-line); border-radius: 8px; padding: 12px 14px;
+    font-size: 10px; color: var(--ink-faint); max-width: 320px; line-height: 1.6; text-align: left;
+    border-top: 1px solid var(--grid-line); padding-top: 12px; margin-top: 8px;
   }
-  .gate-why b { display: block; font-size: 9px; letter-spacing: 0.12em; color: var(--sweep); text-transform: uppercase; margin-bottom: 6px; }
+  .gate-why b { display: block; font-size: 8.5px; letter-spacing: 0.12em; color: var(--ink-soft); text-transform: uppercase; margin-bottom: 5px; }
   .gate button.primary { background: var(--sweep); color: var(--void); border: none; font-family: inherit; font-weight: 700; font-size: 13px; letter-spacing: 0.06em; padding: 13px 26px; border-radius: 6px; cursor: pointer; text-transform: uppercase; }
   .gate.hidden { display: none; }
   .gate-err { color: var(--hot); font-size: 11.5px; min-height: 16px; }
@@ -231,7 +233,7 @@
     <button class="units-btn" id="units-btn" title="Switch between everyday metric units (m, km/h) and the feet/knots used in aviation">units: m · km/h</button>
     <div class="sheet-links">
       <a id="link-community" target="_blank" rel="noopener">💬 community</a>
-      <a id="link-donate" target="_blank" rel="noopener">☕ support</a>
+      <a id="link-donate" target="_blank" rel="noopener">🤍 support</a>
     </div>
   </div>
 </div>
@@ -239,7 +241,6 @@
 <div class="gate" id="gate">
   <h1>Over<b>head</b></h1>
   <p>A live radar of the aircraft in your sky. No sign-up, no key. Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.</p>
-  <div class="gate-why"><b>Why location?</b>The radar centers on where you stand. Your position is used for one thing only — asking airplanes.live which aircraft are above you, straight from your browser. It's never stored and never sent anywhere else. Your browser will ask for permission first.</div>
   <button class="primary" id="gate-btn">📍 Use my location</button>
 
   <div class="addr-or">prefer not to? an address works too — no permission needed</div>
@@ -251,14 +252,23 @@
   </div>
   <ul class="addr-results" id="addr-results"></ul>
   <div class="gate-err" id="gate-err"></div>
+  <div class="gate-why"><b>Why location?</b>The radar centers on where you stand. Your position is used for one thing only — asking airplanes.live which aircraft are above you, straight from your browser. It's never stored and never sent anywhere else. Your browser will ask for permission first.</div>
 </div>
 
 <script>
 (() => {
   "use strict";
 
-  const POLL_MS = 30000;
+  // airplanes.live allows roughly ONE request per ~36s per IP (measured
+  // 2026-07-06: 30s gaps get 429'd, 36-40s gaps pass, and a violation starts
+  // a ~60s penalty window). Poll comfortably slower than that window — dead
+  // reckoning bridges the gap between real fixes anyway. Do NOT lower this
+  // back to 30s: that's what made the app look "offline" all the time.
+  const POLL_MS = 45000;
+  const RETRY_QUICK_MS = 8000;    // one fast retry after a FIRST failed fetch (network blip)
+  const FETCH_TIMEOUT_MS = 12000; // a hung fetch fails into the retry path instead of stalling
   const RANGE_KM_DEFAULT = 10;
+  const RANGE_KM_MAX = 20;        // keep in sync with the largest #rng button
 
   // Canvas drawing calls take literal color strings, not CSS variables, so
   // light/dark mode needs its own JS-side palette mirroring the CSS one
@@ -313,6 +323,8 @@
   const RANGE_TAU_MS = 300;
   let planes = new Map();
   let selected = null, pollTimer = null, lastFetch = 0, dailyCount = 0;
+  let failStreak = 0;       // consecutive failed polls (for retry pacing + status text)
+  let pollInFlight = false; // guards against overlapping polls on visibility flapping
   // Naked-eye visibility filter: on by default, hides aircraft too small/far
   // to actually spot in the sky (see nakedEyeVisible below). The radar plots
   // by ground distance, but whether you can SEE a plane depends on slant
@@ -486,21 +498,51 @@
   }
   function updateCountDisplay() { document.getElementById("count-n").textContent = countInRange(); }
 
+  // The "why is it always offline?" story (diagnosed 2026-07-06): the old 30s
+  // poll was FASTER than airplanes.live's real rate window (~36s), so routine
+  // polls got 429'd — and each 429 starts a ~60s penalty that made the NEXT
+  // poll fail too. Worse, the 429 response carries no CORS header, so the
+  // browser fetch rejects before the status code is readable: every rate
+  // limit surfaced as a generic "offline · retrying" even on a perfect
+  // connection. Hence: poll slower than the window (POLL_MS), never fire
+  // extra requests (fetch the widest range once, range switches just
+  // re-filter locally), self-schedule from the END of each attempt so
+  // timers can't stack, and back off on repeated failure — a fast second
+  // retry would land inside a penalty window and extend it.
   async function poll() {
-    if (!me || document.hidden) return;
-    // radius query: matches the render cutoff (RANGE_MARGIN), in nautical miles, capped at 250
-    const distNm = Math.min(Math.ceil(rangeKm * RANGE_MARGIN * NM_PER_KM), 250);
+    if (!me || document.hidden || pollInFlight) return;
+    pollInFlight = true;
+    clearTimeout(pollTimer); pollTimer = null; // collapse any queued run into this one
+    // always fetch the widest selectable range (NM, capped at the API's 250)
+    const distNm = Math.min(Math.ceil(RANGE_KM_MAX * RANGE_MARGIN * NM_PER_KM), 250);
     const url = `${API}${me.lat.toFixed(4)}/${me.lon.toFixed(4)}/${distNm}`;
+    let nextMs = POLL_MS;
     try {
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(url, {
+        cache: "no-store",
+        signal: AbortSignal.timeout ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined
+      });
       dailyCount++;
-      if (res.status === 429) { setStatus("error", "rate limit · waiting"); return; }
-      if (!res.ok) { setStatus("error", "network error " + res.status); return; }
+      // unreachable in browsers today — airplanes.live 429s lack the CORS
+      // header and reject as network errors before this line. Kept in case
+      // they ever fix that; the catch treats it the same way regardless.
+      if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
       ingest(data.ac || data.aircraft || []);
-      lastFetch = Date.now();
+      lastFetch = Date.now(); failStreak = 0;
       setStatus("live", `live · ${countInRange()} · req ${dailyCount}`);
-    } catch { setStatus("error", "offline · retrying"); }
+    } catch {
+      failStreak++;
+      // first failure: likely a phone-radio blip, retry quickly and call it
+      // "reconnecting". Repeated failures are as likely to be invisible
+      // 429s, so they wait the full interval (retrying faster would extend
+      // a rate-limit penalty rather than recover from it).
+      nextMs = failStreak === 1 ? RETRY_QUICK_MS : POLL_MS;
+      setStatus("error", failStreak === 1 ? "reconnecting…" : "offline · retrying");
+    } finally {
+      pollInFlight = false;
+      if (me && !document.hidden) pollTimer = setTimeout(poll, nextMs);
+    }
   }
 
   // ADSBExchange v2 alt_baro can be the string "ground" for aircraft on the runway
@@ -1138,10 +1180,12 @@
     const btn = e.target.closest("button[data-km]"); if (!btn) return;
     document.querySelectorAll("#rng button").forEach(b => b.classList.remove("on"));
     btn.classList.add("on"); rangeKm = +btn.dataset.km;
-    // count updates immediately to the new range; displayRangeKm (used by
-    // project()) eases toward it over subsequent frames so rings and
-    // aircraft positions animate rather than snap
-    updateCountDisplay(); poll();
+    // no fetch here — every poll already covers RANGE_KM_MAX, so switching
+    // range just re-filters what's stored (an extra request per tap used to
+    // trip airplanes.live's rate limiter). The count updates immediately;
+    // displayRangeKm (used by project()) eases toward the new range over
+    // subsequent frames so rings and aircraft animate rather than snap.
+    updateCountDisplay();
   });
 
   const eyeBtn = document.getElementById("eye-btn");
@@ -1244,15 +1288,21 @@
   });
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) { clearInterval(pollTimer); pollTimer = null; setStatus("paused", "paused · tab hidden"); }
+    if (document.hidden) { clearTimeout(pollTimer); pollTimer = null; setStatus("paused", "paused · tab hidden"); }
     else if (me) startPolling();
   });
 
   function startPolling() {
-    if (pollTimer) return;
-    if (Date.now() - lastFetch > POLL_MS) poll();
-    else setStatus("live", `live · ${countInRange()}`);
-    pollTimer = setInterval(poll, POLL_MS);
+    if (pollTimer || pollInFlight) return;
+    // resume the cadence where it left off: poll now only if a full interval
+    // has already passed while hidden/locked — an immediate poll on every
+    // unlock would hit the rate limiter when the phone flips on/off quickly
+    const elapsed = Date.now() - lastFetch;
+    if (elapsed >= POLL_MS) poll();
+    else {
+      setStatus("live", `live · ${countInRange()}`);
+      pollTimer = setTimeout(poll, POLL_MS - elapsed);
+    }
   }
 
   function begin(lat, lon, name) {
@@ -1266,7 +1316,7 @@
   }
 
   function reopenGate() {
-    clearInterval(pollTimer); pollTimer = null; me = null; planes.clear();
+    clearTimeout(pollTimer); pollTimer = null; failStreak = 0; me = null; planes.clear();
     clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
     document.getElementById("count-n").textContent = "0";
     document.getElementById("gate").classList.remove("hidden");
