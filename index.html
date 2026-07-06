@@ -120,6 +120,7 @@
     position: absolute; left: 0; right: 0; bottom: 0; background: var(--panel);
     border-top: 1px solid var(--sweep); border-radius: 16px 16px 0 0; padding: 18px 20px 24px;
     transform: translateY(110%); transition: transform 0.32s cubic-bezier(.2,.8,.2,1); z-index: 20; box-shadow: 0 -12px 40px #0008;
+    touch-action: none; /* vertical swipes must reach the JS drag-to-dismiss, not scroll the page */
   }
   .sheet.open { transform: translateY(0); }
   .sheet-grip { width: 38px; height: 4px; background: var(--ring); border-radius: 2px; margin: 0 auto 14px; }
@@ -132,11 +133,25 @@
   .stat .k { font-size: 9px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
   .stat .v { font-size: 17px; font-weight: 600; margin-top: 3px; }
   .stat .v small { font-size: 10px; color: var(--ink-soft); font-weight: 400; }
+  .sheet-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--grid-line); }
+  .units-btn {
+    background: none; border: 1px solid var(--ring); color: var(--ink-soft); font-family: inherit;
+    font-size: 10px; letter-spacing: 0.06em; padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap;
+  }
+  .sheet-links { display: flex; gap: 14px; }
+  .sheet-links a { font-size: 10px; color: var(--ink-faint); text-decoration: none; letter-spacing: 0.05em; white-space: nowrap; }
+  .sheet-links a[href] { color: var(--ink-soft); }
+  .sheet-links a[href]:hover { color: var(--sweep); }
 
-  .gate { position: absolute; inset: 0; background: var(--void); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 30px; z-index: 40; }
+  .gate { position: absolute; inset: 0; background: var(--void); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 30px; z-index: 40; overflow-y: auto; }
   .gate h1 { font-size: 17px; letter-spacing: 0.12em; font-weight: 700; text-transform: uppercase; }
   .gate h1 b { color: var(--sweep); }
   .gate p { font-size: 12.5px; color: var(--ink-soft); max-width: 320px; line-height: 1.7; }
+  .gate-why {
+    font-size: 11px; color: var(--ink-soft); max-width: 320px; line-height: 1.65; text-align: left;
+    border: 1px solid var(--grid-line); border-radius: 8px; padding: 12px 14px;
+  }
+  .gate-why b { display: block; font-size: 9px; letter-spacing: 0.12em; color: var(--sweep); text-transform: uppercase; margin-bottom: 6px; }
   .gate button.primary { background: var(--sweep); color: var(--void); border: none; font-family: inherit; font-weight: 700; font-size: 13px; letter-spacing: 0.06em; padding: 13px 26px; border-radius: 6px; cursor: pointer; text-transform: uppercase; }
   .gate.hidden { display: none; }
   .gate-err { color: var(--hot); font-size: 11.5px; min-height: 16px; }
@@ -212,15 +227,23 @@
     <div class="stat"><div class="k">country</div><div class="v" id="d-cty">—</div></div>
     <div class="stat"><div class="k">climb</div><div class="v" id="d-vr">—</div></div>
   </div>
+  <div class="sheet-foot">
+    <button class="units-btn" id="units-btn" title="Switch between everyday metric units (m, km/h) and the feet/knots used in aviation">units: m · km/h</button>
+    <div class="sheet-links">
+      <a id="link-community" target="_blank" rel="noopener">💬 community</a>
+      <a id="link-donate" target="_blank" rel="noopener">☕ support</a>
+    </div>
+  </div>
 </div>
 
 <div class="gate" id="gate">
   <h1>Over<b>head</b></h1>
   <p>A live radar of the aircraft in your sky. No sign-up, no key. Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.</p>
-  <button class="primary" id="gate-btn">Use my location</button>
+  <div class="gate-why"><b>Why location?</b>The radar centers on where you stand. Your position is used for one thing only — asking airplanes.live which aircraft are above you, straight from your browser. It's never stored and never sent anywhere else. Your browser will ask for permission first.</div>
+  <button class="primary" id="gate-btn">📍 Use my location</button>
 
-  <div class="addr-or" id="addr-or" style="display:none">or enter an address</div>
-  <div class="addr-block" id="addr-block">
+  <div class="addr-or">prefer not to? an address works too — no permission needed</div>
+  <div class="addr-block show" id="addr-block">
     <div class="addr-row">
       <input id="addr-input" type="text" placeholder="City, street, or place" autocomplete="off">
       <button class="go" id="addr-go">Go</button>
@@ -228,7 +251,6 @@
   </div>
   <ul class="addr-results" id="addr-results"></ul>
   <div class="gate-err" id="gate-err"></div>
-  <button class="primary" id="addr-toggle" style="background:none;color:var(--ink-soft);border:1px solid var(--ring);font-weight:400;text-transform:none;letter-spacing:0;padding:9px 18px;font-size:11.5px">Location not working? Enter an address</button>
 </div>
 
 <script>
@@ -267,6 +289,13 @@
   // Please keep the attribution link in the footer (their terms ask for it).
   const API = "https://api.airplanes.live/v2/point/";
   const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+  // Community + donation links shown at the very bottom of the detail sheet.
+  // Both destinations are still TBD — paste the real URLs here (e.g. a
+  // Telegram group invite and a Ko-fi page) once they exist. An empty string
+  // keeps the link visible but inert ("coming soon" tooltip, nothing to tap
+  // through to), so the layout can be judged before the destinations are live.
+  const COMMUNITY_URL = ""; // e.g. "https://t.me/…"
+  const DONATE_URL = "";    // e.g. "https://ko-fi.com/…"
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -953,9 +982,26 @@
   cv.addEventListener("pointercancel", endPointer);
 
   const sheet = document.getElementById("sheet");
-  const fmtAlt = m => m == null ? "—" : `${Math.round(m).toLocaleString("en-US")}<small> m</small>`;
-  const fmtSpd = v => v == null ? "—" : `${Math.round(v * 3.6)}<small> km/h</small>`;
-  const fmtVr = v => v == null ? "—" : (Math.abs(v) < 0.5 ? "level" : (v > 0 ? "▲ " : "▼ ") + `${Math.abs(Math.round(v * 60))}<small> m/min</small>`);
+
+  // Everything is stored internally in SI (m, m/s); the sheet formats on the
+  // fly in either everyday metric (the default — Sullivan's explicit choice,
+  // don't revert) or the feet/knots aviation actually uses, toggled by the
+  // units button in the sheet footer and persisted across visits.
+  const UNITS_KEY = "overhead-units";
+  const M_PER_FT = 0.3048, MS_PER_KT = 0.514444;
+  let units = localStorage.getItem(UNITS_KEY) === "aviation" ? "aviation" : "metric";
+  const fmtAlt = m => m == null ? "—" : (units === "metric"
+    ? `${Math.round(m).toLocaleString("en-US")}<small> m</small>`
+    : `${Math.round(m / M_PER_FT).toLocaleString("en-US")}<small> ft</small>`);
+  const fmtSpd = v => v == null ? "—" : (units === "metric"
+    ? `${Math.round(v * 3.6)}<small> km/h</small>`
+    : `${Math.round(v / MS_PER_KT)}<small> kt</small>`);
+  const fmtVr = v => v == null ? "—" : (Math.abs(v) < 0.5 ? "level" : (v > 0 ? "▲ " : "▼ ") + (units === "metric"
+    ? `${Math.abs(Math.round(v * 60))}<small> m/min</small>`
+    : `${Math.abs(Math.round(v * 60 / M_PER_FT))}<small> ft/min</small>`));
+  const fmtDist = km => units === "metric"
+    ? `${km.toFixed(1)}<small> km</small>`
+    : `${(km * NM_PER_KM).toFixed(1)}<small> NM</small>`;
 
   // Route (origin -> destination) isn't in the ADS-B feed itself; adsbdb.com
   // maps a flight's callsign to its filed route, keyless and CORS-enabled
@@ -1009,7 +1055,7 @@
     document.getElementById("d-alt").innerHTML = fmtAlt(p.alt);
     document.getElementById("d-spd").innerHTML = fmtSpd(p.vel);
     document.getElementById("d-hdg").innerHTML = `${Math.round(p.track)}<small>°</small>`;
-    document.getElementById("d-dist").innerHTML = `${haversineKm(me, estimatedPosition(p, Date.now())).toFixed(1)}<small> km</small>`;
+    document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(p, Date.now())));
     document.getElementById("d-cty").textContent = p.country;
     document.getElementById("d-vr").innerHTML = fmtVr(p.vrate);
 
@@ -1024,6 +1070,69 @@
     });
   }
   document.getElementById("d-close").addEventListener("click", closeSheet);
+
+  // ---------- sheet footer: units toggle + community/donate links ----------
+  const unitsBtn = document.getElementById("units-btn");
+  function updateUnitsBtn() { unitsBtn.textContent = units === "metric" ? "units: m · km/h" : "units: ft · kt"; }
+  unitsBtn.addEventListener("click", () => {
+    units = units === "metric" ? "aviation" : "metric";
+    localStorage.setItem(UNITS_KEY, units);
+    updateUnitsBtn();
+    if (selected) renderSheet(); // re-format the open sheet in place
+  });
+  updateUnitsBtn();
+  for (const [id, url] of [["link-community", COMMUNITY_URL], ["link-donate", DONATE_URL]]) {
+    const a = document.getElementById(id);
+    if (url) a.href = url;
+    else a.title = "coming soon"; // no href → not clickable, dimmer style
+  }
+
+  // ---------- sheet: swipe down to dismiss ----------
+  // Dragging the sheet downward follows the finger 1:1; releasing past the
+  // threshold closes it, releasing short of it springs it back. The drag only
+  // engages after a few px of downward travel so ordinary taps on the sheet's
+  // buttons/links still land; once engaged, the release must NOT also fire a
+  // click on whatever button the drag happened to start on — a one-shot
+  // capture-phase click suppressor swallows exactly that click.
+  const SHEET_DISMISS_PX = 70;  // release below this springs back, past it closes
+  const SHEET_ENGAGE_PX = 12;   // downward travel before the sheet starts following
+  let sheetDrag = null;         // {id, y0, dy, engaged}
+  let suppressSheetClick = false;
+  sheet.addEventListener("pointerdown", (e) => {
+    if (sheetDrag) return; // one drag at a time; a second finger is ignored
+    sheetDrag = { id: e.pointerId, y0: e.clientY, dy: 0, engaged: false };
+  });
+  sheet.addEventListener("pointermove", (e) => {
+    if (!sheetDrag || e.pointerId !== sheetDrag.id) return;
+    sheetDrag.dy = Math.max(0, e.clientY - sheetDrag.y0); // only downward drags count
+    if (!sheetDrag.engaged && sheetDrag.dy > SHEET_ENGAGE_PX) {
+      sheetDrag.engaged = true;
+      try { sheet.setPointerCapture(e.pointerId); } catch { /* synthetic events can't be captured */ }
+      sheet.style.transition = "none"; // follow the finger directly, no easing lag
+    }
+    if (sheetDrag.engaged) sheet.style.transform = `translateY(${sheetDrag.dy}px)`;
+  });
+  function endSheetDrag(e) {
+    if (!sheetDrag || e.pointerId !== sheetDrag.id) return;
+    const { engaged, dy } = sheetDrag;
+    sheetDrag = null;
+    if (!engaged) return;
+    if (e.type === "pointerup") {
+      suppressSheetClick = true;
+      setTimeout(() => { suppressSheetClick = false; }, 400); // safety: never eat a later, unrelated tap
+    }
+    // restore the CSS transition, then let the class drive the transform again:
+    // the animation runs from wherever the finger left the sheet, so both the
+    // spring-back and the dismissal continue smoothly from that exact spot
+    sheet.style.transition = "";
+    sheet.style.transform = "";
+    if (dy > SHEET_DISMISS_PX) closeSheet();
+  }
+  sheet.addEventListener("pointerup", endSheetDrag);
+  sheet.addEventListener("pointercancel", endSheetDrag);
+  sheet.addEventListener("click", (e) => {
+    if (suppressSheetClick) { e.stopPropagation(); e.preventDefault(); suppressSheetClick = false; }
+  }, true);
 
   document.getElementById("rng").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-km]"); if (!btn) return;
@@ -1222,25 +1331,25 @@
   }
 
   // ---------- location gate ----------
-  const gate = document.getElementById("gate"), gateErr = document.getElementById("gate-err");
-  const addrBlock = document.getElementById("addr-block"), addrOr = document.getElementById("addr-or");
+  // The address entry is always visible as a first-class alternative (not
+  // hidden behind a "location not working?" toggle) — the gate explains WHY
+  // location is wanted before the browser's own permission prompt ever
+  // appears, and nobody is funneled into granting it.
+  const gateErr = document.getElementById("gate-err");
   const addrInput = document.getElementById("addr-input"), addrResults = document.getElementById("addr-results");
-
-  function showAddressFallback() { addrBlock.classList.add("show"); addrOr.style.display = "block"; document.getElementById("addr-toggle").style.display = "none"; addrInput.focus(); }
 
   document.getElementById("gate-btn").addEventListener("click", () => {
     gateErr.textContent = "locating…";
-    if (!navigator.geolocation) { gateErr.textContent = "geolocation unavailable on this device"; showAddressFallback(); return; }
+    if (!navigator.geolocation) { gateErr.textContent = "geolocation unavailable on this device — use the address box below"; addrInput.focus(); return; }
     navigator.geolocation.getCurrentPosition(
       pos => begin(pos.coords.latitude, pos.coords.longitude, "my location"),
       err => {
-        gateErr.textContent = err.code === 1 ? "location blocked — use an address instead" : "couldn't get location — use an address instead";
-        showAddressFallback();
+        gateErr.textContent = err.code === 1 ? "location blocked — use the address box below instead" : "couldn't get location — use the address box below instead";
+        addrInput.focus();
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
     );
   });
-  document.getElementById("addr-toggle").addEventListener("click", showAddressFallback);
 
   async function geocode() {
     const q = addrInput.value.trim();
