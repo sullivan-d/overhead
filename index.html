@@ -84,12 +84,8 @@
     font-family: inherit; font-size: 11px; padding: 5px 9px; border-radius: 4px; cursor: pointer; transition: all 0.15s;
   }
   .rng-btns button.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
-  .eye-btn {
-    background: var(--panel); border: 1px solid var(--ring); color: var(--ink-soft);
-    font-family: inherit; font-size: 10px; letter-spacing: 0.04em; padding: 5px 9px;
-    border-radius: 4px; cursor: pointer; transition: all 0.15s; text-align: left; margin-top: 2px;
-  }
-  .eye-btn.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
+  .rng-group { display: flex; flex-direction: column; gap: 6px; }
+  .rng-group.hidden { display: none; }
 
   .compass-btn {
     position: absolute; bottom: 12px; right: 16px; z-index: 5;
@@ -186,20 +182,26 @@
 
 <div class="stage">
   <div class="controls">
-    <span class="rng-label">range</span>
-    <div class="rng-btns" id="rng">
-      <button data-km="5">5</button>
-      <button data-km="10" class="on">10</button>
-      <button data-km="20">20</button>
-      <span class="rng-label">km</span>
+    <span class="rng-label">view</span>
+    <div class="rng-btns" id="view-btns">
+      <button data-view="map" class="on" title="Top-down radar: distance from you on the ground">map</button>
+      <button data-view="sky" title="Sky dome: where to look — straight up at the center, horizon at the edge">sky</button>
     </div>
-    <button class="eye-btn on" id="eye-btn" title="Show only aircraft large/close enough to actually see with the naked eye. Tap to also show ones too far or too small to spot.">👁 naked-eye only</button>
+    <div class="rng-group" id="rng-group">
+      <span class="rng-label">range</span>
+      <div class="rng-btns" id="rng">
+        <button data-km="5">5</button>
+        <button data-km="10" class="on">10</button>
+        <button data-km="20">20</button>
+        <span class="rng-label">km</span>
+      </div>
+    </div>
   </div>
   <div class="count"><div class="n" id="count-n">0</div><div class="l">aircraft</div></div>
 
   <canvas id="radar"></canvas>
   <div class="here" id="here"></div>
-  <button class="compass-btn" id="heading-btn" title="Tap to rotate the radar to the way you're facing">
+  <button class="compass-btn on" id="heading-btn" title="Compass: the view rotates to the way you're facing. Tap to switch back to north-up.">
     <svg viewBox="0 0 24 24" width="24" height="24">
       <circle cx="12" cy="12" r="10.5" fill="none" stroke="var(--ring)" stroke-width="1"/>
       <g id="compass-needle">
@@ -268,7 +270,14 @@
   const RETRY_QUICK_MS = 8000;    // one fast retry after a FIRST failed fetch (network blip)
   const FETCH_TIMEOUT_MS = 12000; // a hung fetch fails into the retry path instead of stalling
   const RANGE_KM_DEFAULT = 10;
-  const RANGE_KM_MAX = 20;        // keep in sync with the largest #rng button
+  // Fetch radius (every poll, both views). Wide enough that anything the
+  // naked-eye filter could EVER pass is already in the data: the biggest
+  // wingspan assumed is 60m (widebody), which at the 2.5 arc-min visibility
+  // cutoff is ~83km of slant range. So 85km covers the sky view's whole dome
+  // as well as every map range (max 20km) — and it's still exactly ONE
+  // request per poll; switching view or range only re-filters locally.
+  const FETCH_KM = 85;
+  const SKY_ICON_NORM_KM = 60;    // slant distance mapping to the smallest icon in sky view
 
   // Canvas drawing calls take literal color strings, not CSS variables, so
   // light/dark mode needs its own JS-side palette mirroring the CSS one
@@ -308,10 +317,9 @@
   const DONATE_URL = "";    // e.g. "https://ko-fi.com/…"
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
-  // How far beyond the displayed range ring to fetch AND render. Used for both
-  // so nothing counted in the header is silently excluded from the canvas —
-  // they used to differ (fetch 1.15x, render cutoff 1.06x), which meant some
-  // aircraft the counter included never appeared on screen.
+  // How far beyond the displayed range ring to render/hit-test in map view,
+  // so aircraft don't pop out exactly at the ring edge. (Fetching is no
+  // longer tied to this — see FETCH_KM above, which exceeds every range.)
   const RANGE_MARGIN = 1.1;
 
   let me = null, placeName = "", rangeKm = RANGE_KM_DEFAULT;
@@ -325,15 +333,26 @@
   let selected = null, pollTimer = null, lastFetch = 0, dailyCount = 0;
   let failStreak = 0;       // consecutive failed polls (for retry pacing + status text)
   let pollInFlight = false; // guards against overlapping polls on visibility flapping
-  // Naked-eye visibility filter: on by default, hides aircraft too small/far
-  // to actually spot in the sky (see nakedEyeVisible below). The radar plots
-  // by ground distance, but whether you can SEE a plane depends on slant
-  // distance + its physical size — so a ground-distance range ring alone
-  // shows planes you can't see. This filters those out.
-  let visibleOnly = true;
+  // The naked-eye visibility filter (see nakedEyeVisible below) is ALWAYS on
+  // — it used to be a toggle, but "show all" only cluttered the display with
+  // planes you provably can't spot, so the toggle was removed (2026-07-07).
+  //
+  // Two views share the canvas (viewMode, persisted):
+  //  "map" — the classic top-down radar: ground distance from you.
+  //  "sky" — an all-sky dome ("fisheye") projection: WHERE TO LOOK. Zenith
+  //          at the center, horizon at the outer ring, radius linear in
+  //          (90° − elevation), compass azimuth as the angle — like lying on
+  //          your back looking straight up. Not ground-range-bound, so a far
+  //          high jet that's genuinely visible finally shows up (the thing
+  //          the map view structurally can't do).
+  const VIEW_KEY = "overhead-view";
+  let viewMode = localStorage.getItem(VIEW_KEY) === "sky" ? "sky" : "map";
 
-  // heading-up mode (device compass)
-  let headingUp = false;          // toggle on/off
+  // heading-up mode (device compass) — ON by default. The orientation
+  // listener itself is armed from the gate tap (armCompass below), because
+  // iOS only grants DeviceOrientationEvent permission from a user gesture;
+  // until a reading arrives the view just stays north-up.
+  let headingUp = true;
   let deviceHeading = 0;          // smoothed compass bearing, degrees from north
   let rawHeading = 0;             // latest raw reading
   let orientationBound = false;   // listener attached?
@@ -438,12 +457,22 @@
     if (!p.vel || dtSec === 0) return { lat: p.lat, lon: p.lon };
     return destinationPoint(p.lat, p.lon, p.track, (p.vel * dtSec) / 1000);
   }
-  function project(p) {
-    const dist = haversineKm(me, { lat: p.lat, lon: p.lon });
-    const brg = bearing(me, { lat: p.lat, lon: p.lon });
-    // uses the animating displayRangeKm (not rangeKm) so switching range
-    // smoothly zooms aircraft to their new positions instead of snapping
-    const r = Math.min(dist / displayRangeKm, RANGE_MARGIN) * R;
+  function project(pos, altM) {
+    const dist = haversineKm(me, { lat: pos.lat, lon: pos.lon });
+    const brg = bearing(me, { lat: pos.lat, lon: pos.lon });
+    let r;
+    if (viewMode === "sky") {
+      // all-sky dome: radius is linear in (90° − elevation) — the classic
+      // equidistant fisheye of an all-sky camera. Straight overhead lands at
+      // the center, a plane on the horizon at the outer ring. Ground
+      // distance plays no direct part; only where the plane sits in the sky.
+      const elevDeg = Math.atan2((altM || 0) / 1000, dist) * 180 / Math.PI;
+      r = (1 - Math.max(0, Math.min(90, elevDeg)) / 90) * R;
+    } else {
+      // uses the animating displayRangeKm (not rangeKm) so switching range
+      // smoothly zooms aircraft to their new positions instead of snapping
+      r = Math.min(dist / displayRangeKm, RANGE_MARGIN) * R;
+    }
     // In heading-up mode, subtract the device heading so the direction you
     // face sits at the top. In north-up mode, displayHeading is 0.
     const ang = toRad(brg - 90 - displayHeading());
@@ -458,7 +487,11 @@
   // what makes the range rings themselves visibly shrink/grow into place
   // during a range switch, in lockstep with aircraft repositioning, instead
   // of only the label text changing while the rings sit frozen at R*i/3.
-  function ringRadiusPx(i) { return ((rangeKm * i) / 3 / displayRangeKm) * R; }
+  function ringRadiusPx(i) {
+    // sky view: fixed elevation circles (60° / 30° / horizon) — no range zoom
+    if (viewMode === "sky") return (R * i) / 3;
+    return ((rangeKm * i) / 3 / displayRangeKm) * R;
+  }
 
   // The rotation currently applied to the scene. currentDisplayHeading is a
   // smoothed value that always eases toward its target (the device compass
@@ -478,25 +511,24 @@
   const statusEl = document.getElementById("status"), statusTxt = document.getElementById("status-txt");
   function setStatus(cls, txt) { statusEl.className = "status " + cls; statusTxt.textContent = txt; }
 
-  // The header count must reflect only aircraft within the *currently
-  // selected* range, not every aircraft still sitting in the `planes` Map.
-  // Without this, switching to a smaller range kept showing the old, larger
-  // count for up to 90s: the Map isn't pruned just for falling outside a new
-  // (smaller) range, only for going quiet entirely, so stale far-away
-  // aircraft from the previous wider fetch lingered and inflated the number
-  // even though the canvas correctly stopped drawing them.
-  function countInRange() {
+  // The header count must reflect what's actually shown, not every aircraft
+  // still sitting in the `planes` Map (the Map is only pruned for going
+  // quiet, not for falling out of range — .size would read stale/too high).
+  // Map view: naked-eye visible AND within the selected range. Sky view:
+  // naked-eye visible anywhere in the dome, no range bound.
+  function countVisible() {
     const now = Date.now();
     let n = 0;
     for (const p of planes.values()) {
       try {
         const gd = haversineKm(me, estimatedPosition(p, now));
-        if (gd <= rangeKm && (!visibleOnly || nakedEyeVisible(p, gd))) n++;
+        if (viewMode === "map" && gd > rangeKm) continue;
+        if (nakedEyeVisible(p, gd)) n++;
       } catch { /* skip malformed */ }
     }
     return n;
   }
-  function updateCountDisplay() { document.getElementById("count-n").textContent = countInRange(); }
+  function updateCountDisplay() { document.getElementById("count-n").textContent = countVisible(); }
 
   // The "why is it always offline?" story (diagnosed 2026-07-06): the old 30s
   // poll was FASTER than airplanes.live's real rate window (~36s), so routine
@@ -513,8 +545,8 @@
     if (!me || document.hidden || pollInFlight) return;
     pollInFlight = true;
     clearTimeout(pollTimer); pollTimer = null; // collapse any queued run into this one
-    // always fetch the widest selectable range (NM, capped at the API's 250)
-    const distNm = Math.min(Math.ceil(RANGE_KM_MAX * RANGE_MARGIN * NM_PER_KM), 250);
+    // always fetch the full FETCH_KM radius (NM, capped at the API's 250)
+    const distNm = Math.min(Math.ceil(FETCH_KM * NM_PER_KM), 250);
     const url = `${API}${me.lat.toFixed(4)}/${me.lon.toFixed(4)}/${distNm}`;
     let nextMs = POLL_MS;
     try {
@@ -530,7 +562,7 @@
       const data = await res.json();
       ingest(data.ac || data.aircraft || []);
       lastFetch = Date.now(); failStreak = 0;
-      setStatus("live", `live · ${countInRange()} · req ${dailyCount}`);
+      setStatus("live", `live · ${countVisible()} · req ${dailyCount}`);
     } catch {
       failStreak++;
       // first failure: likely a phone-radio blip, retry quickly and call it
@@ -567,7 +599,9 @@
       const vrMs   = a.baro_rate != null ? a.baro_rate * 0.00508 : (a.geom_rate != null ? a.geom_rate * 0.00508 : null);
       // trail: remember the last few real fixes (not interpolated frames) so
       // we can draw a fading line behind the plane showing where it's been
-      const trail = prev ? [...prev.trail, { lat: prev.lat, lon: prev.lon }].slice(-TRAIL_LEN) : [];
+      // alt is kept per fix so the sky view can project the trail at the
+      // elevation each fix was actually seen at, not today's altitude
+      const trail = prev ? [...prev.trail, { lat: prev.lat, lon: prev.lon, alt: prev.alt }].slice(-TRAIL_LEN) : [];
       planes.set(icao, {
         icao,
         call: (a.flight || a.r || "").trim() || "—",
@@ -676,9 +710,12 @@
     smoothHeading(dtMs);
     updateDisplayHeading(dtMs);
 
-    // tilt animates smoothly toward desiredTilt (1 by default, or wherever
-    // the user last dragged it with a two-finger gesture)
-    tiltFactor += (desiredTilt - tiltFactor) * (1 - Math.exp(-dtMs / TILT_TAU_MS));
+    // tilt animates smoothly toward desiredTilt — except in sky view, which
+    // is always drawn flat (the dome is already a projection of height;
+    // tilting it would double-count). desiredTilt is preserved so switching
+    // back to the map eases the old tilt back in.
+    const tiltTarget = viewMode === "sky" ? 0 : desiredTilt;
+    tiltFactor += (tiltTarget - tiltFactor) * (1 - Math.exp(-dtMs / TILT_TAU_MS));
     currentSquish = 1 - tiltFactor * (1 - TILT_COS);
 
     // range change (5/10/20km) also animates: displayRangeKm eases toward
@@ -699,9 +736,9 @@
     const visible = [];
     for (const p of planes.values()) {
       try {
-        const proj = project(estimatedPosition(p, now));
-        if (proj.dist > displayRangeKm * RANGE_MARGIN) continue;
-        if (visibleOnly && !nakedEyeVisible(p, proj.dist)) continue; // too small/far to actually see
+        const proj = project(estimatedPosition(p, now), p.alt);
+        if (viewMode === "map" && proj.dist > displayRangeKm * RANGE_MARGIN) continue; // sky view isn't range-bound
+        if (!nakedEyeVisible(p, proj.dist)) continue; // too small/far to actually see (always-on filter)
         visible.push({ p, proj });
       } catch (e) { console.warn("skipped projecting aircraft", p.icao, e); }
     }
@@ -740,8 +777,15 @@
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(R * Math.cos(sweepAng), R * Math.sin(sweepAng)); ctx.stroke();
     ctx.restore();
 
-    ctx.fillStyle = theme.sweepHex; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = `rgba(${theme.sweepRgb},0.4)`; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
+    if (viewMode === "sky") {
+      // in the dome the center is the ZENITH (straight overhead), not "you"
+      // — mark it quietly instead of drawing the green you-are-here dot
+      ctx.strokeStyle = theme.ringMajor; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      ctx.fillStyle = theme.sweepHex; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = `rgba(${theme.sweepRgb},0.4)`; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
+    }
 
     for (const { p, proj } of visible) {
       try { drawTrail(p, proj); } catch (e) { console.warn("skipped trail", p.icao, e); }
@@ -753,7 +797,11 @@
     // same idea as how map pins/labels stay readable in a tilted 3D map.
     ctx.fillStyle = theme.rangeLabel; ctx.font = "9px ui-monospace, monospace";
     for (let i = 1; i <= 3; i++) {
-      ctx.fillText(Math.round((rangeKm * i) / 3) + "km", cx + 3, squishY(cy - ringRadiusPx(i)) + 11);
+      // map: ring distances in km. sky: elevation circles — 60°, 30°, horizon
+      const label = viewMode === "sky"
+        ? (i === 3 ? "horizon" : (90 - i * 30) + "°")
+        : Math.round((rangeKm * i) / 3) + "km";
+      ctx.fillText(label, cx + 3, squishY(cy - ringRadiusPx(i)) + 11);
     }
 
     ctx.fillStyle = theme.cardinal; ctx.font = "bold 11px ui-monospace, monospace";
@@ -795,7 +843,9 @@
 
   function drawTrail(p, headProj) {
     if (!p.trail.length) return;
-    const pts = [...p.trail.map(project), headProj];
+    // each fix carries its own altitude so the sky view draws the trail at
+    // the elevation the aircraft actually had there (map view ignores alt)
+    const pts = [...p.trail.map(t => project(t, t.alt ?? p.alt)), headProj];
     ctx.lineJoin = "round";
     for (let i = 1; i < pts.length; i++) {
       const age = 1 - i / (pts.length); // older segments (lower i) fade more
@@ -813,13 +863,24 @@
     const ang = toRad(azDeg - 90 - displayHeading());
     return { x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang) };
   }
+  // In sky view the sun/moon sit at their TRUE spot inside the dome (their
+  // real elevation), not pinned to the horizon ring — same projection as the
+  // aircraft, and a great sanity check that the dome is oriented right.
+  function celestialPoint(pos) {
+    if (viewMode === "sky") {
+      const r = (1 - Math.max(0, Math.min(90, pos.alt)) / 90) * R;
+      const ang = toRad(pos.az - 90 - displayHeading());
+      return { x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang) };
+    }
+    return edgePoint(pos.az);
+  }
   function drawCelestial() {
     if (sunPos && sunPos.alt > -0.83) {
-      const pt = edgePoint(sunPos.az);
+      const pt = celestialPoint(sunPos);
       drawSunIcon({ x: pt.x, y: squishY(pt.y) });
     }
     if (moonPos && moonPos.alt > -0.3) {
-      const pt = edgePoint(moonPos.az);
+      const pt = celestialPoint(moonPos);
       drawMoonIcon({ x: pt.x, y: squishY(pt.y) });
     }
   }
@@ -911,7 +972,10 @@
   function slantScale(altM, lateralDistKm) {
     const altKm = (altM || 0) / 1000;
     const slantKm = Math.hypot(lateralDistKm, altKm);
-    const t = Math.max(0, Math.min(1, slantKm / (displayRangeKm * RANGE_MARGIN)));
+    // map view normalizes to the current range ring; sky view has no range,
+    // so it normalizes to a fixed slant distance instead
+    const normKm = viewMode === "sky" ? SKY_ICON_NORM_KM : displayRangeKm * RANGE_MARGIN;
+    const t = Math.max(0, Math.min(1, slantKm / normKm));
     return 1.4 - t * (1.4 - 0.7);
   }
 
@@ -932,9 +996,9 @@
     const now = Date.now(); let best = null, bestD = 22;
     for (const p of planes.values()) {
       try {
-        const proj = project(estimatedPosition(p, now));
-        if (proj.dist > displayRangeKm * RANGE_MARGIN) continue;      // not drawn — off range
-        if (visibleOnly && !nakedEyeVisible(p, proj.dist)) continue;  // not drawn — filtered out
+        const proj = project(estimatedPosition(p, now), p.alt);
+        if (viewMode === "map" && proj.dist > displayRangeKm * RANGE_MARGIN) continue; // not drawn — off range
+        if (!nakedEyeVisible(p, proj.dist)) continue;                 // not drawn — filtered out
         // must match the floating billboarded position planes are actually drawn at
         const iconY = squishY(proj.y) - altitudeLiftPx(p.alt);
         const d = Math.hypot(proj.x - px, iconY - py);
@@ -1001,8 +1065,10 @@
         manualRotation = (orbit.startRotation + (e.clientX - orbit.x0) * ROTATE_GAIN_DEG_PER_PX + 360) % 360;
       }
       // tilt always applies directly, no threshold — vertical drag has no
-      // conflicting gesture to guard against, so it can be fully sensitive
-      desiredTilt = Math.max(0, Math.min(1, orbit.startTilt + dy / TILT_GAIN_PX));
+      // conflicting gesture to guard against, so it can be fully sensitive.
+      // Map view only: the sky dome is always drawn flat, so a vertical drag
+      // there would silently change the tilt you get back on the map.
+      if (viewMode === "map") desiredTilt = Math.max(0, Math.min(1, orbit.startTilt + dy / TILT_GAIN_PX));
     } else if (tapCandidate && e.pointerId === tapCandidate.id) {
       if (Math.hypot(e.clientX - tapCandidate.x0, e.clientY - tapCandidate.y0) > 10) tapCandidate.moved = true;
     }
@@ -1180,7 +1246,7 @@
     const btn = e.target.closest("button[data-km]"); if (!btn) return;
     document.querySelectorAll("#rng button").forEach(b => b.classList.remove("on"));
     btn.classList.add("on"); rangeKm = +btn.dataset.km;
-    // no fetch here — every poll already covers RANGE_KM_MAX, so switching
+    // no fetch here — every poll already covers FETCH_KM, so switching
     // range just re-filters what's stored (an extra request per tap used to
     // trip airplanes.live's rate limiter). The count updates immediately;
     // displayRangeKm (used by project()) eases toward the new range over
@@ -1188,13 +1254,22 @@
     updateCountDisplay();
   });
 
-  const eyeBtn = document.getElementById("eye-btn");
-  eyeBtn.addEventListener("click", () => {
-    visibleOnly = !visibleOnly;
-    eyeBtn.classList.toggle("on", visibleOnly);
-    eyeBtn.textContent = visibleOnly ? "👁 naked-eye only" : "👁 show all";
+  // ---------- map / sky view toggle ----------
+  const rngGroup = document.getElementById("rng-group");
+  function applyView(v) {
+    viewMode = v;
+    document.querySelectorAll("#view-btns button").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+    // range presets only mean something on the map — the sky dome always
+    // shows everything the naked-eye filter passes, at any distance
+    rngGroup.classList.toggle("hidden", v === "sky");
     updateCountDisplay();
+  }
+  document.getElementById("view-btns").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-view]"); if (!btn) return;
+    localStorage.setItem(VIEW_KEY, btn.dataset.view);
+    applyView(btn.dataset.view);
   });
+  applyView(viewMode); // restore the persisted choice (also hides the range block if "sky")
 
   // ---------- compass / heading-up ----------
   function onOrientation(e) {
@@ -1269,6 +1344,17 @@
     }
   });
 
+  // Heading-up is on by default, but the orientation listener can only be
+  // armed from a user gesture (iOS's DeviceOrientationEvent.requestPermission)
+  // — so both gate paths (the GPS button and picking an address result) arm
+  // it as part of their tap. If permission is denied the app just falls back
+  // to north-up and un-lights the compass button.
+  function armCompass() {
+    bindOrientation().then(ok => {
+      if (!ok && headingUp) { headingUp = false; headingBtn.classList.remove("on"); }
+    });
+  }
+
   // ---------- light/dark theme ----------
   const THEME_KEY = "overhead-theme";
   const themeBtn = document.getElementById("theme-btn");
@@ -1300,7 +1386,7 @@
     const elapsed = Date.now() - lastFetch;
     if (elapsed >= POLL_MS) poll();
     else {
-      setStatus("live", `live · ${countInRange()}`);
+      setStatus("live", `live · ${countVisible()}`);
       pollTimer = setTimeout(poll, POLL_MS - elapsed);
     }
   }
@@ -1389,6 +1475,7 @@
   const addrInput = document.getElementById("addr-input"), addrResults = document.getElementById("addr-results");
 
   document.getElementById("gate-btn").addEventListener("click", () => {
+    armCompass(); // must run inside the tap gesture — see armCompass
     gateErr.textContent = "locating…";
     if (!navigator.geolocation) { gateErr.textContent = "geolocation unavailable on this device — use the address box below"; addrInput.focus(); return; }
     navigator.geolocation.getCurrentPosition(
@@ -1416,7 +1503,7 @@
       for (const r of list) {
         const li = document.createElement("li");
         li.textContent = r.display_name;
-        li.addEventListener("click", () => begin(+r.lat, +r.lon, r.display_name.split(",")[0]));
+        li.addEventListener("click", () => { armCompass(); begin(+r.lat, +r.lon, r.display_name.split(",")[0]); });
         addrResults.appendChild(li);
       }
     } catch { gateErr.textContent = "address lookup failed — check connection"; }
