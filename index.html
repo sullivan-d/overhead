@@ -86,6 +86,8 @@
   .rng-btns button.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
   .rng-group { display: flex; flex-direction: column; gap: 6px; }
   .rng-group.hidden { display: none; }
+  .ceiling-val { font-size: 11px; color: var(--ink-soft); letter-spacing: 0.04em; }
+  .ceiling-val small { font-size: 9px; color: var(--ink-faint); }
 
   .compass-btn {
     position: absolute; bottom: 12px; right: 16px; z-index: 5;
@@ -195,6 +197,10 @@
         <button data-km="20">20</button>
         <span class="rng-label">km</span>
       </div>
+    </div>
+    <div class="rng-group hidden" id="ceiling-box" title="Aircraft above the cloud ceiling are dimmed — they may be hidden behind the clouds">
+      <span class="rng-label">cloud ceiling</span>
+      <div class="ceiling-val" id="ceiling-val">—</div>
     </div>
   </div>
   <div class="count"><div class="n" id="count-n">0</div><div class="l">aircraft</div></div>
@@ -308,6 +314,20 @@
   // Please keep the attribution link in the footer (their terms ask for it).
   const API = "https://api.airplanes.live/v2/point/";
   const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+  // Cloud ceiling — Open-Meteo forecast API. Keyless and sends
+  // Access-Control-Allow-Origin: * (verified with curl 2026-07-07, same drill
+  // as airplanes.live). Only these two models actually publish cloud_base —
+  // every other model (icon/gfs/meteofrance/ecmwf/knmi…) returns nulls with
+  // units "undefined". Both are regional in practice: ukmo_seamless fills it
+  // over the UK-ish domain, dmi_seamless over Europe. Outside coverage every
+  // value is null and the ceiling display simply stays hidden — which is
+  // deliberately also the fetch-failure mode (no error states for a
+  // nice-to-have overlay). Weather moves slowly; one request per 20min.
+  const WEATHER_API = "https://api.open-meteo.com/v1/forecast";
+  const CLOUD_MODELS = ["ukmo_seamless", "dmi_seamless"];
+  const CLOUD_POLL_MS = 20 * 60 * 1000;
+  const CLOUD_MIN_COVER_PCT = 25; // a "ceiling" needs an actual layer, not one stray puff (ukmo reports base 0 on clear sky)
+  const CLOUD_DIM_ALPHA = 0.4;    // aircraft above the ceiling draw at this opacity
   // Community + donation links shown at the very bottom of the detail sheet.
   // Both destinations are still TBD — paste the real URLs here (e.g. a
   // Telegram group invite and a Ko-fi page) once they exist. An empty string
@@ -331,6 +351,13 @@
   const RANGE_TAU_MS = 300;
   let planes = new Map();
   let selected = null, pollTimer = null, lastFetch = 0, dailyCount = 0;
+  // Cloud ceiling state. The model reports cloud base ABOVE GROUND at the
+  // user's spot — that's what the display shows (it's the height you'd crane
+  // your neck at). Aircraft altitudes are MSL though, so the dimming
+  // comparison uses cloudCeilMslM = base + site elevation (Open-Meteo returns
+  // the grid-cell elevation with every response). null = unknown/clear —
+  // display hidden, nothing dimmed.
+  let cloudCeilM = null, cloudCeilMslM = null, cloudFetchedAt = 0, cloudTimer = null;
   let failStreak = 0;       // consecutive failed polls (for retry pacing + status text)
   let pollInFlight = false; // guards against overlapping polls on visibility flapping
   // The naked-eye visibility filter (see nakedEyeVisible below) is ALWAYS on
@@ -529,6 +556,55 @@
     return n;
   }
   function updateCountDisplay() { document.getElementById("count-n").textContent = countVisible(); }
+
+  // ---------- cloud ceiling (Open-Meteo) ----------
+  // Ask every model that carries cloud_base for the current hour, plus
+  // cloud_cover to tell "no data" and "clear sky" apart (ukmo encodes clear
+  // as base 0 / cover 0). A usable answer needs a real layer (cover >=
+  // CLOUD_MIN_COVER_PCT and base > 0); when several models qualify, take the
+  // LOWEST base — same convention as an aviation ceiling, and the safe side
+  // for "can I still see that plane?".
+  async function fetchCloudCeiling() {
+    if (!me || document.hidden) return;
+    const { lat, lon } = me; // re-checked after await: the user may have moved the pin mid-fetch
+    try {
+      const url = `${WEATHER_API}?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}` +
+        `&hourly=cloud_base,cloud_cover&forecast_hours=1&models=${CLOUD_MODELS.join(",")}`;
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      if (!me || me.lat !== lat || me.lon !== lon) return;
+      const h = data.hourly || {};
+      // single-model responses drop the _model suffix — accept either key
+      const val = (name, m) => (h[`${name}_${m}`] ?? (CLOUD_MODELS.length === 1 ? h[name] : undefined))?.[0];
+      let best = null;
+      for (const m of CLOUD_MODELS) {
+        const base = val("cloud_base", m), cover = val("cloud_cover", m);
+        if (base != null && base > 0 && cover != null && cover >= CLOUD_MIN_COVER_PCT) {
+          if (best == null || base < best) best = base;
+        }
+      }
+      cloudCeilM = best;
+      cloudCeilMslM = best != null ? best + (data.elevation || 0) : null;
+      cloudFetchedAt = Date.now();
+    } catch {
+      // no error state for a decorative layer: hide the readout, dim nothing
+      cloudCeilM = null; cloudCeilMslM = null;
+    }
+    updateCeilingDisplay();
+    if (selected) renderSheet(); // the open sheet's ☁️ marker may have changed
+  }
+  function updateCeilingDisplay() {
+    const box = document.getElementById("ceiling-box");
+    if (cloudCeilM == null) { box.classList.add("hidden"); return; }
+    document.getElementById("ceiling-val").innerHTML = "☁ " + fmtAlt(cloudCeilM);
+    box.classList.remove("hidden");
+  }
+  function isAboveClouds(p) {
+    return cloudCeilMslM != null && p.alt != null && p.alt > cloudCeilMslM;
+  }
 
   // The "why is it always offline?" story (diagnosed 2026-07-06): the old 30s
   // poll was FASTER than airplanes.live's real rate window (~36s), so routine
@@ -821,6 +897,10 @@
 
     for (const { p, proj } of visible) {
       try {
+        // above the cloud ceiling → dimmed (a single globalAlpha over the
+        // whole stem+shadow+icon group — cheaper than per-color alpha work,
+        // and reads as "behind something" rather than "less important")
+        ctx.globalAlpha = isAboveClouds(p) ? CLOUD_DIM_ALPHA : 1;
         const groundY = squishY(proj.y);
         const lift = altitudeLiftPx(p.alt);
         const iconY = groundY - lift;
@@ -838,6 +918,7 @@
         drawPlane(proj.x, iconY, p.track - displayHeading(), p.icao === selected, p, proj.dist);
       } catch (e) { console.warn("skipped rendering aircraft", p.icao, e); }
     }
+    ctx.globalAlpha = 1; // dimming must never leak into the next frame's rings/sweep
     requestAnimationFrame(draw);
   }
 
@@ -1160,7 +1241,9 @@
     const parts = [friendlyType(p)];
     if (p.typeDesc) parts.push(p.typeDesc);          // e.g. "Airbus A320"
     document.getElementById("d-type").innerHTML = parts.join(" · ");
-    document.getElementById("d-alt").innerHTML = fmtAlt(p.alt);
+    // ☁️ = flying above the current cloud ceiling (it's why the icon is dimmed)
+    document.getElementById("d-alt").innerHTML = fmtAlt(p.alt) +
+      (isAboveClouds(p) ? ' <span title="above the cloud ceiling">☁️</span>' : "");
     document.getElementById("d-spd").innerHTML = fmtSpd(p.vel);
     document.getElementById("d-hdg").innerHTML = `${Math.round(p.track)}<small>°</small>`;
     document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(p, Date.now())));
@@ -1186,6 +1269,7 @@
     units = units === "metric" ? "aviation" : "metric";
     localStorage.setItem(UNITS_KEY, units);
     updateUnitsBtn();
+    updateCeilingDisplay(); // the header ceiling readout follows the same units
     if (selected) renderSheet(); // re-format the open sheet in place
   });
   updateUnitsBtn();
@@ -1375,7 +1459,11 @@
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { clearTimeout(pollTimer); pollTimer = null; setStatus("paused", "paused · tab hidden"); }
-    else if (me) startPolling();
+    else if (me) {
+      startPolling();
+      // cloud ticks skip themselves while hidden — catch up if one was missed
+      if (Date.now() - cloudFetchedAt >= CLOUD_POLL_MS) fetchCloudCeiling();
+    }
   });
 
   function startPolling() {
@@ -1399,11 +1487,14 @@
     document.getElementById("change-loc")?.addEventListener("click", reopenGate);
     resize(); setStatus("live", "connecting…"); startPolling(); requestAnimationFrame(draw);
     updateCelestial(); celestialTimer = setInterval(updateCelestial, 60000);
+    fetchCloudCeiling(); cloudTimer = setInterval(fetchCloudCeiling, CLOUD_POLL_MS);
   }
 
   function reopenGate() {
     clearTimeout(pollTimer); pollTimer = null; failStreak = 0; me = null; planes.clear();
     clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
+    clearInterval(cloudTimer); cloudTimer = null;
+    cloudCeilM = null; cloudCeilMslM = null; cloudFetchedAt = 0; updateCeilingDisplay();
     document.getElementById("count-n").textContent = "0";
     document.getElementById("gate").classList.remove("hidden");
     setStatus("paused", "standby");

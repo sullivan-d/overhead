@@ -3,7 +3,7 @@
 // It deliberately never caches OpenSky / hexdb / Nominatim responses —
 // live data must always be fetched fresh, and nothing runs in the background.
 
-const CACHE = "overhead-v19";
+const CACHE = "overhead-v20";
 const SHELL = [
   "./",
   "./index.html",
@@ -33,7 +33,7 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   // Live data hosts: always go to network, never cache, never intercept offline.
-  const liveHosts = ["airplanes.live", "adsbdb.com", "nominatim.openstreetmap.org"];
+  const liveHosts = ["airplanes.live", "adsbdb.com", "nominatim.openstreetmap.org", "open-meteo.com"];
   if (liveHosts.some((h) => url.hostname.includes(h))) {
     return; // let the browser handle it normally
   }
