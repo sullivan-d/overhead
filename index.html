@@ -485,6 +485,12 @@
   // goes quiet for good. ~0.25g is a reasonable average reverse-thrust/
   // braking rate; velocity and distance both floor out once fully stopped.
   const ROLLOUT_DECEL_MS2 = 2.5;
+  // Height above the user's own ground elevation below which an aircraft is
+  // treated as landed/landing for extrapolation purposes even without an
+  // explicit "ground" report (see the `nearGround` comment in ingest()).
+  // ~500ft: short-final/rollout territory, well clear of a normal circuit
+  // altitude so it won't misfire on a plane merely flying low overhead.
+  const LOW_ALT_AGL_M = 150;
   function rolloutVel(v0, tSec) {
     return Math.max(0, v0 - ROLLOUT_DECEL_MS2 * tSec);
   }
@@ -736,22 +742,30 @@
       // trail: remember the last few real fixes (not interpolated frames) so
       // we can draw a fading line behind the plane showing where it's been
       const trail = prev ? [...prev.trail, { lat: prev.lat, lon: prev.lon }].slice(-TRAIL_LEN) : [];
+      // "ground" carries no baro altitude of its own — settle at the user's
+      // own ground elevation (close enough for a rolling/taxiing aircraft).
+      const altM = a.alt_baro === "ground" ? (groundElevM ?? 0) : altMeters(a.alt_baro ?? a.alt_geom);
+      // Measured live against airplanes.live near CDG: an aircraft on very
+      // short final often never reports alt_baro:"ground" at all — the
+      // receiver loses lock a few hundred feet up, and the API just keeps
+      // re-serving that SAME stale fix (only seen_pos grows) until it drops
+      // out entirely. Waiting for a literal "ground" string missed this
+      // completely. So: treat anything already this close to the ground
+      // under the user as landed/landing for extrapolation purposes too,
+      // not just an explicit "ground" report.
+      const nearGround = altM != null && groundElevM != null && (altM - groundElevM) < LOW_ALT_AGL_M;
       planes.set(icao, {
         icao,
         call: (a.flight || a.r || "").trim() || "—",
         flightCallsign: (a.flight || "").trim(), // used for the route lookup; blank for GA aircraft with no flight number
         lat, lon,
-        // "ground" carries no baro altitude of its own — settle at the
-        // user's own ground elevation (close enough for a rolling/taxiing
-        // aircraft) so it visibly comes down to the radar's ground plane
-        // instead of keeping its last airborne altitude or going blank.
-        alt: a.alt_baro === "ground" ? (groundElevM ?? 0) : altMeters(a.alt_baro ?? a.alt_geom),
+        alt: altM,
         vel: velMs,
         track: (a.track ?? a.true_heading ?? 0),
         vrate: vrMs,
         // drives the rollout-braking model in estimatedPosition/displayVel
         // (see ROLLOUT_DECEL_MS2) instead of a constant-velocity dead reckon
-        landed: a.alt_baro === "ground",
+        landed: a.alt_baro === "ground" || nearGround,
         // climb/speed/heading only ever change once per poll (they're not
         // positions we can dead-reckon), but showing them frozen for 45s at
         // a time reads as stuck. displayVrate/displayVel/displayTrack ease
