@@ -122,19 +122,22 @@
   }
   .sheet.open { transform: translateY(0); }
   .sheet-grip { width: 38px; height: 4px; background: var(--ring); border-radius: 2px; margin: 0 auto 14px; }
-  .sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .sheet-head-text { flex: 1; min-width: 0; }
+  .sheet-close {
+    position: absolute; top: 18px; right: 20px; background: none; border: 1px solid var(--ring);
+    color: var(--ink-soft); width: 30px; height: 30px; border-radius: 50%; font-size: 15px; cursor: pointer; z-index: 1;
+  }
+  .sheet-body { display: flex; align-items: stretch; gap: 14px; }
+  .sheet-left { flex: 1; min-width: 0; display: flex; flex-direction: column; padding-right: 34px; /* clears the floating close button */ }
   /* top-down silhouette of this exact aircraft type (AircraftShapesSVG, GPL-3.0 — see shapes/CREDITS.md) */
-  .sheet-shape { flex-shrink: 0; width: 140px; height: 92px; display: flex; align-items: center; justify-content: center; }
+  .sheet-shape { flex-shrink: 0; width: 168px; display: flex; align-items: center; justify-content: center; }
   .sheet-shape img { max-width: 100%; max-height: 100%; opacity: 0.9; filter: invert(0.92); }
   :root[data-theme="light"] .sheet-shape img { filter: none; opacity: 0.82; }
   .sheet-shape img[hidden] { display: none; }
   .sheet-call { font-size: 22px; font-weight: 700; letter-spacing: 0.05em; color: var(--sweep); }
   .sheet-type { font-size: 12px; color: var(--ink-soft); margin-top: 3px; min-height: 15px; }
   .sheet-route { font-size: 11px; color: var(--sweep); margin-top: 4px; letter-spacing: 0.04em; min-height: 14px; }
-  .sheet-close { background: none; border: 1px solid var(--ring); color: var(--ink-soft); width: 30px; height: 30px; border-radius: 50%; font-size: 15px; cursor: pointer; flex-shrink: 0; }
-  .sheet-grid-top { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; margin-top: 18px; }
-  .sheet-grid-bottom { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px 12px; margin-top: 14px; }
+  .sheet-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; margin-top: 18px; flex: 1; align-content: start; }
+  .sheet-stats .stat.wide { grid-column: 1 / -1; }
   .stat .k { font-size: 9px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
   .stat .v { font-size: 17px; font-weight: 600; margin-top: 3px; }
   .stat .v small { font-size: 10px; color: var(--ink-soft); font-weight: 400; }
@@ -223,23 +226,23 @@
 
 <div class="sheet" id="sheet">
   <div class="sheet-grip"></div>
-  <div class="sheet-head">
-    <div class="sheet-head-text">
-      <div class="sheet-call" id="d-call">—</div>
-      <div class="sheet-type" id="d-type">looking up type…</div>
-      <div class="sheet-route" id="d-route"></div>
+  <button class="sheet-close" id="d-close">&times;</button>
+  <div class="sheet-body">
+    <div class="sheet-left">
+      <div class="sheet-head-text">
+        <div class="sheet-call" id="d-call">—</div>
+        <div class="sheet-type" id="d-type">looking up type…</div>
+        <div class="sheet-route" id="d-route"></div>
+      </div>
+      <div class="sheet-stats">
+        <div class="stat wide"><div class="k">altitude</div><div class="v" id="d-alt">—</div></div>
+        <div class="stat"><div class="k">speed</div><div class="v" id="d-spd">—</div></div>
+        <div class="stat"><div class="k">distance</div><div class="v" id="d-dist">—</div></div>
+        <div class="stat"><div class="k">heading</div><div class="v" id="d-hdg">—</div></div>
+        <div class="stat"><div class="k">climb</div><div class="v" id="d-vr">—</div></div>
+      </div>
     </div>
     <div class="sheet-shape"><img id="d-shape" alt="" draggable="false"></div>
-    <button class="sheet-close" id="d-close">&times;</button>
-  </div>
-  <div class="sheet-grid-top">
-    <div class="stat"><div class="k">altitude</div><div class="v" id="d-alt">—</div></div>
-    <div class="stat"><div class="k">speed</div><div class="v" id="d-spd">—</div></div>
-  </div>
-  <div class="sheet-grid-bottom">
-    <div class="stat"><div class="k">heading</div><div class="v" id="d-hdg">—</div></div>
-    <div class="stat"><div class="k">distance</div><div class="v" id="d-dist">—</div></div>
-    <div class="stat"><div class="k">climb</div><div class="v" id="d-vr">—</div></div>
   </div>
   <div class="sheet-foot">
     <button class="units-btn" id="units-btn" title="Switch between everyday metric units (m, km/h) and the feet/knots used in aviation">units: m · km/h</button>
