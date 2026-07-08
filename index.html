@@ -499,6 +499,40 @@
     if (tSec >= tStop) return (v0 * v0) / (2 * ROLLOUT_DECEL_MS2); // full stopping distance, then holds
     return v0 * tSec - 0.5 * ROLLOUT_DECEL_MS2 * tSec * tSec;
   }
+  // ONE clock, ONE model for a landing/landed aircraft: every displayed
+  // figure — position, altitude, speed, climb — derives from this single
+  // two-phase timeline anchored at the same instant, the last real position
+  // fix (posTime). Phase 1 (final approach, until the descent reaches the
+  // ground): speed constant at the fix's ground speed, altitude sinking at
+  // the fix's climb rate, position advancing to match. Phase 2 (rollout):
+  // altitude pinned to the ground, climb reads 0, speed brakes at
+  // ROLLOUT_DECEL_MS2 to a stop, position advances by the exact matching
+  // braking distance and then holds. Previously each figure ran on its own
+  // clock — speed/climb eased from statAt, which the feed effectively
+  // refreshes every poll even when it's only re-serving the same stale fix,
+  // while position/altitude extrapolated from posTime — so a plane could
+  // read 250 km/h while its dot stood visibly still, or show a sinking
+  // climb rate under a frozen altitude. If one figure here ever changes,
+  // it must keep being the derivative/integral of its neighbours.
+  function rolloutState(p, nowMs) {
+    const t = Math.min(Math.max((nowMs - p.posTime) / 1000, 0), 90);
+    const ground = groundElevM ?? 0;
+    const alt0 = p.alt != null ? Math.max(p.alt, ground) : ground;
+    const sinking = p.vrate != null && p.vrate < -0.5;
+    // seconds from the fix until the descent reaches the ground (0 = already there)
+    const tGround = sinking ? Math.min((alt0 - ground) / -p.vrate, 90) : 0;
+    const v0 = p.vel || 0;
+    if (t < tGround) { // phase 1: still on final
+      return { distM: v0 * t, altM: alt0 + p.vrate * t, velMs: v0, vrateMs: p.vrate };
+    }
+    const tRoll = t - tGround; // phase 2: on the runway, braking
+    return {
+      distM: v0 * tGround + rolloutDistanceM(v0, tRoll),
+      altM: ground,
+      velMs: rolloutVel(v0, tRoll),
+      vrateMs: 0
+    };
+  }
   // Dead-reckon forward from the last real fix using its ground speed and
   // track, instead of trailing behind: previously we blended from the OLD fix
   // toward the NEW one over the next 30s, so the displayed position always
@@ -508,7 +542,7 @@
   function estimatedPosition(p, nowMs) {
     const dtSec = Math.min(Math.max((nowMs - p.posTime) / 1000, 0), 90); // capped so a stalled poll doesn't extrapolate forever
     if (!p.vel || dtSec === 0) return { lat: p.lat, lon: p.lon };
-    const distKm = (p.landed ? rolloutDistanceM(p.vel, dtSec) : p.vel * dtSec) / 1000;
+    const distKm = (p.landed ? rolloutState(p, nowMs).distM : p.vel * dtSec) / 1000;
     return destinationPoint(p.lat, p.lon, p.track, distKm);
   }
   // Same dead-reckoning idea as estimatedPosition, applied to altitude:
@@ -516,6 +550,7 @@
   // (raw, not display-smoothed) climb rate, anchored at the same posTime so
   // it goes stale on the same schedule as the position fix it came with.
   function estimatedAltitude(p, nowMs) {
+    if (p.landed) return rolloutState(p, nowMs).altM; // same timeline as position/speed/climb
     const dtSec = Math.min(Math.max((nowMs - p.posTime) / 1000, 0), 90);
     const alt = (p.alt == null || !p.vrate || dtSec === 0) ? p.alt : p.alt + p.vrate * dtSec;
     // sanity floor: a descending aircraft's dead-reckoned altitude shouldn't
@@ -531,22 +566,20 @@
   // poll). Purely cosmetic — the real values only update once per poll —
   // but keeps the sheet visibly alive between polls instead of frozen.
   function displayVrate(p, nowMs) {
+    if (p.landed) return rolloutState(p, nowMs).vrateMs; // reads 0 the moment the modelled altitude reaches ground
     if (p.prevVrate == null || p.vrate == null) return p.vrate;
     const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
     return p.prevVrate + (p.vrate - p.prevVrate) * frac;
   }
   function displayVel(p, nowMs) {
+    // Landed/landing: the rollout model, on the SAME posTime clock as the
+    // position/altitude it drives. The old statAt-based path never braked
+    // while the feed kept re-serving the same stale fix (statAt refreshed
+    // every poll), so speed sat at touchdown speed while the dot stood still.
+    if (p.landed) return rolloutState(p, nowMs).velMs;
     if (p.prevVel == null || p.vel == null) return p.vel;
     const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
-    const v = p.prevVel + (p.vel - p.prevVel) * frac;
-    // Blending toward the latest real reading (above) already reflects any
-    // real deceleration between the last two polls. But if landed and a
-    // full poll interval has passed with no newer reading at all — the
-    // common case once ground coverage drops out — keep braking from that
-    // last known speed instead of freezing there until the plane is removed.
-    if (!p.landed) return v;
-    const overSec = (nowMs - p.statAt) / 1000 - POLL_MS / 1000;
-    return overSec > 0 ? rolloutVel(p.vel, overSec) : v;
+    return p.prevVel + (p.vel - p.prevVel) * frac;
   }
   function displayTrack(p, nowMs) {
     if (p.prevTrack == null || p.track == null) return p.track;
@@ -752,8 +785,11 @@
       // out entirely. Waiting for a literal "ground" string missed this
       // completely. So: treat anything already this close to the ground
       // under the user as landed/landing for extrapolation purposes too,
-      // not just an explicit "ground" report.
-      const nearGround = altM != null && groundElevM != null && (altM - groundElevM) < LOW_ALT_AGL_M;
+      // not just an explicit "ground" report. A clearly-POSITIVE climb rate
+      // at the same height is the opposite case (just took off) — braking
+      // that one to a stop would be exactly the wrong model, so it's excluded.
+      const nearGround = altM != null && groundElevM != null &&
+        (altM - groundElevM) < LOW_ALT_AGL_M && !(vrMs > 0.5);
       planes.set(icao, {
         icao,
         call: (a.flight || a.r || "").trim() || "—",
@@ -959,7 +995,10 @@
         // and reads as "behind something" rather than "less important")
         ctx.globalAlpha = isAboveClouds(p) ? CLOUD_DIM_ALPHA : 1;
         const groundY = squishY(proj.y);
-        const lift = altitudeLiftPx(p.alt);
+        // live (dead-reckoned) altitude, not the raw fix — so a landing
+        // aircraft's icon visibly sinks onto the ground plane in step with
+        // the altitude figure in its sheet, instead of hovering frozen
+        const lift = altitudeLiftPx(estimatedAltitude(p, now));
         const iconY = groundY - lift;
         if (lift > 1) {
           // faint stem + ground shadow: the aircraft floats above its actual
@@ -1140,7 +1179,7 @@
         if (proj.dist > displayRangeKm * RANGE_MARGIN) continue;      // not drawn — off range
         if (!nakedEyeVisible(p, proj.dist)) continue;                 // not drawn — filtered out
         // must match the floating billboarded position planes are actually drawn at
-        const iconY = squishY(proj.y) - altitudeLiftPx(p.alt);
+        const iconY = squishY(proj.y) - altitudeLiftPx(estimatedAltitude(p, now)); // must match draw()'s lift or taps miss
         const d = Math.hypot(proj.x - px, iconY - py);
         if (d < bestD) { bestD = d; best = p.icao; }
       } catch (e) { console.warn("skipped hit-testing aircraft", p.icao, e); }
