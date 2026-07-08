@@ -476,6 +476,23 @@
     );
     return { lat: phi2 * 180 / Math.PI, lon: lambda2 * 180 / Math.PI };
   }
+  // Once landed, a constant-velocity dead reckon is wrong on two counts: a
+  // real aircraft brakes hard after touchdown (typically decelerating from
+  // ~150kt to taxi speed within well under a minute), and crowdsourced
+  // ADS-B ground coverage often drops out within seconds of touchdown
+  // (antenna geometry + line-of-sight to the runway), so this braking model
+  // may be the only further "motion" the display ever gets before the feed
+  // goes quiet for good. ~0.25g is a reasonable average reverse-thrust/
+  // braking rate; velocity and distance both floor out once fully stopped.
+  const ROLLOUT_DECEL_MS2 = 2.5;
+  function rolloutVel(v0, tSec) {
+    return Math.max(0, v0 - ROLLOUT_DECEL_MS2 * tSec);
+  }
+  function rolloutDistanceM(v0, tSec) {
+    const tStop = v0 / ROLLOUT_DECEL_MS2;
+    if (tSec >= tStop) return (v0 * v0) / (2 * ROLLOUT_DECEL_MS2); // full stopping distance, then holds
+    return v0 * tSec - 0.5 * ROLLOUT_DECEL_MS2 * tSec * tSec;
+  }
   // Dead-reckon forward from the last real fix using its ground speed and
   // track, instead of trailing behind: previously we blended from the OLD fix
   // toward the NEW one over the next 30s, so the displayed position always
@@ -485,7 +502,8 @@
   function estimatedPosition(p, nowMs) {
     const dtSec = Math.min(Math.max((nowMs - p.posTime) / 1000, 0), 90); // capped so a stalled poll doesn't extrapolate forever
     if (!p.vel || dtSec === 0) return { lat: p.lat, lon: p.lon };
-    return destinationPoint(p.lat, p.lon, p.track, (p.vel * dtSec) / 1000);
+    const distKm = (p.landed ? rolloutDistanceM(p.vel, dtSec) : p.vel * dtSec) / 1000;
+    return destinationPoint(p.lat, p.lon, p.track, distKm);
   }
   // Same dead-reckoning idea as estimatedPosition, applied to altitude:
   // extrapolate forward from the last known altitude using the last known
@@ -514,7 +532,15 @@
   function displayVel(p, nowMs) {
     if (p.prevVel == null || p.vel == null) return p.vel;
     const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
-    return p.prevVel + (p.vel - p.prevVel) * frac;
+    const v = p.prevVel + (p.vel - p.prevVel) * frac;
+    // Blending toward the latest real reading (above) already reflects any
+    // real deceleration between the last two polls. But if landed and a
+    // full poll interval has passed with no newer reading at all — the
+    // common case once ground coverage drops out — keep braking from that
+    // last known speed instead of freezing there until the plane is removed.
+    if (!p.landed) return v;
+    const overSec = (nowMs - p.statAt) / 1000 - POLL_MS / 1000;
+    return overSec > 0 ? rolloutVel(p.vel, overSec) : v;
   }
   function displayTrack(p, nowMs) {
     if (p.prevTrack == null || p.track == null) return p.track;
@@ -723,6 +749,9 @@
         vel: velMs,
         track: (a.track ?? a.true_heading ?? 0),
         vrate: vrMs,
+        // drives the rollout-braking model in estimatedPosition/displayVel
+        // (see ROLLOUT_DECEL_MS2) instead of a constant-velocity dead reckon
+        landed: a.alt_baro === "ground",
         // climb/speed/heading only ever change once per poll (they're not
         // positions we can dead-reckon), but showing them frozen for 45s at
         // a time reads as stuck. displayVrate/displayVel/displayTrack ease
