@@ -501,8 +501,8 @@
   }
   // ONE clock, ONE model for EVERY aircraft: position, altitude, speed and
   // climb all derive from this single timeline anchored at the last real
-  // position fix (posTime) — never at statAt, which the feed effectively
-  // refreshes every poll even when it's only re-serving the same stale fix.
+  // position fix (posTime) — never at our own ingest time, which the feed
+  // effectively refreshes every poll even when re-serving the same stale fix.
   //
   // The model is a full landing FORECAST, not just a post-touchdown brake:
   // the feed routinely goes quiet (or freezes on one stale fix) while a
@@ -547,46 +547,95 @@
       onGround: true
     };
   }
+  // Each new fix re-anchors the forecast above, and the new forecast rarely
+  // agrees exactly with where the old one had put the plane. Snapping to it
+  // made the altitude step (sometimes violently) while the climb figure —
+  // which used to ease on its own 45s clock — could say the opposite (climb
+  // negative while the altitude jumped UP; observed live at CDG). So the
+  // display CROSS-FADES from the old fix's forecast to the new one instead:
+  // both curves keep running, a smoothstep weight w goes 1→0 over p.blendMs,
+  // and every displayed figure is the same weighted mix of the two curves.
+  // The climb figure includes the exact analytic derivative of the blended
+  // altitude — d/dt[w·Ao + (1−w)·Ac] = w'(Ao−Ac) + w·Ao' + (1−w)·Ac' — so
+  // climb and altitude cannot contradict each other even mid-correction, and
+  // w' = 0 at both ends means no figure steps at the start or end of a blend.
+  // blendMs scales with the SIZE of the correction (a big altitude gap glides
+  // longer, keeping the correction rate believable at ~2.5 m/s) and is
+  // clamped to finish well inside one poll interval.
+  const BLEND_ALT_MS_PER_M = 400;  // glide altitude corrections at ~2.5 m/s
+  const BLEND_POS_MS_PER_M = 33;   // glide position corrections at ~30 m/s
+  const BLEND_MIN_MS = 4000, BLEND_MAX_MS = 30000;
+  const BLEND_MAX_ALT_M = 1500;    // gaps beyond these aren't forecast misses,
+  const BLEND_MAX_POS_M = 3000;    // they're data revisions — snap, don't glide
+  function blendW(p, nowMs) { // weight of the OLD forecast: smoothstep 1 → 0
+    if (!p.blendFrom) return 0;
+    const u = (nowMs - p.blendAt) / p.blendMs;
+    if (u >= 1) { p.blendFrom = null; return 0; } // done — release the old fix
+    if (u <= 0) return 1;
+    return 1 - u * u * (3 - 2 * u);
+  }
+  function blendWRate(p, nowMs) { // dw/dt in 1/s (0 at both ends by design)
+    if (!p.blendFrom) return 0;
+    const u = (nowMs - p.blendAt) / p.blendMs;
+    if (u <= 0 || u >= 1) return 0;
+    return -(6 * u - 6 * u * u) / (p.blendMs / 1000);
+  }
   // Dead-reckon forward from the last real fix using its ground speed and
   // track, instead of trailing behind: previously we blended from the OLD fix
   // toward the NEW one over the next 30s, so the displayed position always
   // lagged reality by up to a full poll interval. Extrapolating forward from
   // the freshest fix means the display is only as stale as the data itself
   // (a few seconds), not the 30s poll cycle on top of that.
-  function estimatedPosition(p, nowMs) {
+  function rawPosition(p, nowMs) {
     if (!p.vel) return { lat: p.lat, lon: p.lon };
     return destinationPoint(p.lat, p.lon, p.track, kinematicState(p, nowMs).distM / 1000);
   }
-  function estimatedAltitude(p, nowMs) {
+  function estimatedPosition(p, nowMs) {
+    const cur = rawPosition(p, nowMs);
+    const w = blendW(p, nowMs);
+    if (!w) return cur;
+    const old = rawPosition(p.blendFrom, nowMs);
+    return { lat: old.lat * w + cur.lat * (1 - w), lon: old.lon * w + cur.lon * (1 - w) };
+  }
+  function rawAltitude(p, nowMs) {
     if (p.alt == null && !p.landed) return null; // nothing to forecast from
     return kinematicState(p, nowMs).altM;
   }
-  // Climb rate, speed and heading have no in-between fixes to dead-reckon
-  // from the way lat/lon/altitude do — so while airborne, ease from the
-  // PREVIOUS poll's reading toward the current one over the poll interval
-  // (cosmetic; converges to the fix value the model flies with, so it stays
-  // consistent with the motion on screen). Once the model has the plane on
-  // the ground, the kinematic state takes over outright: climb reads 0 and
-  // speed reads the braking curve that is actually driving the position.
+  function estimatedAltitude(p, nowMs) {
+    const cur = rawAltitude(p, nowMs);
+    const w = blendW(p, nowMs);
+    if (!w || cur == null) return cur;
+    const old = rawAltitude(p.blendFrom, nowMs);
+    if (old == null) return cur;
+    return old * w + cur * (1 - w);
+  }
   function displayVrate(p, nowMs) {
     const k = kinematicState(p, nowMs);
-    if (k.onGround) return 0;
-    if (p.prevVrate == null || p.vrate == null) return p.vrate;
-    const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
-    return p.prevVrate + (p.vrate - p.prevVrate) * frac;
+    const curVr = k.onGround ? 0 : k.vrateMs;
+    if (p.vrate == null && !k.onGround) return p.vrate;
+    const w = blendW(p, nowMs);
+    if (!w) return curVr;
+    const kOld = kinematicState(p.blendFrom, nowMs);
+    const oldVr = kOld.onGround ? 0 : kOld.vrateMs;
+    const oldAlt = rawAltitude(p.blendFrom, nowMs), curAlt = rawAltitude(p, nowMs);
+    // the w'(Ao−Ac) term: the rate at which the cross-fade itself is moving
+    // the shown altitude — without it, climb wouldn't match the correction
+    const cross = (oldAlt != null && curAlt != null) ? blendWRate(p, nowMs) * (oldAlt - curAlt) : 0;
+    return oldVr * w + curVr * (1 - w) + cross;
   }
   function displayVel(p, nowMs) {
     const k = kinematicState(p, nowMs);
-    if (k.onGround) return k.velMs;
-    if (p.prevVel == null || p.vel == null) return p.vel;
-    const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
-    return p.prevVel + (p.vel - p.prevVel) * frac;
+    if (p.vel == null && !k.onGround) return p.vel;
+    const w = blendW(p, nowMs);
+    if (!w) return k.velMs;
+    return kinematicState(p.blendFrom, nowMs).velMs * w + k.velMs * (1 - w);
   }
   function displayTrack(p, nowMs) {
-    if (p.prevTrack == null || p.track == null) return p.track;
-    const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
-    const diff = ((p.track - p.prevTrack + 540) % 360) - 180; // shortest signed path, e.g. 350°->10°
-    return (p.prevTrack + diff * frac + 360) % 360;
+    if (p.track == null) return p.track;
+    const w = blendW(p, nowMs);
+    if (!w || p.blendFrom.track == null) return p.track;
+    const diff = ((p.blendFrom.track - p.track + 540) % 360) - 180; // shortest signed path, e.g. 350°->10°
+    return (p.track + diff * w + 360) % 360;
   }
   function project(p) {
     const dist = haversineKm(me, { lat: p.lat, lon: p.lon });
@@ -791,7 +840,7 @@
       // that one to a stop would be exactly the wrong model, so it's excluded.
       const nearGround = altM != null && groundElevM != null &&
         (altM - groundElevM) < LOW_ALT_AGL_M && !(vrMs > 0.5);
-      planes.set(icao, {
+      const np = {
         icao,
         call: (a.flight || a.r || "").trim() || "—",
         flightCallsign: (a.flight || "").trim(), // used for the route lookup; blank for GA aircraft with no flight number
@@ -805,15 +854,7 @@
         // the forecast altitude meets the ground — this flag only matters
         // for planes already on/near it whose fix lacks a usable climb rate
         landed: a.alt_baro === "ground" || nearGround,
-        // climb/speed/heading only ever change once per poll (they're not
-        // positions we can dead-reckon), but showing them frozen for 45s at
-        // a time reads as stuck. displayVrate/displayVel/displayTrack ease
-        // from the PREVIOUS poll's value toward this one over the poll
-        // interval, so the sheet's stats visibly move instead of snapping.
-        prevVrate: prev ? prev.vrate : vrMs,
-        prevVel: prev ? prev.vel : velMs,
-        prevTrack: prev ? prev.track : (a.track ?? a.true_heading ?? 0),
-        statAt: now,
+        blendFrom: null, blendAt: 0, blendMs: 0, // set below when handing off from a previous fix
         // type info is INLINE now — no second request
         typeCode: a.t || "",
         typeDesc: a.desc || "",
@@ -828,7 +869,27 @@
         // MLAT-derived fixes can have a much larger seen_pos without the
         // aircraft actually having gone quiet — that shouldn't trigger removal.
         posTime: now - Math.round((a.seen_pos || 0) * 1000)
-      });
+      };
+      if (prev) {
+        // Hand the display off from the old fix's forecast to this one via
+        // the cross-fade (see blendW). prev keeps forecasting as the fading
+        // "old curve"; its own blendFrom is dropped so chains can't nest if
+        // a quick-retry fix lands mid-blend (one small step in that rare
+        // case beats unbounded recursion). Gaps too large to be a forecast
+        // miss are genuine data revisions — snap to those instead.
+        prev.blendFrom = null;
+        const oldAlt = rawAltitude(prev, now), newAlt = rawAltitude(np, now);
+        const altGapM = (oldAlt != null && newAlt != null) ? Math.abs(oldAlt - newAlt) : 0;
+        const posGapM = haversineKm(rawPosition(prev, now), rawPosition(np, now)) * 1000;
+        if (altGapM <= BLEND_MAX_ALT_M && posGapM <= BLEND_MAX_POS_M) {
+          np.blendFrom = prev;
+          np.blendAt = now;
+          np.blendMs = Math.min(Math.max(
+            Math.max(altGapM * BLEND_ALT_MS_PER_M, posGapM * BLEND_POS_MS_PER_M),
+            BLEND_MIN_MS), BLEND_MAX_MS);
+        }
+      }
+      planes.set(icao, np);
     }
     for (const [icao, p] of planes) if (!seen.has(icao) && now - p.seen > 90000) planes.delete(icao);
     updateCountDisplay();
