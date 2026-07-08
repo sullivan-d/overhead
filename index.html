@@ -123,6 +123,12 @@
   .sheet.open { transform: translateY(0); }
   .sheet-grip { width: 38px; height: 4px; background: var(--ring); border-radius: 2px; margin: 0 auto 14px; }
   .sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .sheet-head-text { flex: 1; min-width: 0; }
+  /* top-down silhouette of this exact aircraft type (AircraftShapesSVG, GPL-3.0 — see shapes/CREDITS.md) */
+  .sheet-shape { flex-shrink: 0; width: 96px; height: 62px; display: flex; align-items: center; justify-content: center; }
+  .sheet-shape img { max-width: 100%; max-height: 100%; opacity: 0.9; filter: invert(0.92); }
+  :root[data-theme="light"] .sheet-shape img { filter: none; opacity: 0.82; }
+  .sheet-shape img[hidden] { display: none; }
   .sheet-call { font-size: 22px; font-weight: 700; letter-spacing: 0.05em; color: var(--sweep); }
   .sheet-type { font-size: 12px; color: var(--ink-soft); margin-top: 3px; min-height: 15px; }
   .sheet-route { font-size: 11px; color: var(--sweep); margin-top: 4px; letter-spacing: 0.04em; min-height: 14px; }
@@ -217,11 +223,12 @@
 <div class="sheet" id="sheet">
   <div class="sheet-grip"></div>
   <div class="sheet-head">
-    <div>
+    <div class="sheet-head-text">
       <div class="sheet-call" id="d-call">—</div>
       <div class="sheet-type" id="d-type">looking up type…</div>
       <div class="sheet-route" id="d-route"></div>
     </div>
+    <div class="sheet-shape"><img id="d-shape" alt="" draggable="false"></div>
     <button class="sheet-close" id="d-close">&times;</button>
   </div>
   <div class="sheet-grid">
@@ -229,7 +236,6 @@
     <div class="stat"><div class="k">speed</div><div class="v" id="d-spd">—</div></div>
     <div class="stat"><div class="k">heading</div><div class="v" id="d-hdg">—</div></div>
     <div class="stat"><div class="k">distance</div><div class="v" id="d-dist">—</div></div>
-    <div class="stat"><div class="k">country</div><div class="v" id="d-cty">—</div></div>
     <div class="stat"><div class="k">climb</div><div class="v" id="d-vr">—</div></div>
   </div>
   <div class="sheet-foot">
@@ -646,7 +652,6 @@
         icao,
         call: (a.flight || a.r || "").trim() || "—",
         flightCallsign: (a.flight || "").trim(), // used for the route lookup; blank for GA aircraft with no flight number
-        country: a.r ? regCountry(a.r) : "—",   // best-effort from registration prefix
         lat, lon,
         alt: altMeters(a.alt_baro ?? a.alt_geom),
         vel: velMs,
@@ -677,22 +682,6 @@
     if (!c || c.length < 2) return null;
     const map = { A1:2, A2:3, A3:4, A4:5, A5:6, A6:7, A7:8, B1:12, B2:10, B4:14, B6:14, B7:15 };
     return map[c] || null;
-  }
-
-  // very rough country guess from registration prefix (purely cosmetic)
-  function regCountry(reg) {
-    const r = reg.toUpperCase();
-    if (r.startsWith("F-")) return "France";
-    if (r.startsWith("G-")) return "United Kingdom";
-    if (r.startsWith("D-")) return "Germany";
-    if (r.startsWith("N")) return "United States";
-    if (r.startsWith("EC-")) return "Spain";
-    if (r.startsWith("I-")) return "Italy";
-    if (r.startsWith("PH-")) return "Netherlands";
-    if (r.startsWith("OO-")) return "Belgium";
-    if (r.startsWith("HB-")) return "Switzerland";
-    if (r.startsWith("EI-")) return "Ireland";
-    return "—";
   }
 
   // A plain-English bucket instead of an ICAO type code or wake-category letter,
@@ -1165,6 +1154,35 @@
     stageEl.style.paddingBottom = "";
     resize();
   }
+  // Top-down silhouette of the aircraft's exact type, from the vendored
+  // AircraftShapesSVG set (shapes/{ICAO type}.svg, e.g. shapes/A320.svg).
+  // The set covers ~180 common types, not every code the feed can report, so
+  // we fall back down a chain: exact type code → a representative shape for
+  // its friendly-type bucket → the generic Unidentified.svg → hide. The chain
+  // is driven off the <img>'s own error event (a missing file 404s), tracked
+  // in data-stage, so no filename manifest has to be embedded.
+  const SHAPE_BUCKET = {
+    "Commercial Airliner": "A320",
+    "Private Jet": "C25B",
+    "Helicopter": "R44",
+    "Small Hobby Plane": "C172",
+    "Drone": "Q4"
+  };
+  const shapeImg = document.getElementById("d-shape");
+  function setShape(p) {
+    const bucket = SHAPE_BUCKET[friendlyType(p)] || "Unidentified";
+    const code = (p.typeCode || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    shapeImg.onerror = () => {
+      const stage = shapeImg.dataset.stage;
+      if (stage === "exact")       { shapeImg.dataset.stage = "bucket";  shapeImg.src = `shapes/${bucket}.svg`; }
+      else if (stage === "bucket") { shapeImg.dataset.stage = "generic"; shapeImg.src = "shapes/Unidentified.svg"; }
+      else { shapeImg.onerror = null; shapeImg.hidden = true; } // give up quietly
+    };
+    shapeImg.hidden = false;
+    if (code) { shapeImg.dataset.stage = "exact";  shapeImg.src = `shapes/${code}.svg`; }
+    else      { shapeImg.dataset.stage = "bucket"; shapeImg.src = `shapes/${bucket}.svg`; }
+  }
+
   function renderSheet() {
     const p = planes.get(selected);
     if (!p) { closeSheet(); return; }
@@ -1179,8 +1197,8 @@
     document.getElementById("d-spd").innerHTML = fmtSpd(p.vel);
     document.getElementById("d-hdg").innerHTML = `${Math.round(p.track)}<small>°</small>`;
     document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(p, Date.now())));
-    document.getElementById("d-cty").textContent = p.country;
     document.getElementById("d-vr").innerHTML = fmtVr(p.vrate);
+    setShape(p);
 
     const routeEl = document.getElementById("d-route");
     routeEl.textContent = p.flightCallsign ? "route…" : "";
