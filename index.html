@@ -359,6 +359,16 @@
   // the grid-cell elevation with every response). null = unknown/clear —
   // display hidden, nothing dimmed.
   let cloudCeilM = null, cloudCeilMslM = null, cloudFetchedAt = 0, cloudTimer = null;
+  // Ground elevation (MSL, meters) at the user's spot — piggybacks on the
+  // cloud-ceiling fetch's `elevation` field (present on every successful
+  // response regardless of cloud data), rather than the Geolocation API's
+  // own `coords.altitude`, which is frequently null (desktop, Wi-Fi/IP
+  // geolocation, indoors). Used only as a sanity floor: aircraft altitude is
+  // MSL too, and the live dead-reckoned figure (estimatedAltitude) can drift
+  // below the observer's own elevation for a steeply-descending aircraft
+  // near the end of the extrapolation window — showing "the plane is
+  // underground relative to you" doesn't make sense, so it's clamped there.
+  let groundElevM = null;
   let failStreak = 0;       // consecutive failed polls (for retry pacing + status text)
   let pollInFlight = false; // guards against overlapping polls on visibility flapping
   // The naked-eye visibility filter (see nakedEyeVisible below) is ALWAYS on
@@ -483,8 +493,10 @@
   // it goes stale on the same schedule as the position fix it came with.
   function estimatedAltitude(p, nowMs) {
     const dtSec = Math.min(Math.max((nowMs - p.posTime) / 1000, 0), 90);
-    if (p.alt == null || !p.vrate || dtSec === 0) return p.alt;
-    return p.alt + p.vrate * dtSec;
+    const alt = (p.alt == null || !p.vrate || dtSec === 0) ? p.alt : p.alt + p.vrate * dtSec;
+    // sanity floor: a descending aircraft's dead-reckoned altitude shouldn't
+    // extrapolate to below the ground under the observer (see groundElevM)
+    return (alt != null && groundElevM != null) ? Math.max(alt, groundElevM) : alt;
   }
   // Climb rate, speed and heading have no in-between fixes to dead-reckon
   // from the way lat/lon/altitude do (no independent rate to extrapolate
@@ -599,6 +611,7 @@
       }
       cloudCeilM = best;
       cloudCeilMslM = best != null ? best + (data.elevation || 0) : null;
+      if (data.elevation != null) groundElevM = data.elevation; // independent of cloud model coverage
       cloudFetchedAt = Date.now();
     } catch {
       // no error state for a decorative layer: hide the readout, dim nothing
@@ -1497,7 +1510,7 @@
     clearTimeout(pollTimer); pollTimer = null; failStreak = 0; me = null; planes.clear();
     clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
     clearInterval(cloudTimer); cloudTimer = null;
-    cloudCeilM = null; cloudCeilMslM = null; cloudFetchedAt = 0; updateCeilingDisplay();
+    cloudCeilM = null; cloudCeilMslM = null; cloudFetchedAt = 0; groundElevM = null; updateCeilingDisplay();
     document.getElementById("count-n").textContent = "0";
     document.getElementById("gate").classList.remove("hidden");
     setStatus("paused", "standby");
