@@ -499,38 +499,52 @@
     if (tSec >= tStop) return (v0 * v0) / (2 * ROLLOUT_DECEL_MS2); // full stopping distance, then holds
     return v0 * tSec - 0.5 * ROLLOUT_DECEL_MS2 * tSec * tSec;
   }
-  // ONE clock, ONE model for a landing/landed aircraft: every displayed
-  // figure — position, altitude, speed, climb — derives from this single
-  // two-phase timeline anchored at the same instant, the last real position
-  // fix (posTime). Phase 1 (final approach, until the descent reaches the
-  // ground): speed constant at the fix's ground speed, altitude sinking at
-  // the fix's climb rate, position advancing to match. Phase 2 (rollout):
-  // altitude pinned to the ground, climb reads 0, speed brakes at
-  // ROLLOUT_DECEL_MS2 to a stop, position advances by the exact matching
-  // braking distance and then holds. Previously each figure ran on its own
-  // clock — speed/climb eased from statAt, which the feed effectively
-  // refreshes every poll even when it's only re-serving the same stale fix,
-  // while position/altitude extrapolated from posTime — so a plane could
-  // read 250 km/h while its dot stood visibly still, or show a sinking
-  // climb rate under a frozen altitude. If one figure here ever changes,
-  // it must keep being the derivative/integral of its neighbours.
-  function rolloutState(p, nowMs) {
-    const t = Math.min(Math.max((nowMs - p.posTime) / 1000, 0), 90);
+  // ONE clock, ONE model for EVERY aircraft: position, altitude, speed and
+  // climb all derive from this single timeline anchored at the last real
+  // position fix (posTime) — never at statAt, which the feed effectively
+  // refreshes every poll even when it's only re-serving the same stale fix.
+  //
+  // The model is a full landing FORECAST, not just a post-touchdown brake:
+  // the feed routinely goes quiet (or freezes on one stale fix) while a
+  // landing plane is still a few hundred metres up, and someone watching
+  // the real plane land can see the frozen figures are fake. So:
+  //   phase 1 (descent): if the fix's climb rate is negative, fly the
+  //     altitude down at that rate, speed and track constant, position
+  //     advancing to match, until the forecast altitude meets the ground;
+  //   phase 2 (rollout): from that touchdown moment, altitude pinned to
+  //     the ground, climb reads 0, speed brakes at ROLLOUT_DECEL_MS2 to a
+  //     full stop, position advances by the exact braking distance and
+  //     then holds — a stopped plane's distance stops changing BECAUSE its
+  //     speed reads 0, never the other way around.
+  // Level or climbing aircraft never reach phase 2 (tGround = Infinity):
+  // they just keep flying straight. There is deliberately NO time cap that
+  // freezes a plane mid-air anymore (the old 90s cap froze the dot while
+  // the speed readout kept showing hundreds of km/h — the exact
+  // incoherence this model exists to prevent). A long-stale airborne plane
+  // keeps moving and simply exits the range ring; real removal is handled
+  // by the 90s-since-last-heard prune in ingest().
+  // If one figure here ever changes, it must keep being the
+  // derivative/integral of its neighbours.
+  function kinematicState(p, nowMs) {
+    const t = Math.max(0, (nowMs - p.posTime) / 1000);
     const ground = groundElevM ?? 0;
     const alt0 = p.alt != null ? Math.max(p.alt, ground) : ground;
-    const sinking = p.vrate != null && p.vrate < -0.5;
-    // seconds from the fix until the descent reaches the ground (0 = already there)
-    const tGround = sinking ? Math.min((alt0 - ground) / -p.vrate, 90) : 0;
     const v0 = p.vel || 0;
-    if (t < tGround) { // phase 1: still on final
-      return { distM: v0 * t, altM: alt0 + p.vrate * t, velMs: v0, vrateMs: p.vrate };
+    const vr = p.vrate ?? 0;
+    // seconds from the fix until the forecast altitude reaches the ground:
+    // 0 if already reported on it (p.landed), finite if meaningfully
+    // descending, never for level/climbing flight
+    const tGround = p.landed ? 0 : (vr < -0.5 ? (alt0 - ground) / -vr : Infinity);
+    if (t < tGround) { // phase 1: airborne (descending toward the forecast touchdown, or just cruising)
+      return { distM: v0 * t, altM: Math.max(alt0 + vr * t, ground), velMs: v0, vrateMs: vr, onGround: false };
     }
     const tRoll = t - tGround; // phase 2: on the runway, braking
     return {
       distM: v0 * tGround + rolloutDistanceM(v0, tRoll),
       altM: ground,
       velMs: rolloutVel(v0, tRoll),
-      vrateMs: 0
+      vrateMs: 0,
+      onGround: true
     };
   }
   // Dead-reckon forward from the last real fix using its ground speed and
@@ -540,43 +554,30 @@
   // the freshest fix means the display is only as stale as the data itself
   // (a few seconds), not the 30s poll cycle on top of that.
   function estimatedPosition(p, nowMs) {
-    const dtSec = Math.min(Math.max((nowMs - p.posTime) / 1000, 0), 90); // capped so a stalled poll doesn't extrapolate forever
-    if (!p.vel || dtSec === 0) return { lat: p.lat, lon: p.lon };
-    const distKm = (p.landed ? rolloutState(p, nowMs).distM : p.vel * dtSec) / 1000;
-    return destinationPoint(p.lat, p.lon, p.track, distKm);
+    if (!p.vel) return { lat: p.lat, lon: p.lon };
+    return destinationPoint(p.lat, p.lon, p.track, kinematicState(p, nowMs).distM / 1000);
   }
-  // Same dead-reckoning idea as estimatedPosition, applied to altitude:
-  // extrapolate forward from the last known altitude using the last known
-  // (raw, not display-smoothed) climb rate, anchored at the same posTime so
-  // it goes stale on the same schedule as the position fix it came with.
   function estimatedAltitude(p, nowMs) {
-    if (p.landed) return rolloutState(p, nowMs).altM; // same timeline as position/speed/climb
-    const dtSec = Math.min(Math.max((nowMs - p.posTime) / 1000, 0), 90);
-    const alt = (p.alt == null || !p.vrate || dtSec === 0) ? p.alt : p.alt + p.vrate * dtSec;
-    // sanity floor: a descending aircraft's dead-reckoned altitude shouldn't
-    // extrapolate to below the ground under the observer (see groundElevM)
-    return (alt != null && groundElevM != null) ? Math.max(alt, groundElevM) : alt;
+    if (p.alt == null && !p.landed) return null; // nothing to forecast from
+    return kinematicState(p, nowMs).altM;
   }
   // Climb rate, speed and heading have no in-between fixes to dead-reckon
-  // from the way lat/lon/altitude do (no independent rate to extrapolate
-  // them from) — so instead of snapping each sheet stat straight to the new
-  // poll's value every 45s, ease from the PREVIOUS reading toward the
-  // current one over the poll interval (all three share `statAt`, the time
-  // the current reading arrived, since they're all refreshed by the same
-  // poll). Purely cosmetic — the real values only update once per poll —
-  // but keeps the sheet visibly alive between polls instead of frozen.
+  // from the way lat/lon/altitude do — so while airborne, ease from the
+  // PREVIOUS poll's reading toward the current one over the poll interval
+  // (cosmetic; converges to the fix value the model flies with, so it stays
+  // consistent with the motion on screen). Once the model has the plane on
+  // the ground, the kinematic state takes over outright: climb reads 0 and
+  // speed reads the braking curve that is actually driving the position.
   function displayVrate(p, nowMs) {
-    if (p.landed) return rolloutState(p, nowMs).vrateMs; // reads 0 the moment the modelled altitude reaches ground
+    const k = kinematicState(p, nowMs);
+    if (k.onGround) return 0;
     if (p.prevVrate == null || p.vrate == null) return p.vrate;
     const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
     return p.prevVrate + (p.vrate - p.prevVrate) * frac;
   }
   function displayVel(p, nowMs) {
-    // Landed/landing: the rollout model, on the SAME posTime clock as the
-    // position/altitude it drives. The old statAt-based path never braked
-    // while the feed kept re-serving the same stale fix (statAt refreshed
-    // every poll), so speed sat at touchdown speed while the dot stood still.
-    if (p.landed) return rolloutState(p, nowMs).velMs;
+    const k = kinematicState(p, nowMs);
+    if (k.onGround) return k.velMs;
     if (p.prevVel == null || p.vel == null) return p.vel;
     const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
     return p.prevVel + (p.vel - p.prevVel) * frac;
@@ -799,8 +800,10 @@
         vel: velMs,
         track: (a.track ?? a.true_heading ?? 0),
         vrate: vrMs,
-        // drives the rollout-braking model in estimatedPosition/displayVel
-        // (see ROLLOUT_DECEL_MS2) instead of a constant-velocity dead reckon
+        // starts kinematicState's rollout phase immediately (tGround = 0);
+        // a descending plane that ISN'T flagged still lands on its own once
+        // the forecast altitude meets the ground — this flag only matters
+        // for planes already on/near it whose fix lacks a usable climb rate
         landed: a.alt_baro === "ground" || nearGround,
         // climb/speed/heading only ever change once per poll (they're not
         // positions we can dead-reckon), but showing them frozen for 45s at
