@@ -689,11 +689,21 @@
     for (const a of list) {
       const lat = a.lat, lon = a.lon;
       if (lat == null || lon == null) continue;
-      if (a.alt_baro === "ground") continue;
       const icao = a.hex;
       if (!icao) continue;
-      seen.add(icao);
       const prev = planes.get(icao);
+      // "ground" aircraft we've never tracked airborne are parked/taxiing
+      // traffic at some airport, not a plane descending toward the user —
+      // skip those, same as before. But one we WERE already tracking has
+      // just landed: keep ingesting it instead of freezing here. Skipping
+      // unconditionally used to mean the instant a tracked aircraft touched
+      // down, the app stopped listening to it entirely — the display kept
+      // showing its last airborne speed/altitude (dead-reckoned forward at
+      // that frozen value) for up to 90s, which looked exactly like "landed
+      // without ever decelerating" even though the real feed's ground speed
+      // keeps dropping through rollout.
+      if (a.alt_baro === "ground" && !prev) continue;
+      seen.add(icao);
       // ground speed (kt) -> m/s ; baro_rate (ft/min) -> m/s
       const velMs  = a.gs != null ? a.gs * 0.514444 : null;
       const vrMs   = a.baro_rate != null ? a.baro_rate * 0.00508 : (a.geom_rate != null ? a.geom_rate * 0.00508 : null);
@@ -705,7 +715,11 @@
         call: (a.flight || a.r || "").trim() || "—",
         flightCallsign: (a.flight || "").trim(), // used for the route lookup; blank for GA aircraft with no flight number
         lat, lon,
-        alt: altMeters(a.alt_baro ?? a.alt_geom),
+        // "ground" carries no baro altitude of its own — settle at the
+        // user's own ground elevation (close enough for a rolling/taxiing
+        // aircraft) so it visibly comes down to the radar's ground plane
+        // instead of keeping its last airborne altitude or going blank.
+        alt: a.alt_baro === "ground" ? (groundElevM ?? 0) : altMeters(a.alt_baro ?? a.alt_geom),
         vel: velMs,
         track: (a.track ?? a.true_heading ?? 0),
         vrate: vrMs,
