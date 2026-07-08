@@ -486,15 +486,29 @@
     if (p.alt == null || !p.vrate || dtSec === 0) return p.alt;
     return p.alt + p.vrate * dtSec;
   }
-  // Climb rate has no in-between fixes to dead-reckon from (it's a rate, not
-  // a position) — so instead of snapping the sheet's "climb" stat straight to
-  // the new poll's value every 45s, ease from the PREVIOUS reading toward the
-  // current one over the poll interval. Purely cosmetic (the real value only
-  // updates once per poll) but keeps the number visibly alive between polls.
+  // Climb rate, speed and heading have no in-between fixes to dead-reckon
+  // from the way lat/lon/altitude do (no independent rate to extrapolate
+  // them from) — so instead of snapping each sheet stat straight to the new
+  // poll's value every 45s, ease from the PREVIOUS reading toward the
+  // current one over the poll interval (all three share `statAt`, the time
+  // the current reading arrived, since they're all refreshed by the same
+  // poll). Purely cosmetic — the real values only update once per poll —
+  // but keeps the sheet visibly alive between polls instead of frozen.
   function displayVrate(p, nowMs) {
     if (p.prevVrate == null || p.vrate == null) return p.vrate;
-    const frac = Math.min(Math.max((nowMs - p.vrateAt) / POLL_MS, 0), 1);
+    const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
     return p.prevVrate + (p.vrate - p.prevVrate) * frac;
+  }
+  function displayVel(p, nowMs) {
+    if (p.prevVel == null || p.vel == null) return p.vel;
+    const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
+    return p.prevVel + (p.vel - p.prevVel) * frac;
+  }
+  function displayTrack(p, nowMs) {
+    if (p.prevTrack == null || p.track == null) return p.track;
+    const frac = Math.min(Math.max((nowMs - p.statAt) / POLL_MS, 0), 1);
+    const diff = ((p.track - p.prevTrack + 540) % 360) - 180; // shortest signed path, e.g. 350°->10°
+    return (p.prevTrack + diff * frac + 360) % 360;
   }
   function project(p) {
     const dist = haversineKm(me, { lat: p.lat, lon: p.lon });
@@ -682,13 +696,15 @@
         vel: velMs,
         track: (a.track ?? a.true_heading ?? 0),
         vrate: vrMs,
-        // climb rate only ever changes once per poll (it's not a position we
-        // can dead-reckon), but showing it frozen for 45s at a time reads as
-        // stuck. displayVrate() interpolates from the PREVIOUS poll's value
-        // toward this one over the poll interval, so the sheet's "climb"
-        // stat visibly eases toward the new reading instead of snapping.
+        // climb/speed/heading only ever change once per poll (they're not
+        // positions we can dead-reckon), but showing them frozen for 45s at
+        // a time reads as stuck. displayVrate/displayVel/displayTrack ease
+        // from the PREVIOUS poll's value toward this one over the poll
+        // interval, so the sheet's stats visibly move instead of snapping.
         prevVrate: prev ? prev.vrate : vrMs,
-        vrateAt: now,
+        prevVel: prev ? prev.vel : velMs,
+        prevTrack: prev ? prev.track : (a.track ?? a.true_heading ?? 0),
+        statAt: now,
         // type info is INLINE now — no second request
         typeCode: a.t || "",
         typeDesc: a.desc || "",
@@ -891,16 +907,18 @@
     }
     ctx.globalAlpha = 1; // dimming must never leak into the next frame's rings/sweep
 
-    // Keep the open sheet's altitude/distance/climb stats alive between polls
-    // (estimatedAltitude/estimatedPosition/displayVrate) without re-running
-    // the whole renderSheet() every frame — that would also re-trigger
-    // setShape()'s <img> src assignment and spam the route lookup's DOM
-    // writes for no reason.
+    // Keep the open sheet's stats alive between polls (estimatedAltitude/
+    // estimatedPosition/displayVrate/displayVel/displayTrack) without
+    // re-running the whole renderSheet() every frame — that would also
+    // re-trigger setShape()'s <img> src assignment and spam the route
+    // lookup's DOM writes for no reason.
     if (selected) {
       const sp = planes.get(selected);
       if (sp) {
         document.getElementById("d-alt").innerHTML = fmtAlt(estimatedAltitude(sp, now)) +
           (isAboveClouds(sp) ? ' <span title="above the cloud ceiling">☁️</span>' : "");
+        document.getElementById("d-spd").innerHTML = fmtSpd(displayVel(sp, now));
+        document.getElementById("d-hdg").innerHTML = `${Math.round(displayTrack(sp, now))}<small>°</small>`;
         document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(sp, now)));
         document.getElementById("d-vr").innerHTML = fmtVr(displayVrate(sp, now));
       }
@@ -1242,8 +1260,8 @@
     // ☁️ = flying above the current cloud ceiling (it's why the icon is dimmed)
     document.getElementById("d-alt").innerHTML = fmtAlt(estimatedAltitude(p, Date.now())) +
       (isAboveClouds(p) ? ' <span title="above the cloud ceiling">☁️</span>' : "");
-    document.getElementById("d-spd").innerHTML = fmtSpd(p.vel);
-    document.getElementById("d-hdg").innerHTML = `${Math.round(p.track)}<small>°</small>`;
+    document.getElementById("d-spd").innerHTML = fmtSpd(displayVel(p, Date.now()));
+    document.getElementById("d-hdg").innerHTML = `${Math.round(displayTrack(p, Date.now()))}<small>°</small>`;
     document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(p, Date.now())));
     document.getElementById("d-vr").innerHTML = fmtVr(displayVrate(p, Date.now()));
     setShape(p);
