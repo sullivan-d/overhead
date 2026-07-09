@@ -783,11 +783,19 @@
   async function updateTerrainElevations() {
     if (!me) return;
     const candidates = [];
+    // Per-aircraft try/catch, same discipline as draw()'s render loop: one
+    // malformed record (bad lat/lon) must skip only that aircraft, not throw
+    // out of the loop and silently abort terrain lookups for every OTHER
+    // aircraft this poll too — this async function isn't awaited by its
+    // caller, so an uncaught throw here becomes an invisible unhandled
+    // rejection, not an error anyone would ever see.
     for (const p of planes.values()) {
-      if (p.alt == null || p.alt > ELEV_LOOKUP_ALT_CEILING_M) continue;
-      const key = terrainKey(p.lat, p.lon);
-      if (terrainCache.has(key)) { p.terrainElevM = terrainCache.get(key); continue; }
-      candidates.push({ p, key });
+      try {
+        if (p.alt == null || p.alt > ELEV_LOOKUP_ALT_CEILING_M) continue;
+        const key = terrainKey(p.lat, p.lon);
+        if (terrainCache.has(key)) { p.terrainElevM = terrainCache.get(key); continue; }
+        candidates.push({ p, key });
+      } catch (e) { console.warn("skipped terrain candidacy", p.icao, e); }
     }
     if (!candidates.length) return;
     // de-dupe buckets shared by two nearby low aircraft; Open-Meteo's
