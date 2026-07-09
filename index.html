@@ -56,7 +56,8 @@
     display: flex; align-items: baseline; justify-content: space-between;
     padding: 14px 18px 10px; border-bottom: 1px solid var(--grid-line); flex-shrink: 0;
   }
-  .brand { font-weight: 700; letter-spacing: 0.16em; font-size: 13px; text-transform: uppercase; }
+  /* the brand doubles as a "home" button — tap it to go back to the gate */
+  .brand { font-weight: 700; letter-spacing: 0.16em; font-size: 13px; text-transform: uppercase; cursor: pointer; user-select: none; }
   .brand b { color: var(--sweep); }
   .header-right { display: flex; align-items: center; gap: 10px; }
   .theme-btn {
@@ -166,6 +167,14 @@
   .gate.hidden { display: none; }
   .gate-err { color: var(--hot); font-size: 11.5px; min-height: 16px; }
 
+  .lang-row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .lang-row .globe { font-size: 12px; color: var(--ink-faint); }
+  .lang-row button {
+    background: var(--panel); border: 1px solid var(--ring); color: var(--ink-soft);
+    font-family: inherit; font-size: 10.5px; padding: 5px 9px; border-radius: 4px; cursor: pointer; transition: all 0.15s;
+  }
+  .lang-row button.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
+
   .addr-block { display: none; flex-direction: column; gap: 10px; width: 100%; max-width: 340px; }
   .addr-block.show { display: flex; }
   .addr-row { display: flex; gap: 6px; }
@@ -185,7 +194,7 @@
 </head>
 <body>
 <header>
-  <div class="brand">OVER<b>HEAD</b></div>
+  <div class="brand" id="brand">OVER<b>HEAD</b></div>
   <div class="header-right">
     <button class="theme-btn" id="theme-btn" title="Toggle light/dark theme">🌙</button>
     <div class="status" id="status"><span class="dot"></span><span id="status-txt">standby</span></div>
@@ -195,7 +204,7 @@
 <div class="stage">
   <div class="controls">
     <div class="rng-group" id="rng-group">
-      <span class="rng-label">range</span>
+      <span class="rng-label" id="rng-label">range</span>
       <div class="rng-btns" id="rng">
         <button data-km="5">5</button>
         <button data-km="10" class="on">10</button>
@@ -204,11 +213,11 @@
       </div>
     </div>
     <div class="rng-group hidden" id="ceiling-box" title="☁ cloud ceiling — aircraft above it are dimmed, they may be hidden behind the clouds. 🛬 terrain elevation under the nearest aircraft flying low">
-      <span class="rng-label">conditions</span>
+      <span class="rng-label" id="cond-label">conditions</span>
       <div class="ceiling-val" id="ceiling-val">—</div>
     </div>
   </div>
-  <div class="count"><div class="n" id="count-n">0</div><div class="l">aircraft</div></div>
+  <div class="count"><div class="n" id="count-n">0</div><div class="l" id="count-l">aircraft</div></div>
 
   <canvas id="radar"></canvas>
   <div class="here" id="here"></div>
@@ -235,11 +244,11 @@
         <div class="sheet-route" id="d-route"></div>
       </div>
       <div class="sheet-stats">
-        <div class="stat wide"><div class="k">altitude</div><div class="v" id="d-alt">—</div></div>
-        <div class="stat"><div class="k">speed</div><div class="v" id="d-spd">—</div></div>
-        <div class="stat"><div class="k">distance</div><div class="v" id="d-dist">—</div></div>
-        <div class="stat"><div class="k">heading</div><div class="v" id="d-hdg">—</div></div>
-        <div class="stat"><div class="k">climb</div><div class="v" id="d-vr">—</div></div>
+        <div class="stat wide"><div class="k" id="k-alt">altitude</div><div class="v" id="d-alt">—</div></div>
+        <div class="stat"><div class="k" id="k-spd">speed</div><div class="v" id="d-spd">—</div></div>
+        <div class="stat"><div class="k" id="k-dist">distance</div><div class="v" id="d-dist">—</div></div>
+        <div class="stat"><div class="k" id="k-hdg">heading</div><div class="v" id="d-hdg">—</div></div>
+        <div class="stat"><div class="k" id="k-vr">climb</div><div class="v" id="d-vr">—</div></div>
       </div>
     </div>
     <div class="sheet-shape"><img id="d-shape" alt="" draggable="false"></div>
@@ -255,10 +264,10 @@
 
 <div class="gate" id="gate">
   <h1>Over<b>head</b></h1>
-  <p>A live radar of the aircraft in your sky. No sign-up, no key. Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.</p>
+  <p id="gate-intro">A live radar of the aircraft in your sky. No sign-up, no key. Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.</p>
   <button class="primary" id="gate-btn">📍 Use my location</button>
 
-  <div class="addr-or">prefer not to? an address works too — no permission needed</div>
+  <div class="addr-or" id="addr-or">prefer not to? an address works too — no permission needed</div>
   <div class="addr-block show" id="addr-block">
     <div class="addr-row">
       <input id="addr-input" type="text" placeholder="City, street, or place" autocomplete="off">
@@ -267,7 +276,15 @@
   </div>
   <ul class="addr-results" id="addr-results"></ul>
   <div class="gate-err" id="gate-err"></div>
-  <div class="gate-why"><b>Why location?</b>The radar centers on where you stand. Your position is used for one thing only — asking airplanes.live which aircraft are above you, straight from your browser. It's never stored and never sent anywhere else. Your browser will ask for permission first.</div>
+  <div class="lang-row" id="lang-row">
+    <span class="globe">🌐</span>
+    <button data-lang="en">English</button>
+    <button data-lang="fr">Français</button>
+    <button data-lang="pt">Português</button>
+    <button data-lang="de">Deutsch</button>
+    <button data-lang="zh">简体中文</button>
+  </div>
+  <div class="gate-why"><b id="why-t">Why location?</b><span id="why-b">The radar centers on where you stand. Your position is used for one thing only — asking airplanes.live which aircraft are above you, straight from your browser. It's never stored and never sent anywhere else. Your browser will ask for permission first.</span></div>
 </div>
 
 <script>
@@ -307,6 +324,249 @@
     }
   };
   let theme = THEMES.dark;
+
+  // ---------- i18n ----------
+  // Five UI languages, selectable on the gate (persisted to localStorage).
+  // Every user-facing string goes through t(). Logic never branches on a
+  // translated string — type buckets use language-independent KEYS (see
+  // typeKey below), so a translation can't break wingspan/icon/shape lookups.
+  // Number formatting follows the language too (NUM_LOCALE): de/fr/pt get
+  // their own thousands separators and decimal commas.
+  const LANG_KEY = "overhead-lang";
+  const NUM_LOCALE = { en: "en-GB", fr: "fr-FR", pt: "pt-PT", de: "de-DE", zh: "zh-CN" };
+  const HTML_LANG = { en: "en-GB", fr: "fr", pt: "pt-PT", de: "de", zh: "zh-Hans" };
+  const I18N = {
+    en: {
+      intro: 'A live radar of the aircraft in your sky. No sign-up, no key. Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.',
+      useLocation: "📍 Use my location",
+      orAddress: "prefer not to? an address works too — no permission needed",
+      addrPlaceholder: "City, street, or place",
+      go: "Go",
+      whyTitle: "Why location?",
+      whyBody: "The radar centers on where you stand. Your position is used for one thing only — asking airplanes.live which aircraft are above you, straight from your browser. It's never stored and never sent anywhere else. Your browser will ask for permission first.",
+      locating: "locating…",
+      geoUnavailable: "geolocation unavailable on this device — use the address box below",
+      geoBlocked: "location blocked — use the address box below instead",
+      geoFailed: "couldn't get location — use the address box below instead",
+      searching: "searching…",
+      noMatch: "no match found — try a city or postcode",
+      lookupFailed: "address lookup failed — check connection",
+      range: "range",
+      conditions: "conditions",
+      conditionsTip: "☁ cloud ceiling — aircraft above it are dimmed, they may be hidden behind the clouds. 🛬 terrain elevation under the nearest aircraft flying low",
+      aircraft: "aircraft",
+      hint: "tap an aircraft for details",
+      compassTip: "Compass: the view rotates to the way you're facing. Tap to switch back to north-up.",
+      homeTip: "Back to the start screen",
+      standby: "standby",
+      connecting: "connecting…",
+      live: "live",
+      reconnecting: "reconnecting…",
+      offline: "offline · retrying",
+      pausedHidden: "paused · tab hidden",
+      myLocation: "my location",
+      change: "change",
+      altitude: "altitude", speed: "speed", distance: "distance", heading: "heading", climb: "climb",
+      routeLoading: "route…",
+      level: "level",
+      aboveClouds: "above the cloud ceiling",
+      onGround: "on the ground",
+      unitsMetric: "units: m · km/h", unitsAviation: "units: ft · kt",
+      unitsTip: "Switch between everyday metric units (m, km/h) and the feet/knots used in aviation",
+      community: "💬 community", support: "🤍 support", comingSoon: "coming soon",
+      themeToDark: "Switch to dark mode", themeToLight: "Switch to light mode",
+      type_airliner: "Commercial Airliner", type_jet: "Private Jet", type_hobby: "Small Hobby Plane",
+      type_heli: "Helicopter", type_drone: "Drone", type_space: "Space Vehicle",
+      type_airship: "Airship", type_aircraft: "Aircraft",
+      sun: "sun", moon: "moon",
+      cards: ["N", "E", "S", "W"]
+    },
+    fr: {
+      intro: 'Un radar en direct des avions dans votre ciel. Sans inscription, sans clé. Données du réseau ouvert <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
+      useLocation: "📍 Utiliser ma position",
+      orAddress: "vous préférez éviter ? une adresse suffit — aucune permission requise",
+      addrPlaceholder: "Ville, rue ou lieu",
+      go: "OK",
+      whyTitle: "Pourquoi la position ?",
+      whyBody: "Le radar se centre sur l'endroit où vous êtes. Votre position ne sert qu'à une seule chose : demander à airplanes.live quels avions vous survolent, directement depuis votre navigateur. Elle n'est jamais stockée ni envoyée ailleurs. Votre navigateur demandera d'abord la permission.",
+      locating: "localisation…",
+      geoUnavailable: "géolocalisation indisponible sur cet appareil — utilisez le champ d'adresse ci-dessous",
+      geoBlocked: "position bloquée — utilisez plutôt le champ d'adresse ci-dessous",
+      geoFailed: "position introuvable — utilisez plutôt le champ d'adresse ci-dessous",
+      searching: "recherche…",
+      noMatch: "aucun résultat — essayez une ville ou un code postal",
+      lookupFailed: "recherche d'adresse échouée — vérifiez la connexion",
+      range: "portée",
+      conditions: "conditions",
+      conditionsTip: "☁ plafond nuageux — les avions au-dessus sont estompés, ils peuvent être cachés par les nuages. 🛬 altitude du terrain sous l'avion le plus proche volant bas",
+      aircraft: "avions",
+      hint: "touchez un avion pour les détails",
+      compassTip: "Boussole : la vue pivote dans la direction où vous regardez. Touchez pour remettre le nord en haut.",
+      homeTip: "Retour à l'écran d'accueil",
+      standby: "en attente",
+      connecting: "connexion…",
+      live: "en direct",
+      reconnecting: "reconnexion…",
+      offline: "hors ligne · nouvel essai",
+      pausedHidden: "en pause · onglet masqué",
+      myLocation: "ma position",
+      change: "changer",
+      altitude: "altitude", speed: "vitesse", distance: "distance", heading: "cap", climb: "montée",
+      routeLoading: "route…",
+      level: "palier",
+      aboveClouds: "au-dessus du plafond nuageux",
+      onGround: "au sol",
+      unitsMetric: "unités : m · km/h", unitsAviation: "unités : ft · kt",
+      unitsTip: "Basculer entre les unités métriques (m, km/h) et les pieds/nœuds de l'aviation",
+      community: "💬 communauté", support: "🤍 soutenir", comingSoon: "bientôt disponible",
+      themeToDark: "Passer en mode sombre", themeToLight: "Passer en mode clair",
+      type_airliner: "Avion de ligne", type_jet: "Jet privé", type_hobby: "Petit avion de loisir",
+      type_heli: "Hélicoptère", type_drone: "Drone", type_space: "Véhicule spatial",
+      type_airship: "Dirigeable", type_aircraft: "Aéronef",
+      sun: "soleil", moon: "lune",
+      cards: ["N", "E", "S", "O"]
+    },
+    pt: {
+      intro: 'Um radar em direto dos aviões no seu céu. Sem registo, sem chave. Dados da rede aberta <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
+      useLocation: "📍 Usar a minha localização",
+      orAddress: "prefere não usar? uma morada também serve — sem permissões",
+      addrPlaceholder: "Cidade, rua ou lugar",
+      go: "Ir",
+      whyTitle: "Porquê a localização?",
+      whyBody: "O radar centra-se onde você está. A sua posição serve apenas para uma coisa — perguntar à airplanes.live que aviões estão por cima de si, diretamente do seu navegador. Nunca é guardada nem enviada para outro lado. O navegador pedirá primeiro permissão.",
+      locating: "a localizar…",
+      geoUnavailable: "geolocalização indisponível neste dispositivo — use a caixa de morada abaixo",
+      geoBlocked: "localização bloqueada — use antes a caixa de morada abaixo",
+      geoFailed: "não foi possível obter a localização — use antes a caixa de morada abaixo",
+      searching: "a procurar…",
+      noMatch: "sem resultados — tente uma cidade ou código postal",
+      lookupFailed: "falha na pesquisa da morada — verifique a ligação",
+      range: "alcance",
+      conditions: "condições",
+      conditionsTip: "☁ teto de nuvens — os aviões acima dele aparecem esbatidos, podem estar escondidos pelas nuvens. 🛬 elevação do terreno sob o avião mais próximo a voar baixo",
+      aircraft: "aviões",
+      hint: "toque num avião para ver detalhes",
+      compassTip: "Bússola: a vista roda para a direção em que está virado. Toque para voltar ao norte em cima.",
+      homeTip: "Voltar ao ecrã inicial",
+      standby: "em espera",
+      connecting: "a ligar…",
+      live: "em direto",
+      reconnecting: "a religar…",
+      offline: "offline · a tentar de novo",
+      pausedHidden: "em pausa · separador oculto",
+      myLocation: "a minha localização",
+      change: "mudar",
+      altitude: "altitude", speed: "velocidade", distance: "distância", heading: "rumo", climb: "subida",
+      routeLoading: "rota…",
+      level: "nivelado",
+      aboveClouds: "acima do teto de nuvens",
+      onGround: "no solo",
+      unitsMetric: "unidades: m · km/h", unitsAviation: "unidades: ft · kt",
+      unitsTip: "Alternar entre unidades métricas (m, km/h) e os pés/nós usados na aviação",
+      community: "💬 comunidade", support: "🤍 apoiar", comingSoon: "brevemente",
+      themeToDark: "Mudar para o modo escuro", themeToLight: "Mudar para o modo claro",
+      type_airliner: "Avião Comercial", type_jet: "Jato Privado", type_hobby: "Pequeno Avião de Recreio",
+      type_heli: "Helicóptero", type_drone: "Drone", type_space: "Veículo Espacial",
+      type_airship: "Dirigível", type_aircraft: "Aeronave",
+      sun: "sol", moon: "lua",
+      cards: ["N", "E", "S", "O"]
+    },
+    de: {
+      intro: 'Ein Live-Radar der Flugzeuge an Ihrem Himmel. Keine Anmeldung, kein Schlüssel. Daten aus dem offenen Netzwerk <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
+      useLocation: "📍 Meinen Standort verwenden",
+      orAddress: "lieber nicht? eine Adresse geht auch — keine Berechtigung nötig",
+      addrPlaceholder: "Stadt, Straße oder Ort",
+      go: "Los",
+      whyTitle: "Warum Standort?",
+      whyBody: "Das Radar zentriert sich auf Ihren Standort. Ihre Position wird nur für eines verwendet — airplanes.live direkt aus Ihrem Browser zu fragen, welche Flugzeuge über Ihnen sind. Sie wird nie gespeichert und nie woandershin gesendet. Ihr Browser fragt zuerst um Erlaubnis.",
+      locating: "Standort wird ermittelt…",
+      geoUnavailable: "Standortbestimmung auf diesem Gerät nicht verfügbar — nutzen Sie das Adressfeld unten",
+      geoBlocked: "Standort blockiert — nutzen Sie stattdessen das Adressfeld unten",
+      geoFailed: "Standort nicht ermittelbar — nutzen Sie stattdessen das Adressfeld unten",
+      searching: "Suche…",
+      noMatch: "kein Treffer — versuchen Sie eine Stadt oder Postleitzahl",
+      lookupFailed: "Adresssuche fehlgeschlagen — Verbindung prüfen",
+      range: "Reichweite",
+      conditions: "Bedingungen",
+      conditionsTip: "☁ Wolkenuntergrenze — Flugzeuge darüber sind abgedunkelt, sie könnten hinter den Wolken verborgen sein. 🛬 Geländehöhe unter dem nächsten tief fliegenden Flugzeug",
+      aircraft: "Flugzeuge",
+      hint: "Flugzeug antippen für Details",
+      compassTip: "Kompass: die Ansicht dreht sich in Ihre Blickrichtung. Antippen für Norden oben.",
+      homeTip: "Zurück zum Startbildschirm",
+      standby: "Bereitschaft",
+      connecting: "Verbinden…",
+      live: "live",
+      reconnecting: "Neuverbindung…",
+      offline: "offline · neuer Versuch",
+      pausedHidden: "pausiert · Tab verborgen",
+      myLocation: "mein Standort",
+      change: "ändern",
+      altitude: "Höhe", speed: "Geschwindigkeit", distance: "Entfernung", heading: "Kurs", climb: "Steigen",
+      routeLoading: "Route…",
+      level: "konstant",
+      aboveClouds: "über der Wolkendecke",
+      onGround: "am Boden",
+      unitsMetric: "Einheiten: m · km/h", unitsAviation: "Einheiten: ft · kt",
+      unitsTip: "Zwischen metrischen Einheiten (m, km/h) und den in der Luftfahrt üblichen Fuß/Knoten wechseln",
+      community: "💬 Community", support: "🤍 Unterstützen", comingSoon: "demnächst",
+      themeToDark: "Zum dunklen Modus wechseln", themeToLight: "Zum hellen Modus wechseln",
+      type_airliner: "Verkehrsflugzeug", type_jet: "Privatjet", type_hobby: "Kleines Sportflugzeug",
+      type_heli: "Hubschrauber", type_drone: "Drohne", type_space: "Raumfahrzeug",
+      type_airship: "Luftschiff", type_aircraft: "Luftfahrzeug",
+      sun: "Sonne", moon: "Mond",
+      cards: ["N", "O", "S", "W"]
+    },
+    zh: {
+      intro: '实时雷达，显示您上空的飞机。无需注册，无需密钥。数据来自开放的 <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> 网络。',
+      useLocation: "📍 使用我的位置",
+      orAddress: "不想授权？输入地址也可以——无需任何权限",
+      addrPlaceholder: "城市、街道或地点",
+      go: "搜索",
+      whyTitle: "为什么需要位置？",
+      whyBody: "雷达以您所在的位置为中心。您的位置只用于一件事——由浏览器直接向 airplanes.live 查询您上空的飞机。位置绝不会被存储，也不会发送到其他任何地方。浏览器会先征求您的许可。",
+      locating: "定位中…",
+      geoUnavailable: "此设备无法定位——请使用下方的地址输入框",
+      geoBlocked: "位置权限被拒绝——请改用下方的地址输入框",
+      geoFailed: "无法获取位置——请改用下方的地址输入框",
+      searching: "搜索中…",
+      noMatch: "未找到结果——试试城市或邮政编码",
+      lookupFailed: "地址搜索失败——请检查网络连接",
+      range: "范围",
+      conditions: "状况",
+      conditionsTip: "☁ 云底高度——高于云底的飞机会变暗，它们可能被云层遮挡。🛬 最近的低空飞机下方的地形海拔",
+      aircraft: "飞机",
+      hint: "点按飞机查看详情",
+      compassTip: "指南针：视图会旋转到您面朝的方向。点按可切回北向朝上。",
+      homeTip: "返回起始页",
+      standby: "待机",
+      connecting: "连接中…",
+      live: "实时",
+      reconnecting: "重新连接…",
+      offline: "离线 · 重试中",
+      pausedHidden: "已暂停 · 标签页隐藏",
+      myLocation: "我的位置",
+      change: "更改",
+      altitude: "高度", speed: "速度", distance: "距离", heading: "航向", climb: "爬升",
+      routeLoading: "航线…",
+      level: "平飞",
+      aboveClouds: "高于云底",
+      onGround: "已在地面",
+      unitsMetric: "单位: m · km/h", unitsAviation: "单位: ft · kt",
+      unitsTip: "在公制单位（米、公里/小时）与航空常用的英尺/节之间切换",
+      community: "💬 社区", support: "🤍 支持", comingSoon: "即将推出",
+      themeToDark: "切换到深色模式", themeToLight: "切换到浅色模式",
+      type_airliner: "商业客机", type_jet: "私人喷气机", type_hobby: "小型飞机",
+      type_heli: "直升机", type_drone: "无人机", type_space: "航天器",
+      type_airship: "飞艇", type_aircraft: "飞行器",
+      sun: "日", moon: "月",
+      cards: ["北", "东", "南", "西"]
+    }
+  };
+  let lang = localStorage.getItem(LANG_KEY);
+  if (!I18N[lang]) lang = "en";
+  const t = k => I18N[lang][k] ?? I18N.en[k] ?? k;
+  const numLoc = () => NUM_LOCALE[lang];
+
   // airplanes.live open data — keyless, sends Access-Control-Allow-Origin so the
   // browser can call it directly (adsb.fi and OpenSky don't — verified 2026-07).
   // ADSBExchange v2 format: aircraft within a radius (nautical miles, max 250)
@@ -858,7 +1118,7 @@
       const data = await res.json();
       ingest(data.ac || data.aircraft || []);
       lastFetch = Date.now(); failStreak = 0;
-      setStatus("live", `live · ${countVisible()} · req ${dailyCount}`);
+      setStatus("live", `${t("live")} · ${countVisible()} · req ${dailyCount}`);
       updateTerrainElevations(); // fire-and-forget, see function comment
     } catch {
       failStreak++;
@@ -867,7 +1127,7 @@
       // 429s, so they wait the full interval (retrying faster would extend
       // a rate-limit penalty rather than recover from it).
       nextMs = failStreak === 1 ? RETRY_QUICK_MS : POLL_MS;
-      setStatus("error", failStreak === 1 ? "reconnecting…" : "offline · retrying");
+      setStatus("error", failStreak === 1 ? t("reconnecting") : t("offline"));
     } finally {
       pollInFlight = false;
       if (me && !document.hidden) pollTimer = setTimeout(poll, nextMs);
@@ -984,22 +1244,29 @@
     return map[c] || null;
   }
 
-  // A plain-English bucket instead of an ICAO type code or wake-category letter,
-  // e.g. "Private Jet" rather than "A320" or "medium".
+  // A plain-language bucket instead of an ICAO type code or wake-category
+  // letter, e.g. "Private Jet" rather than "A320" or "medium". typeKey()
+  // returns a language-independent KEY (null = no bucket) that all the logic
+  // (wingspanM, iconForType, SHAPE_BUCKET) switches on; typeLabel() is the
+  // translated display string — never compare against the label, it changes
+  // with the UI language.
   const JET_HINTS = ["citation","learjet","gulfstream","falcon","challenger","global","phenom","hawker","legacy","lineage"];
-  function friendlyType(p) {
+  function typeKey(p) {
     const cat = p.cat, desc = (p.typeDesc || "").toLowerCase();
-    if (cat === 8) return "Helicopter";
-    if (cat === 9 || cat === 12) return "Small Hobby Plane";
-    if (cat === 14) return "Drone";
-    if (cat === 15) return "Space Vehicle";
-    if (cat === 10) return "Airship";
-    if (cat === 4 || cat === 5 || cat === 6) return "Commercial Airliner";
+    if (cat === 8) return "heli";
+    if (cat === 9 || cat === 12) return "hobby";
+    if (cat === 14) return "drone";
+    if (cat === 15) return "space";
+    if (cat === 10) return "airship";
+    if (cat === 4 || cat === 5 || cat === 6) return "airliner";
     if (cat === 2 || cat === 3 || cat === 7) {
-      if (JET_HINTS.some(k => desc.includes(k))) return "Private Jet";
-      return "Small Hobby Plane";
+      return JET_HINTS.some(k => desc.includes(k)) ? "jet" : "hobby";
     }
-    return p.typeDesc || p.typeCode || "Aircraft";
+    return null; // no bucket — typeLabel falls back to the raw description
+  }
+  function typeLabel(p) {
+    const k = typeKey(p);
+    return k ? t("type_" + k) : (p.typeDesc || p.typeCode || t("type_aircraft"));
   }
 
   // ----- naked-eye visibility -----
@@ -1016,12 +1283,12 @@
   // bucket, with a widebody bump for the big long-haul jets.
   const WIDEBODY_RE = /7[45]7|767|777|787|a3[345]0|a380|md-?11|dc-?10|il-?96|747/i;
   function wingspanM(p) {
-    const label = friendlyType(p);
-    if (label === "Commercial Airliner") return WIDEBODY_RE.test(p.typeDesc || p.typeCode || "") ? 60 : 34;
-    if (label === "Private Jet") return 18;
-    if (label === "Helicopter") return 14;
-    if (label === "Drone") return 2;
-    if (label === "Airship") return 30;
+    const k = typeKey(p);
+    if (k === "airliner") return WIDEBODY_RE.test(p.typeDesc || p.typeCode || "") ? 60 : 34;
+    if (k === "jet") return 18;
+    if (k === "heli") return 14;
+    if (k === "drone") return 2;
+    if (k === "airship") return 30;
     return 11; // small hobby plane / unknown — assume a light single
   }
   function nakedEyeVisible(p, groundDistKm) {
@@ -1137,8 +1404,11 @@
     ctx.fillStyle = theme.cardinal; ctx.font = "bold 11px ui-monospace, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     // cardinal letters rotate with the scene so N always points to true north
+    // (localized: French/Portuguese use O for Ouest/Oeste, German O for Ost,
+    // Chinese the characters 北东南西)
     const rot = toRad(displayHeading());
-    const card = [["N",0],["E",90],["S",180],["W",270]];
+    const cardLtrs = t("cards");
+    const card = [[cardLtrs[0],0],[cardLtrs[1],90],[cardLtrs[2],180],[cardLtrs[3],270]];
     for (const [ltr, deg] of card) {
       const a = toRad(deg - 90) - rot;
       const lx = cx + (R - 9) * Math.cos(a);
@@ -1186,8 +1456,8 @@
       const sp = planes.get(selected);
       if (sp) {
         document.getElementById("d-alt").innerHTML = fmtAlt(estimatedAltitude(sp, now)) +
-          (isAboveClouds(sp) ? ' <span title="above the cloud ceiling">☁️</span>' : "") +
-          (isOnGround(sp, now) ? ` <span title="on the ground">${GROUND_ICON}</span>` : "");
+          (isAboveClouds(sp) ? ` <span title="${t("aboveClouds")}">☁️</span>` : "") +
+          (isOnGround(sp, now) ? ` <span title="${t("onGround")}">${GROUND_ICON}</span>` : "");
         document.getElementById("d-spd").innerHTML = fmtSpd(displayVel(sp, now));
         document.getElementById("d-hdg").innerHTML = `${Math.round(displayTrack(sp, now))}<small>°</small>`;
         document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(sp, now)));
@@ -1241,7 +1511,7 @@
     }
     ctx.restore();
     ctx.fillStyle = theme.gold; ctx.font = "9px ui-monospace, monospace";
-    ctx.fillText("sun", pt.x + 11, pt.y + 3);
+    ctx.fillText(t("sun"), pt.x + 11, pt.y + 3);
   }
   function drawMoonIcon(pt) {
     ctx.save(); ctx.translate(pt.x, pt.y);
@@ -1253,16 +1523,14 @@
     ctx.beginPath(); ctx.arc(2.6, -1.5, 5.2, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
     ctx.fillStyle = theme.moonBody; ctx.font = "9px ui-monospace, monospace";
-    ctx.fillText("moon", pt.x + 11, pt.y + 3);
+    ctx.fillText(t("moon"), pt.x + 11, pt.y + 3);
   }
 
   // One of 4 distinct pictograms instead of a generic triangle, picked from
   // the friendly type bucket. Rare categories (drone/airship/glider/unknown)
   // fall back to the "hobby" shape rather than adding a 5th icon.
-  function iconForType(label) {
-    if (label === "Commercial Airliner") return "airliner";
-    if (label === "Private Jet") return "jet";
-    if (label === "Helicopter") return "heli";
+  function iconForType(key) {
+    if (key === "airliner" || key === "jet" || key === "heli") return key;
     return "hobby";
   }
   function drawIconPath(type) {
@@ -1325,7 +1593,7 @@
     ctx.save(); ctx.translate(x, y); ctx.rotate(toRad(heading)); ctx.scale(scale, scale);
     ctx.fillStyle = sel ? theme.hotHex : theme.inkHex;
     ctx.strokeStyle = sel ? theme.hotHex : theme.inkHex;
-    drawIconPath(iconForType(friendlyType(p)));
+    drawIconPath(iconForType(typeKey(p)));
     ctx.restore();
     if (sel) { ctx.strokeStyle = theme.hotHex; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.stroke(); }
     ctx.fillStyle = sel ? theme.hotHex : `rgba(${theme.inkSoftRgb},0.65)`;
@@ -1437,18 +1705,19 @@
   const UNITS_KEY = "overhead-units";
   const M_PER_FT = 0.3048, MS_PER_KT = 0.514444;
   let units = localStorage.getItem(UNITS_KEY) === "aviation" ? "aviation" : "metric";
+  const fmt1 = x => x.toLocaleString(numLoc(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const fmtAlt = m => m == null ? "—" : (units === "metric"
-    ? `${Math.round(m).toLocaleString("en-US")}<small> m</small>`
-    : `${Math.round(m / M_PER_FT).toLocaleString("en-US")}<small> ft</small>`);
+    ? `${Math.round(m).toLocaleString(numLoc())}<small> m</small>`
+    : `${Math.round(m / M_PER_FT).toLocaleString(numLoc())}<small> ft</small>`);
   const fmtSpd = v => v == null ? "—" : (units === "metric"
     ? `${Math.round(v * 3.6)}<small> km/h</small>`
     : `${Math.round(v / MS_PER_KT)}<small> kt</small>`);
-  const fmtVr = v => v == null ? "—" : (Math.abs(v) < 0.5 ? "level" : (v > 0 ? "▲ " : "▼ ") + (units === "metric"
+  const fmtVr = v => v == null ? "—" : (Math.abs(v) < 0.5 ? t("level") : (v > 0 ? "▲ " : "▼ ") + (units === "metric"
     ? `${Math.abs(Math.round(v * 60))}<small> m/min</small>`
     : `${Math.abs(Math.round(v * 60 / M_PER_FT))}<small> ft/min</small>`));
   const fmtDist = km => units === "metric"
-    ? `${km.toFixed(1)}<small> km</small>`
-    : `${(km * NM_PER_KM).toFixed(1)}<small> NM</small>`;
+    ? `${fmt1(km)}<small> km</small>`
+    : `${fmt1(km * NM_PER_KM)}<small> NM</small>`;
 
   // Route (origin -> destination) isn't in the ADS-B feed itself; adsbdb.com
   // maps a flight's callsign to its filed route, keyless and CORS-enabled
@@ -1498,16 +1767,16 @@
   // its friendly-type bucket → the generic Unidentified.svg → hide. The chain
   // is driven off the <img>'s own error event (a missing file 404s), tracked
   // in data-stage, so no filename manifest has to be embedded.
-  const SHAPE_BUCKET = {
-    "Commercial Airliner": "A320",
-    "Private Jet": "C25B",
-    "Helicopter": "R44",
-    "Small Hobby Plane": "C172",
-    "Drone": "Q4"
+  const SHAPE_BUCKET = { // keyed by typeKey(), NOT the translated label
+    airliner: "A320",
+    jet: "C25B",
+    heli: "R44",
+    hobby: "C172",
+    drone: "Q4"
   };
   const shapeImg = document.getElementById("d-shape");
   function setShape(p) {
-    const bucket = SHAPE_BUCKET[friendlyType(p)] || "Unidentified";
+    const bucket = SHAPE_BUCKET[typeKey(p)] || "Unidentified";
     const code = (p.typeCode || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     shapeImg.onerror = () => {
       const stage = shapeImg.dataset.stage;
@@ -1524,14 +1793,14 @@
     const p = planes.get(selected);
     if (!p) { closeSheet(); return; }
     document.getElementById("d-call").textContent = p.call;
-    // lead with a plain-English category, keep the exact model as detail
-    const parts = [friendlyType(p)];
+    // lead with a plain-language category, keep the exact model as detail
+    const parts = [typeLabel(p)];
     if (p.typeDesc) parts.push(p.typeDesc);          // e.g. "Airbus A320"
     document.getElementById("d-type").innerHTML = parts.join(" · ");
     // ☁️ = flying above the current cloud ceiling (it's why the icon is dimmed); 🛬 = on the ground (< AGL_ON_GROUND_M AGL)
     document.getElementById("d-alt").innerHTML = fmtAlt(estimatedAltitude(p, Date.now())) +
-      (isAboveClouds(p) ? ' <span title="above the cloud ceiling">☁️</span>' : "") +
-      (isOnGround(p, Date.now()) ? ` <span title="on the ground">${GROUND_ICON}</span>` : "");
+      (isAboveClouds(p) ? ` <span title="${t("aboveClouds")}">☁️</span>` : "") +
+      (isOnGround(p, Date.now()) ? ` <span title="${t("onGround")}">${GROUND_ICON}</span>` : "");
     document.getElementById("d-spd").innerHTML = fmtSpd(displayVel(p, Date.now()));
     document.getElementById("d-hdg").innerHTML = `${Math.round(displayTrack(p, Date.now()))}<small>°</small>`;
     document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(p, Date.now())));
@@ -1539,7 +1808,7 @@
     setShape(p);
 
     const routeEl = document.getElementById("d-route");
-    routeEl.textContent = p.flightCallsign ? "route…" : "";
+    routeEl.textContent = p.flightCallsign ? t("routeLoading") : "";
     fetchRoute(p.flightCallsign).then(route => {
       if (selected !== p.icao) return; // sheet moved on to another aircraft
       if (!route) { routeEl.textContent = ""; return; }
@@ -1552,7 +1821,7 @@
 
   // ---------- sheet footer: units toggle + community/donate links ----------
   const unitsBtn = document.getElementById("units-btn");
-  function updateUnitsBtn() { unitsBtn.textContent = units === "metric" ? "units: m · km/h" : "units: ft · kt"; }
+  function updateUnitsBtn() { unitsBtn.textContent = units === "metric" ? t("unitsMetric") : t("unitsAviation"); }
   unitsBtn.addEventListener("click", () => {
     units = units === "metric" ? "aviation" : "metric";
     localStorage.setItem(UNITS_KEY, units);
@@ -1564,7 +1833,7 @@
   for (const [id, url] of [["link-community", COMMUNITY_URL], ["link-donate", DONATE_URL]]) {
     const a = document.getElementById(id);
     if (url) a.href = url;
-    else a.title = "coming soon"; // no href → not clickable, dimmer style
+    else a.title = t("comingSoon"); // no href → not clickable, dimmer style
   }
 
   // ---------- sheet: swipe down to dismiss ----------
@@ -1722,7 +1991,7 @@
     theme = THEMES[name] || THEMES.dark;
     document.documentElement.setAttribute("data-theme", name);
     themeBtn.textContent = name === "light" ? "🌙" : "☀️";
-    themeBtn.title = name === "light" ? "Switch to dark mode" : "Switch to light mode";
+    themeBtn.title = name === "light" ? t("themeToDark") : t("themeToLight");
     themeColorMeta?.setAttribute("content", theme.voidHex);
   }
   applyTheme(localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark");
@@ -1733,7 +2002,7 @@
   });
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) { clearTimeout(pollTimer); pollTimer = null; setStatus("paused", "paused · tab hidden"); }
+    if (document.hidden) { clearTimeout(pollTimer); pollTimer = null; setStatus("paused", t("pausedHidden")); }
     else if (me) {
       startPolling();
       // cloud ticks skip themselves while hidden — catch up if one was missed
@@ -1749,23 +2018,31 @@
     const elapsed = Date.now() - lastFetch;
     if (elapsed >= POLL_MS) poll();
     else {
-      setStatus("live", `live · ${countVisible()}`);
+      setStatus("live", `${t("live")} · ${countVisible()}`);
       pollTimer = setTimeout(poll, POLL_MS - elapsed);
     }
   }
 
+  // draw() reschedules itself unconditionally, so it must only ever be
+  // kicked off once — begin() runs again every time the user comes back
+  // from the gate (the "change" link, or tapping the brand), and starting
+  // a second rAF loop each time would stack them up, doubling the render
+  // work per return trip.
+  let drawLoopStarted = false;
   function begin(lat, lon, name) {
     me = { lat, lon }; placeName = name || "";
     document.getElementById("gate").classList.add("hidden");
     const here = document.getElementById("here");
-    here.innerHTML = (placeName ? placeName + " · " : "") + '<button id="change-loc">change</button>';
+    here.innerHTML = (placeName ? placeName + " · " : "") + `<button id="change-loc">${t("change")}</button>`;
     document.getElementById("change-loc")?.addEventListener("click", reopenGate);
-    resize(); setStatus("live", "connecting…"); startPolling(); requestAnimationFrame(draw);
+    resize(); setStatus("live", t("connecting")); startPolling();
+    if (!drawLoopStarted) { drawLoopStarted = true; requestAnimationFrame(draw); }
     updateCelestial(); celestialTimer = setInterval(updateCelestial, 60000);
     fetchCloudCeiling(); cloudTimer = setInterval(fetchCloudCeiling, CLOUD_POLL_MS);
   }
 
   function reopenGate() {
+    closeSheet(); // the gate covers the radar, but the sheet must not survive into the next session
     clearTimeout(pollTimer); pollTimer = null; failStreak = 0; me = null; planes.clear();
     clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
     clearInterval(cloudTimer); cloudTimer = null;
@@ -1773,8 +2050,11 @@
     lowAircraftGroundElevM = null; updateCeilingDisplay();
     document.getElementById("count-n").textContent = "0";
     document.getElementById("gate").classList.remove("hidden");
-    setStatus("paused", "standby");
+    setStatus("paused", t("standby"));
   }
+
+  // the brand in the header is a "home" button: tap it to go back to the gate
+  document.getElementById("brand").addEventListener("click", () => { if (me) reopenGate(); });
 
   // ---------- sun & moon position ----------
   // Low-precision geocentric positions (the standard simplified formulas used
@@ -1843,12 +2123,12 @@
 
   document.getElementById("gate-btn").addEventListener("click", () => {
     armCompass(); // must run inside the tap gesture — see armCompass
-    gateErr.textContent = "locating…";
-    if (!navigator.geolocation) { gateErr.textContent = "geolocation unavailable on this device — use the address box below"; addrInput.focus(); return; }
+    gateErr.textContent = t("locating");
+    if (!navigator.geolocation) { gateErr.textContent = t("geoUnavailable"); addrInput.focus(); return; }
     navigator.geolocation.getCurrentPosition(
-      pos => begin(pos.coords.latitude, pos.coords.longitude, "my location"),
+      pos => begin(pos.coords.latitude, pos.coords.longitude, t("myLocation")),
       err => {
-        gateErr.textContent = err.code === 1 ? "location blocked — use the address box below instead" : "couldn't get location — use the address box below instead";
+        gateErr.textContent = err.code === 1 ? t("geoBlocked") : t("geoFailed");
         addrInput.focus();
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
@@ -1858,14 +2138,14 @@
   async function geocode() {
     const q = addrInput.value.trim();
     if (!q) return;
-    gateErr.textContent = "searching…"; addrResults.innerHTML = "";
+    gateErr.textContent = t("searching"); addrResults.innerHTML = "";
     try {
       const res = await fetch(`${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=0`, {
         headers: { "Accept": "application/json" }
       });
       const list = await res.json();
       gateErr.textContent = "";
-      if (!list.length) { gateErr.textContent = "no match found — try a city or postcode"; return; }
+      if (!list.length) { gateErr.textContent = t("noMatch"); return; }
       addrResults.innerHTML = "";
       for (const r of list) {
         const li = document.createElement("li");
@@ -1873,10 +2153,57 @@
         li.addEventListener("click", () => { armCompass(); begin(+r.lat, +r.lon, r.display_name.split(",")[0]); });
         addrResults.appendChild(li);
       }
-    } catch { gateErr.textContent = "address lookup failed — check connection"; }
+    } catch { gateErr.textContent = t("lookupFailed"); }
   }
   document.getElementById("addr-go").addEventListener("click", geocode);
   addrInput.addEventListener("keydown", e => { if (e.key === "Enter") geocode(); });
+
+  // ---------- language ----------
+  // Applies the current language to every STATIC piece of UI text (things
+  // rendered on the fly — sheet stats, status line, canvas labels — go
+  // through t() at render time and just pick up the change on their next
+  // update). Runs once on load and again on every selector tap; the selector
+  // lives on the gate, so switching mid-session isn't a path that matters,
+  // but the transient bits it can't reach simply right themselves on the
+  // next poll/frame anyway.
+  function applyLang() {
+    document.documentElement.lang = HTML_LANG[lang];
+    const set = (id, key) => { document.getElementById(id).textContent = t(key); };
+    set("count-l", "aircraft");
+    set("rng-label", "range");
+    set("cond-label", "conditions");
+    set("hint", "hint");
+    set("gate-btn", "useLocation");
+    set("addr-or", "orAddress");
+    set("addr-go", "go");
+    set("why-t", "whyTitle");
+    set("why-b", "whyBody");
+    set("k-alt", "altitude"); set("k-spd", "speed"); set("k-dist", "distance");
+    set("k-hdg", "heading"); set("k-vr", "climb");
+    set("link-community", "community");
+    set("link-donate", "support");
+    document.getElementById("gate-intro").innerHTML = t("intro"); // contains the attribution link
+    addrInput.placeholder = t("addrPlaceholder");
+    document.getElementById("ceiling-box").title = t("conditionsTip");
+    document.getElementById("brand").title = t("homeTip");
+    headingBtn.title = t("compassTip");
+    unitsBtn.title = t("unitsTip");
+    themeBtn.title = document.documentElement.getAttribute("data-theme") === "light" ? t("themeToDark") : t("themeToLight");
+    for (const [id, url] of [["link-community", COMMUNITY_URL], ["link-donate", DONATE_URL]])
+      if (!url) document.getElementById(id).title = t("comingSoon");
+    updateUnitsBtn();
+    updateCeilingDisplay(); // number formatting follows the language
+    if (!me) setStatus("paused", t("standby"));
+    if (selected) renderSheet();
+    document.querySelectorAll("#lang-row button").forEach(b => b.classList.toggle("on", b.dataset.lang === lang));
+  }
+  document.getElementById("lang-row").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-lang]"); if (!btn) return;
+    lang = btn.dataset.lang;
+    localStorage.setItem(LANG_KEY, lang);
+    applyLang();
+  });
+  applyLang();
 
   // ---------- register service worker ----------
   if ("serviceWorker" in navigator) {
