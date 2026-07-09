@@ -1062,21 +1062,17 @@
     }
 
     // Ground-elevation readout (top-left, alongside cloud ceiling): terrain
-    // under the NEAREST tracked aircraft currently below AGL_LOW_THRESHOLD_M.
-    // Deliberately scans ALL of `planes`, not the range/naked-eye-filtered
-    // `visible` list above — a plane crossing 900m AGL on a normal ~3°
-    // glideslope is typically still ~17km from touchdown, which is well
-    // beyond the default 10km (and even the max 20km) selected range, so it
-    // would never appear in `visible` even though it's genuinely low and
-    // still being tracked. This mirrors the cloud-ceiling reading, which is
-    // likewise an ambient panel that doesn't care what's currently drawn.
+    // under the NEAREST currently-drawn aircraft below AGL_LOW_THRESHOLD_M.
+    // Deliberately scoped to `visible` (Sullivan's call, 2026-07-09): only a
+    // plane actually on screen — within the selected range AND naked-eye
+    // visible — should trigger this, same set as the icons themselves. A
+    // low plane still outside that (e.g. early on an approach) stays hidden
+    // until it's actually drawn, which is intended, not a bug.
     // Only touches the DOM when the value actually changes.
     let lowElevM = null, lowDistKm = Infinity;
-    for (const p of planes.values()) {
+    for (const { p, proj } of visible) {
       const agl = estimatedAGL(p, now);
-      if (agl == null || agl >= AGL_LOW_THRESHOLD_M) continue;
-      const d = haversineKm(me, estimatedPosition(p, now));
-      if (d < lowDistKm) { lowDistKm = d; lowElevM = p.terrainElevM; }
+      if (agl != null && agl < AGL_LOW_THRESHOLD_M && proj.dist < lowDistKm) { lowDistKm = proj.dist; lowElevM = p.terrainElevM; }
     }
     if (lowElevM !== lowAircraftGroundElevM) { lowAircraftGroundElevM = lowElevM; updateCeilingDisplay(); }
 
