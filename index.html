@@ -203,8 +203,8 @@
         <span class="rng-label">km</span>
       </div>
     </div>
-    <div class="rng-group hidden" id="ceiling-box" title="Aircraft above the cloud ceiling are dimmed — they may be hidden behind the clouds">
-      <span class="rng-label">cloud ceiling</span>
+    <div class="rng-group hidden" id="ceiling-box" title="☁ cloud ceiling — aircraft above it are dimmed, they may be hidden behind the clouds. 🛬 terrain elevation under the nearest aircraft flying low">
+      <span class="rng-label">conditions</span>
       <div class="ceiling-val" id="ceiling-val">—</div>
     </div>
   </div>
@@ -328,6 +328,20 @@
   const CLOUD_POLL_MS = 20 * 60 * 1000;
   const CLOUD_MIN_COVER_PCT = 25; // a "ceiling" needs an actual layer, not one stray puff (ukmo reports base 0 on clear sky)
   const CLOUD_DIM_ALPHA = 0.4;    // aircraft above the ceiling draw at this opacity
+  // Terrain elevation AT EACH AIRCRAFT'S OWN POSITION — distinct from groundElevM
+  // above, which is only the USER's elevation and stays the floor for the landing/
+  // rollout model (kinematicState) untouched by this. This is purely for an AGL
+  // (height above the ground directly under the plane) check: Open-Meteo's
+  // elevation endpoint, same host/CORS as the weather call above (verified with
+  // curl the same way, 2026-07-09), batchable — every low-ish tracked aircraft's
+  // lat/lon goes in ONE request per poll. Terrain is static, so results are cached
+  // forever per rounded-position bucket; a parked or slow aircraft re-queries
+  // nothing on later polls.
+  const ELEV_API = "https://api.open-meteo.com/v1/elevation";
+  const ELEV_LOOKUP_ALT_CEILING_M = 3500; // AMSL above this, no real nearby terrain could put an aircraft under AGL_LOW_THRESHOLD_M — skip the lookup
+  const AGL_LOW_THRESHOLD_M = 900; // ~3,000ft — "flying low" cutoff for the top-left ground-elevation readout
+  const AGL_ON_GROUND_M = 20;      // AGL below this counts as "on the ground" for the detail sheet's icon
+  const GROUND_ICON = "🛬";
   // Community + donation links shown at the very bottom of the detail sheet.
   // Both destinations are still TBD — paste the real URLs here (e.g. a
   // Telegram group invite and a Ko-fi page) once they exist. An empty string
@@ -359,6 +373,13 @@
   // the grid-cell elevation with every response). null = unknown/clear —
   // display hidden, nothing dimmed.
   let cloudCeilM = null, cloudCeilMslM = null, cloudFetchedAt = 0, cloudTimer = null;
+  // Terrain elevation under the nearest currently-visible aircraft flying below
+  // AGL_LOW_THRESHOLD_M, for the top-left readout (see updateCeilingDisplay).
+  // null = no low aircraft right now (or its terrain hasn't resolved yet) — readout hidden.
+  let lowAircraftGroundElevM = null;
+  // "lat,lon" (rounded to ~1.1km buckets) -> elevation metres. Terrain never
+  // changes, so entries are never evicted or refetched once known.
+  const terrainCache = new Map();
   // Ground elevation (MSL, meters) at the user's spot — piggybacks on the
   // cloud-ceiling fetch's `elevation` field (present on every successful
   // response regardless of cloud data), rather than the Geolocation API's
@@ -735,14 +756,66 @@
     updateCeilingDisplay();
     if (selected) renderSheet(); // the open sheet's ☁️ marker may have changed
   }
+  // Shows whichever of the two ambient readouts have data, on one line,
+  // joined the same way the sheet's type line joins its parts ("A · B").
+  // Neither piece has an error state (both are decorative overlays) — no
+  // data just means that piece is omitted, and the whole box hides if both are.
   function updateCeilingDisplay() {
     const box = document.getElementById("ceiling-box");
-    if (cloudCeilM == null) { box.classList.add("hidden"); return; }
-    document.getElementById("ceiling-val").innerHTML = "☁ " + fmtAlt(cloudCeilM);
+    const parts = [];
+    if (cloudCeilM != null) parts.push("☁ " + fmtAlt(cloudCeilM));
+    if (lowAircraftGroundElevM != null) parts.push(GROUND_ICON + " " + fmtAlt(lowAircraftGroundElevM));
+    if (!parts.length) { box.classList.add("hidden"); return; }
+    document.getElementById("ceiling-val").innerHTML = parts.join(" · ");
     box.classList.remove("hidden");
   }
   function isAboveClouds(p) {
     return cloudCeilMslM != null && p.alt != null && p.alt > cloudCeilMslM;
+  }
+
+  // ---------- terrain elevation under low aircraft (Open-Meteo) ----------
+  function terrainKey(lat, lon) { return lat.toFixed(2) + "," + lon.toFixed(2); }
+  // Batches the lookup for every tracked aircraft that could plausibly be
+  // below AGL_LOW_THRESHOLD_M into ONE request, fired after each airplanes.live
+  // poll resolves. Fire-and-forget (not awaited by poll()) — it's on a
+  // different host with no bearing on that API's rate limit, and the AGL-
+  // dependent UI just picks up p.terrainElevM whenever it resolves.
+  async function updateTerrainElevations() {
+    if (!me) return;
+    const candidates = [];
+    for (const p of planes.values()) {
+      if (p.alt == null || p.alt > ELEV_LOOKUP_ALT_CEILING_M) continue;
+      const key = terrainKey(p.lat, p.lon);
+      if (terrainCache.has(key)) { p.terrainElevM = terrainCache.get(key); continue; }
+      candidates.push({ p, key });
+    }
+    if (!candidates.length) return;
+    // de-dupe buckets shared by two nearby low aircraft; Open-Meteo's
+    // multi-location endpoints top out well above what a 20km radius ever needs
+    const uniqueKeys = [...new Set(candidates.map(c => c.key))].slice(0, 100);
+    try {
+      const url = `${ELEV_API}?latitude=${uniqueKeys.map(k => k.split(",")[0]).join(",")}` +
+        `&longitude=${uniqueKeys.map(k => k.split(",")[1]).join(",")}`;
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      const elevs = data.elevation || [];
+      uniqueKeys.forEach((k, i) => terrainCache.set(k, elevs[i]));
+      for (const { p, key } of candidates) p.terrainElevM = terrainCache.get(key);
+    } catch { /* leave terrainElevM unset — AGL checks just skip these aircraft until a later poll resolves it */ }
+  }
+  // Height above the terrain directly under the aircraft (NOT groundElevM,
+  // which is the user's own elevation and belongs to the landing model only).
+  function estimatedAGL(p, nowMs) {
+    if (p.terrainElevM == null) return null;
+    const alt = estimatedAltitude(p, nowMs);
+    return alt == null ? null : alt - p.terrainElevM;
+  }
+  function isOnGround(p, nowMs) {
+    const agl = estimatedAGL(p, nowMs);
+    return agl != null && agl < AGL_ON_GROUND_M;
   }
 
   // The "why is it always offline?" story (diagnosed 2026-07-06): the old 30s
@@ -778,6 +851,7 @@
       ingest(data.ac || data.aircraft || []);
       lastFetch = Date.now(); failStreak = 0;
       setStatus("live", `live · ${countVisible()} · req ${dailyCount}`);
+      updateTerrainElevations(); // fire-and-forget, see function comment
     } catch {
       failStreak++;
       // first failure: likely a phone-radio blip, retry quickly and call it
@@ -987,6 +1061,16 @@
       } catch (e) { console.warn("skipped projecting aircraft", p.icao, e); }
     }
 
+    // Ground-elevation readout (top-left, alongside cloud ceiling): terrain
+    // under the NEAREST visible aircraft currently below AGL_LOW_THRESHOLD_M.
+    // Only touches the DOM when the value actually changes.
+    let lowElevM = null, lowDistKm = Infinity;
+    for (const { p, proj } of visible) {
+      const agl = estimatedAGL(p, now);
+      if (agl != null && agl < AGL_LOW_THRESHOLD_M && proj.dist < lowDistKm) { lowDistKm = proj.dist; lowElevM = p.terrainElevM; }
+    }
+    if (lowElevM !== lowAircraftGroundElevM) { lowAircraftGroundElevM = lowElevM; updateCeilingDisplay(); }
+
     // ---- ground plane: squished vertically when tilted, like a flat disc
     // viewed at an angle. Everything here is a plain shape, no text, so
     // flattening it doesn't hurt legibility.
@@ -1089,7 +1173,8 @@
       const sp = planes.get(selected);
       if (sp) {
         document.getElementById("d-alt").innerHTML = fmtAlt(estimatedAltitude(sp, now)) +
-          (isAboveClouds(sp) ? ' <span title="above the cloud ceiling">☁️</span>' : "");
+          (isAboveClouds(sp) ? ' <span title="above the cloud ceiling">☁️</span>' : "") +
+          (isOnGround(sp, now) ? ` <span title="on the ground">${GROUND_ICON}</span>` : "");
         document.getElementById("d-spd").innerHTML = fmtSpd(displayVel(sp, now));
         document.getElementById("d-hdg").innerHTML = `${Math.round(displayTrack(sp, now))}<small>°</small>`;
         document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(sp, now)));
@@ -1430,9 +1515,10 @@
     const parts = [friendlyType(p)];
     if (p.typeDesc) parts.push(p.typeDesc);          // e.g. "Airbus A320"
     document.getElementById("d-type").innerHTML = parts.join(" · ");
-    // ☁️ = flying above the current cloud ceiling (it's why the icon is dimmed)
+    // ☁️ = flying above the current cloud ceiling (it's why the icon is dimmed); 🛬 = on the ground (< AGL_ON_GROUND_M AGL)
     document.getElementById("d-alt").innerHTML = fmtAlt(estimatedAltitude(p, Date.now())) +
-      (isAboveClouds(p) ? ' <span title="above the cloud ceiling">☁️</span>' : "");
+      (isAboveClouds(p) ? ' <span title="above the cloud ceiling">☁️</span>' : "") +
+      (isOnGround(p, Date.now()) ? ` <span title="on the ground">${GROUND_ICON}</span>` : "");
     document.getElementById("d-spd").innerHTML = fmtSpd(displayVel(p, Date.now()));
     document.getElementById("d-hdg").innerHTML = `${Math.round(displayTrack(p, Date.now()))}<small>°</small>`;
     document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(p, Date.now())));
@@ -1670,7 +1756,8 @@
     clearTimeout(pollTimer); pollTimer = null; failStreak = 0; me = null; planes.clear();
     clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
     clearInterval(cloudTimer); cloudTimer = null;
-    cloudCeilM = null; cloudCeilMslM = null; cloudFetchedAt = 0; groundElevM = null; updateCeilingDisplay();
+    cloudCeilM = null; cloudCeilMslM = null; cloudFetchedAt = 0; groundElevM = null;
+    lowAircraftGroundElevM = null; updateCeilingDisplay();
     document.getElementById("count-n").textContent = "0";
     document.getElementById("gate").classList.remove("hidden");
     setStatus("paused", "standby");
