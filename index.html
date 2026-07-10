@@ -1160,6 +1160,35 @@
       const fixStale = prev && Math.abs(posTime - prev.posTime) < STALE_FIX_MS;
       const staleNearGround = fixStale && altM != null && groundElevM != null &&
         (altM - groundElevM) < STALE_LOW_ALT_AGL_M && !(vrMs > 0.5);
+      // staleNearGround only catches a fix that's fully STUCK (re-served
+      // unchanged). A DIFFERENT gap: the self-reported climb rate on one
+      // otherwise perfectly fresh, genuinely-updating fix can itself be
+      // noisy right when it matters most (same low-altitude MLAT vertical-
+      // geometry problem as nearGround above) and read near-zero/"level"
+      // even while the plane's actual reported ALTITUDE has clearly been
+      // dropping fix-to-fix — observed live: TGZ627 kept updating position
+      // normally (not stuck — staleNearGround never fired) but its
+      // instantaneous rate never read clearly negative, so
+      // kinematicState's tGround stayed Infinity (level/climbing flight
+      // never gets a landing forecast — see its comment) and it flew
+      // straight forever exactly like the AFR48EM case, just via a
+      // different route into the same Infinity. Fix: when two fixes are
+      // genuinely distinct in time (dtS large enough that noise on a
+      // short quick-retry gap can't dominate — see BLEND-style tuning
+      // elsewhere in this file), derive the OBSERVED rate directly from
+      // the altitude change between them and trust whichever of the two
+      // signals more clearly shows descent (the more negative one) — any
+      // real evidence of descent, self-reported or observed, should count.
+      // This becomes p.vrate itself (not a side channel) so the displayed
+      // climb figure and the forecast it drives can never disagree, per
+      // the round-23 "one figure, one clock" rule.
+      const MIN_TREND_DT_S = 20; // below this, altitude noise/dt swamps the signal (short quick-retry gaps)
+      const dtS = prev ? (posTime - prev.posTime) / 1000 : 0;
+      const observedVr = (prev && prev.alt != null && altM != null && dtS > MIN_TREND_DT_S)
+        ? (altM - prev.alt) / dtS
+        : null;
+      const effectiveVr = (observedVr != null && vrMs != null) ? Math.min(vrMs, observedVr)
+        : (vrMs != null ? vrMs : observedVr);
       // Once landed, a SINGLE noisy fix right at the threshold used to be
       // enough to un-land it: low-altitude MLAT fixes are notoriously
       // imprecise (feeder receivers have poor vertical geometry for a
@@ -1196,7 +1225,7 @@
         alt: altM,
         vel: velMs,
         track: (a.track ?? a.true_heading ?? 0),
-        vrate: vrMs,
+        vrate: effectiveVr, // self-reported rate, or the observed-trend correction above — see effectiveVr
         // starts kinematicState's rollout phase immediately (tGround = 0);
         // a descending plane that ISN'T flagged still lands on its own once
         // the forecast altitude meets the ground — this flag only matters
