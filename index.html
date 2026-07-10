@@ -713,9 +713,21 @@
   // tilted view reads as a stack of altitudes rather than a flat plate with
   // icons pasted on it. Scales with R so it holds at any screen size, and
   // fades to zero automatically as the view flattens toward top-down.
+  // Lift is LOGARITHMIC in height above the user's ground, not linear in MSL
+  // altitude: what matters visually is a plane coming down to land (its last
+  // few hundred meters should sweep through a big share of the lift range),
+  // while 8000m vs 12000m cruise is a distinction nobody cares about. The
+  // knee sets where the curve stays steep: below ~LIFT_LOG_KNEE_M the lift is
+  // near-linear and fast, far above it each doubling adds the same few px.
+  // Measured against groundElevM (falls back to MSL until the weather fetch
+  // supplies it) so a plane on the runway sits ON the disc instead of
+  // floating at its field-elevation MSL figure.
   const MAX_ALT_KM_FOR_LIFT = 13; // roughly the ceiling of commercial cruise altitude
+  const LIFT_LOG_KNEE_M = 500;    // tuning knob: lower = even more emphasis on the final approach
+  const LIFT_LOG_DENOM = Math.log(1 + (MAX_ALT_KM_FOR_LIFT * 1000) / LIFT_LOG_KNEE_M);
   function altitudeLiftPx(altM) {
-    const t = Math.max(0, Math.min(1, ((altM || 0) / 1000) / MAX_ALT_KM_FOR_LIFT));
+    const aglM = Math.max(0, (altM || 0) - (groundElevM ?? 0));
+    const t = Math.min(1, Math.log(1 + aglM / LIFT_LOG_KNEE_M) / LIFT_LOG_DENOM);
     return t * R * 0.5 * tiltFactor;
   }
   function haversineKm(a, b) {
