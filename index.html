@@ -917,12 +917,31 @@
     const diff = ((p.blendFrom.track - p.track + 540) % 360) - 180; // shortest signed path, e.g. 350°->10°
     return (p.track + diff * w + 360) % 360;
   }
+  // Radial distance->pixel mapping is LOGARITHMIC, matching how the eye
+  // perceives motion: perceived speed is angular (speed / slant distance —
+  // a jet 2km overhead sweeps ~2°/s, the same jet 15km out ~0.25°/s), but a
+  // linear map moves every icon at identical px/s for the same ground speed.
+  // With r ∝ log(1 + d/knee), screen speed becomes ∝ v/(knee+d) — close
+  // planes visibly race across the middle and slow toward the rim, like the
+  // sky. Side effect: the near field (the landing-approach zone) gets most
+  // of the screen area and the rings are no longer evenly spaced — that's
+  // the point, not a bug. Still a true top-down map (bearings unchanged) —
+  // NOT the rejected sky-dome. The knee tunes how strong the warp is:
+  // smaller = more near-field magnification and a bigger speed contrast.
+  const RADIAL_LOG_KNEE_KM = 1.5;
+  function radialFrac(distKm) {
+    // fraction of R at which a ground distance lands; 1 at displayRangeKm.
+    // Uses the animating displayRangeKm (not rangeKm) so switching range
+    // smoothly zooms everything to its new position instead of snapping.
+    return Math.log(1 + Math.max(0, distKm) / RADIAL_LOG_KNEE_KM) /
+           Math.log(1 + displayRangeKm / RADIAL_LOG_KNEE_KM);
+  }
   function project(p) {
     const dist = haversineKm(me, { lat: p.lat, lon: p.lon });
     const brg = bearing(me, { lat: p.lat, lon: p.lon });
-    // uses the animating displayRangeKm (not rangeKm) so switching range
-    // smoothly zooms aircraft to their new positions instead of snapping
-    const r = Math.min(dist / displayRangeKm, RANGE_MARGIN) * R;
+    // cap inside radialFrac's argument (it's monotonic) so the margin band
+    // beyond the outer ring compresses the same way the rest of the map does
+    const r = radialFrac(Math.min(dist, displayRangeKm * RANGE_MARGIN)) * R;
     // In heading-up mode, subtract the device heading so the direction you
     // face sits at the top. In north-up mode, displayHeading is 0.
     const ang = toRad(brg - 90 - displayHeading());
@@ -937,7 +956,7 @@
   // what makes the range rings themselves visibly shrink/grow into place
   // during a range switch, in lockstep with aircraft repositioning, instead
   // of only the label text changing while the rings sit frozen at R*i/3.
-  function ringRadiusPx(i) { return ((rangeKm * i) / 3 / displayRangeKm) * R; }
+  function ringRadiusPx(i) { return radialFrac((rangeKm * i) / 3) * R; }
 
   // The rotation currently applied to the scene. currentDisplayHeading is a
   // smoothed value that always eases toward its target (the device compass
