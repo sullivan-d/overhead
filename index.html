@@ -1189,6 +1189,28 @@
         : null;
       const effectiveVr = (observedVr != null && vrMs != null) ? Math.min(vrMs, observedVr)
         : (vrMs != null ? vrMs : observedVr);
+      // A THIRD gap, found from FDX5279 (a 777 on a CDG-matching runway
+      // heading, 2-4km out, ~300m AGL): the fix keeps genuinely advancing
+      // (staleNearGround never fires) AND the altitude itself barely moves
+      // fix-to-fix (a few meters of noise either way, not a real trend), so
+      // effectiveVr correctly stays near zero too — neither prior signal is
+      // wrong, there just IS no descent signal in the data yet. Within this
+      // app's ~12nm fetch radius that's still almost certainly an aircraft
+      // on approach whose altitude reporting is temporarily noise-locked,
+      // not stable low cruise — but a single low reading (or two close
+      // together) is deliberately NOT enough on its own, since a genuinely
+      // low-flying, non-landing aircraft (a helicopter doing circuits, a
+      // low overflight) must not be grounded just for two fixes one poll
+      // apart (see freshLowLevelScenario). The distinguishing signal is
+      // TIME: sustained real-world duration spent continuously low and
+      // non-climbing, tracked from posTime (not fix count, so it's not
+      // sensitive to how many polls happened to land in that window).
+      const prevLowSinceMs = prev ? prev.lowSinceMs : null;
+      const lowNow = altM != null && groundElevM != null &&
+        (altM - groundElevM) < STALE_LOW_ALT_AGL_M && !(vrMs > 0.5);
+      const lowSinceMs = lowNow ? (prevLowSinceMs ?? posTime) : null;
+      const SUSTAINED_LOW_MS = 80000; // safely above one 45s poll gap, catches ~2 polls of no descent signal
+      const sustainedLowAlt = lowNow && lowSinceMs != null && (posTime - lowSinceMs) >= SUSTAINED_LOW_MS;
       // Once landed, a SINGLE noisy fix right at the threshold used to be
       // enough to un-land it: low-altitude MLAT fixes are notoriously
       // imprecise (feeder receivers have poor vertical geometry for a
@@ -1215,7 +1237,7 @@
       // single bad reading.
       const prevStreak = (prev && prev.landed) ? (prev.airborneStreak || 0) : 0;
       const airborneStreak = clearlyAirborneAgain ? prevStreak + 1 : 0;
-      const landed = a.alt_baro === "ground" || nearGround || staleNearGround ||
+      const landed = a.alt_baro === "ground" || nearGround || staleNearGround || sustainedLowAlt ||
         (wasLanded && airborneStreak < 2);
       const np = {
         icao,
@@ -1232,6 +1254,7 @@
         // for planes already on/near it whose fix lacks a usable climb rate
         landed,
         airborneStreak, // consecutive fixes clearing the un-land margin (see above)
+        lowSinceMs, // real posTime since continuously low+non-climbing — see sustainedLowAlt above
         blendFrom: null, blendAt: 0, blendMs: 0, // set below when handing off from a previous fix
         // type info is INLINE now — no second request
         typeCode: a.t || "",
