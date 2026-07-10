@@ -1513,41 +1513,101 @@
     if (key === "airliner" || key === "jet" || key === "heli") return key;
     return "hobby";
   }
+  // Redrawn (2026-07-10) as filled top-down silhouettes matching a reference
+  // sheet Sullivan supplied (commercial airliner / small prop plane /
+  // helicopter / private jet) — richer outlines than the old abstract glyphs,
+  // still pure canvas paths so they inherit theme colors and stay cheap.
   function drawIconPath(type) {
     switch (type) {
-      case "airliner": // big swept-wing delta with a distinct tailplane
+      case "airliner": // rounded-nose fuselage, swept wings with underwing
+                       // engine pods, swept tailplane
         ctx.beginPath();
-        ctx.moveTo(0, -9); ctx.lineTo(1.6, -3); ctx.lineTo(9, 4); ctx.lineTo(2, 2.3);
-        ctx.lineTo(2, 7); ctx.lineTo(0.8, 5.5); ctx.lineTo(-0.8, 5.5); ctx.lineTo(-2, 7);
-        ctx.lineTo(-2, 2.3); ctx.lineTo(-9, 4); ctx.lineTo(-1.6, -3);
+        ctx.moveTo(0, -9.5);
+        ctx.quadraticCurveTo(1.4, -8.7, 1.4, -6.5);
+        ctx.lineTo(1.4, -2.2);           // down to wing root
+        ctx.lineTo(8.8, 3.6);            // wing leading edge
+        ctx.lineTo(8.8, 4.7);            // wingtip
+        ctx.lineTo(1.3, 3.3);            // wing trailing edge
+        ctx.lineTo(1.0, 6.2);            // taper toward tail
+        ctx.lineTo(3.5, 8.8);            // tailplane leading edge
+        ctx.lineTo(3.5, 9.5);            // tailplane tip
+        ctx.lineTo(0.5, 8.4);            // tailplane trailing edge
+        ctx.lineTo(0.5, 9.5);            // fuselage tail cone
+        ctx.lineTo(-0.5, 9.5);
+        ctx.lineTo(-0.5, 8.4);
+        ctx.lineTo(-3.5, 9.5);
+        ctx.lineTo(-3.5, 8.8);
+        ctx.lineTo(-1.0, 6.2);
+        ctx.lineTo(-1.3, 3.3);
+        ctx.lineTo(-8.8, 4.7);
+        ctx.lineTo(-8.8, 3.6);
+        ctx.lineTo(-1.4, -2.2);
+        ctx.lineTo(-1.4, -6.5);
+        ctx.quadraticCurveTo(-1.4, -8.7, 0, -9.5);
+        ctx.closePath(); ctx.fill();
+        // underwing engine pods, protruding ahead of the leading edge
+        ctx.fillRect(2.4, -2.3, 1.2, 3.4);
+        ctx.fillRect(-3.6, -2.3, 1.2, 3.4);
+        break;
+      case "jet": // slender pointed nose, swept wings set further back, twin
+                  // engine pods flanking the rear fuselage — reads as a
+                  // business jet, not a smaller airliner
+        ctx.beginPath();
+        ctx.moveTo(0, -9.5);
+        ctx.quadraticCurveTo(1.1, -7.9, 1.1, -5.8);
+        ctx.lineTo(1.1, 0.6);            // wing root, well aft
+        ctx.lineTo(7.4, 5.4);            // wing leading edge
+        ctx.lineTo(7.4, 6.3);            // wingtip
+        ctx.lineTo(1.0, 4.6);            // wing trailing edge
+        ctx.lineTo(0.9, 6.6);
+        ctx.lineTo(3.1, 8.9);            // swept tailplane
+        ctx.lineTo(3.1, 9.5);
+        ctx.lineTo(0.4, 8.5);
+        ctx.lineTo(0.4, 9.5);
+        ctx.lineTo(-0.4, 9.5);
+        ctx.lineTo(-0.4, 8.5);
+        ctx.lineTo(-3.1, 9.5);
+        ctx.lineTo(-3.1, 8.9);
+        ctx.lineTo(-0.9, 6.6);
+        ctx.lineTo(-1.0, 4.6);
+        ctx.lineTo(-7.4, 6.3);
+        ctx.lineTo(-7.4, 5.4);
+        ctx.lineTo(-1.1, 0.6);
+        ctx.lineTo(-1.1, -5.8);
+        ctx.quadraticCurveTo(-1.1, -7.9, 0, -9.5);
+        ctx.closePath(); ctx.fill();
+        // rear fuselage-mounted engine pods
+        ctx.fillRect(1.3, 2.6, 1.1, 3.2);
+        ctx.fillRect(-2.4, 2.6, 1.1, 3.2);
+        break;
+      case "hobby": // nose prop, plump cowling, wide straight low wing,
+                    // rectangular tailplane
+        ctx.lineWidth = 1.2; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(-4, -8.6); ctx.lineTo(4, -8.6); ctx.stroke(); // prop
+        ctx.fillRect(-8, -4.4, 16, 2.7);   // straight main wing
+        ctx.fillRect(-3.4, 6.3, 6.8, 1.6); // tailplane
+        ctx.beginPath();                   // fuselage: round cowling, taper to tail
+        ctx.moveTo(0, -8.9);
+        ctx.quadraticCurveTo(1.6, -8.3, 1.6, -6.2);
+        ctx.lineTo(1.1, 1.5);
+        ctx.lineTo(0.6, 8.6);
+        ctx.lineTo(-0.6, 8.6);
+        ctx.lineTo(-1.1, 1.5);
+        ctx.lineTo(-1.6, -6.2);
+        ctx.quadraticCurveTo(-1.6, -8.3, 0, -8.9);
         ctx.closePath(); ctx.fill();
         break;
-      case "jet": // long slender dart with small rear-mounted wings and a
-                  // T-tail — a business-jet silhouette, not just a smaller
-                  // delta (that read too close to the airliner shape)
-        ctx.beginPath();
-        ctx.moveTo(0, -9); ctx.lineTo(1.1, -4); ctx.lineTo(1.1, 6);
-        ctx.lineTo(-1.1, 6); ctx.lineTo(-1.1, -4);
-        ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(1.1, 2.5); ctx.lineTo(6, 6); ctx.lineTo(1.1, 4.5); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(-1.1, 2.5); ctx.lineTo(-6, 6); ctx.lineTo(-1.1, 4.5); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(-3, 9); ctx.lineTo(3, 9); ctx.lineTo(0, 6.5); ctx.closePath(); ctx.fill();
-        break;
-      case "hobby": { // high-wing Cessna-style cross: straight wings, prop hub
-        ctx.lineWidth = 1.4; ctx.lineCap = "round";
-        ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(0, 6); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-7, -1); ctx.lineTo(7, -1); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-3, 6); ctx.lineTo(3, 6); ctx.stroke();
-        ctx.beginPath(); ctx.arc(0, -8, 1.3, 0, Math.PI * 2); ctx.fill();
-        break;
-      }
-      case "heli": // rotor disc + blades, body, tail boom
+      case "heli": // X-crossed rotor blades over an oval cabin, tail boom
+                   // with stabilizer bar and tail-rotor tip
         ctx.lineWidth = 1.3; ctx.lineCap = "round";
-        ctx.beginPath(); ctx.arc(0, -3, 6, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-6, -3); ctx.lineTo(6, -3); ctx.moveTo(0, -9); ctx.lineTo(0, 3); ctx.stroke();
-        ctx.beginPath(); ctx.arc(0, 1, 2.6, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(0, 3); ctx.lineTo(0, 8); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-1.8, 8); ctx.lineTo(1.8, 8); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-6.5, -8.5); ctx.lineTo(6.5, 4.5);
+        ctx.moveTo(6.5, -8.5); ctx.lineTo(-6.5, 4.5);
+        ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(0, -2, 2.2, 4.2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(0, 2.2); ctx.lineTo(0, 8.5); ctx.stroke();  // tail boom
+        ctx.beginPath(); ctx.moveTo(-2, 6.5); ctx.lineTo(2, 6.5); ctx.stroke(); // stabilizer
+        ctx.beginPath(); ctx.moveTo(-1.2, 8.5); ctx.lineTo(1.2, 8.5); ctx.stroke(); // tail rotor
         break;
     }
   }
