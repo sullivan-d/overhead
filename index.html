@@ -1135,6 +1135,21 @@
       // that one to a stop would be exactly the wrong model, so it's excluded.
       const nearGround = altM != null && groundElevM != null &&
         (altM - groundElevM) < LOW_ALT_AGL_M && !(vrMs > 0.5);
+      // Once landed, a SINGLE noisy fix right at the threshold used to be
+      // enough to un-land it: low-altitude MLAT fixes are notoriously
+      // imprecise (feeder receivers have poor vertical geometry for a
+      // target this low), so altM/vrMs can wobble across the LOW_ALT_AGL_M
+      // line fix-to-fix even for a plane that's genuinely still on/just
+      // above the runway. Snapping back to "fully airborne" on that wobble
+      // is exactly what read as "the plane takes back off and flies away"
+      // seconds after it looked landed. So EXITING landed needs a real,
+      // unambiguous margin (double the entry threshold) — entering stays
+      // exactly as sensitive as before (nearGround, unchanged).
+      const wasLanded = prev ? prev.landed : false;
+      const clearlyAirborneAgain = altM != null && groundElevM != null &&
+        (altM - groundElevM) > LOW_ALT_AGL_M * 2;
+      const landed = a.alt_baro === "ground" || nearGround ||
+        (wasLanded && !clearlyAirborneAgain);
       const np = {
         icao,
         call: (a.flight || a.r || "").trim() || "—",
@@ -1148,7 +1163,7 @@
         // a descending plane that ISN'T flagged still lands on its own once
         // the forecast altitude meets the ground — this flag only matters
         // for planes already on/near it whose fix lacks a usable climb rate
-        landed: a.alt_baro === "ground" || nearGround,
+        landed,
         blendFrom: null, blendAt: 0, blendMs: 0, // set below when handing off from a previous fix
         // type info is INLINE now — no second request
         typeCode: a.t || "",
