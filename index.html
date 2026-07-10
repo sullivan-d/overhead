@@ -368,7 +368,7 @@
       routeLoading: "route…",
       level: "level",
       aboveClouds: "above the cloud ceiling",
-      onGround: "on the ground",
+      onGround: "On-Ground",
       unitsMetric: "units: m · km/h", unitsAviation: "units: ft · kt",
       unitsTip: "Switch between everyday metric units (m, km/h) and the feet/knots used in aviation",
       community: "💬 community", support: "🤍 support", comingSoon: "coming soon",
@@ -412,7 +412,7 @@
       routeLoading: "route…",
       level: "palier",
       aboveClouds: "au-dessus du plafond nuageux",
-      onGround: "au sol",
+      onGround: "Au Sol",
       unitsMetric: "unités : m · km/h", unitsAviation: "unités : ft · kt",
       unitsTip: "Basculer entre les unités métriques (m, km/h) et les pieds/nœuds de l'aviation",
       community: "💬 communauté", support: "🤍 soutenir", comingSoon: "bientôt disponible",
@@ -456,7 +456,7 @@
       routeLoading: "rota…",
       level: "nivelado",
       aboveClouds: "acima do teto de nuvens",
-      onGround: "no solo",
+      onGround: "Em Solo",
       unitsMetric: "unidades: m · km/h", unitsAviation: "unidades: ft · kt",
       unitsTip: "Alternar entre unidades métricas (m, km/h) e os pés/nós usados na aviação",
       community: "💬 comunidade", support: "🤍 apoiar", comingSoon: "brevemente",
@@ -500,7 +500,7 @@
       routeLoading: "Route…",
       level: "konstant",
       aboveClouds: "über der Wolkendecke",
-      onGround: "am Boden",
+      onGround: "Am Boden",
       unitsMetric: "Einheiten: m · km/h", unitsAviation: "Einheiten: ft · kt",
       unitsTip: "Zwischen metrischen Einheiten (m, km/h) und den in der Luftfahrt üblichen Fuß/Knoten wechseln",
       community: "💬 Community", support: "🤍 Unterstützen", comingSoon: "demnächst",
@@ -544,7 +544,7 @@
       routeLoading: "航线…",
       level: "平飞",
       aboveClouds: "高于云底",
-      onGround: "已在地面",
+      onGround: "地面",
       unitsMetric: "单位: m · km/h", unitsAviation: "单位: ft · kt",
       unitsTip: "在公制单位（米、公里/小时）与航空常用的英尺/节之间切换",
       community: "💬 社区", support: "🤍 支持", comingSoon: "即将推出",
@@ -1148,8 +1148,21 @@
       const wasLanded = prev ? prev.landed : false;
       const clearlyAirborneAgain = altM != null && groundElevM != null &&
         (altM - groundElevM) > LOW_ALT_AGL_M * 2;
+      // The 2x margin above alone still wasn't enough in the field: a SINGLE
+      // fix can spike well past it on noise (not just wobble right at the
+      // line) — observed live as a landed A380 reading 537m/252km/h/"level"
+      // before vanishing, exactly the old glitch, just past a bigger
+      // threshold instead of a smaller one. Raising the margin further only
+      // buys a bigger number for noise to eventually clear too. Instead,
+      // require the clear reading on TWO CONSECUTIVE fixes before believing
+      // it: a real go-around keeps climbing on the very next fix as well,
+      // while an isolated bad fix almost never repeats. One extra ~45s poll
+      // of staying "landed" is an acceptable cost for not un-landing on a
+      // single bad reading.
+      const prevStreak = (prev && prev.landed) ? (prev.airborneStreak || 0) : 0;
+      const airborneStreak = clearlyAirborneAgain ? prevStreak + 1 : 0;
       const landed = a.alt_baro === "ground" || nearGround ||
-        (wasLanded && !clearlyAirborneAgain);
+        (wasLanded && airborneStreak < 2);
       const np = {
         icao,
         call: (a.flight || a.r || "").trim() || "—",
@@ -1164,6 +1177,7 @@
         // the forecast altitude meets the ground — this flag only matters
         // for planes already on/near it whose fix lacks a usable climb rate
         landed,
+        airborneStreak, // consecutive fixes clearing the un-land margin (see above)
         blendFrom: null, blendAt: 0, blendMs: 0, // set below when handing off from a previous fix
         // type info is INLINE now — no second request
         typeCode: a.t || "",
