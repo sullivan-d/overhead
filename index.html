@@ -1135,6 +1135,31 @@
       // that one to a stop would be exactly the wrong model, so it's excluded.
       const nearGround = altM != null && groundElevM != null &&
         (altM - groundElevM) < LOW_ALT_AGL_M && !(vrMs > 0.5);
+      // nearGround alone assumes the receiver loses lock below ~150m AGL,
+      // but field evidence (a stuck AFR48EM fix reporting 359m/"level"/
+      // 259km/h 2.1km from touchdown into CDG, never flagged landed) shows
+      // lock loss can happen noticeably higher too. The tell isn't just
+      // altitude, it's that the FIX ITSELF has stopped genuinely updating —
+      // airplanes.live re-serving the same stale position with only
+      // seen_pos growing (see above), which posTime staying put across
+      // polls exposes directly: a genuinely fresh fix's seen_pos resets
+      // small each poll, so its posTime tracks close to `now`; a repeated
+      // stale fix's posTime stays anchored at the same real-world instant.
+      // Only trust that signal together with a still-low-ish altitude and
+      // a non-climbing rate (same guard as nearGround) — a stale fix at
+      // cruise altitude is an unrelated coverage gap, not a landing.
+      // Without this, kinematicState's tGround stays Infinity for a
+      // "level" fix (see its comment above) and the plane is modeled as
+      // flying dead straight forever: the exact "stays at altitude, level,
+      // ~250 km/h, then disappears" symptom, distinct from the round-31/32
+      // un-landing flip-flop (which only fires once a plane is ALREADY
+      // landed).
+      const posTime = now - Math.round((a.seen_pos || 0) * 1000);
+      const STALE_FIX_MS = 5000; // tolerance for "same underlying fix re-served", not a new one
+      const STALE_LOW_ALT_AGL_M = 600; // ~2,000ft: still clearly pre-landing for traffic this close, not cruise
+      const fixStale = prev && Math.abs(posTime - prev.posTime) < STALE_FIX_MS;
+      const staleNearGround = fixStale && altM != null && groundElevM != null &&
+        (altM - groundElevM) < STALE_LOW_ALT_AGL_M && !(vrMs > 0.5);
       // Once landed, a SINGLE noisy fix right at the threshold used to be
       // enough to un-land it: low-altitude MLAT fixes are notoriously
       // imprecise (feeder receivers have poor vertical geometry for a
@@ -1161,7 +1186,7 @@
       // single bad reading.
       const prevStreak = (prev && prev.landed) ? (prev.airborneStreak || 0) : 0;
       const airborneStreak = clearlyAirborneAgain ? prevStreak + 1 : 0;
-      const landed = a.alt_baro === "ground" || nearGround ||
+      const landed = a.alt_baro === "ground" || nearGround || staleNearGround ||
         (wasLanded && airborneStreak < 2);
       const np = {
         icao,
@@ -1192,7 +1217,7 @@
         // corrected by that much. Kept separate from `seen` above because
         // MLAT-derived fixes can have a much larger seen_pos without the
         // aircraft actually having gone quiet — that shouldn't trigger removal.
-        posTime: now - Math.round((a.seen_pos || 0) * 1000)
+        posTime
       };
       if (prev) {
         // Hand the display off from the old fix's forecast to this one via
@@ -1466,15 +1491,30 @@
     requestAnimationFrame(draw);
   }
 
+  // Real aircraft don't turn on a dime, so the trail is drawn as a smooth
+  // curve rather than sharp-angled straight segments: each real fix becomes
+  // a quadratic-curve CONTROL point rather than a hard corner, with the
+  // curve actually passing through the midpoint before and after it. Each
+  // piece stays its own stroke() call (not one continuous path) so the
+  // existing per-segment age fade still applies per piece, and adjacent
+  // pieces share an endpoint so the curve stays visually continuous.
   function drawTrail(p, headProj) {
     if (!p.trail.length) return;
     const pts = [...p.trail.map(project), headProj];
+    if (pts.length < 2) return;
     ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
     for (let i = 1; i < pts.length; i++) {
       const age = 1 - i / (pts.length); // older segments (lower i) fade more
       ctx.strokeStyle = p.icao === selected ? `rgba(${theme.hotRgb},${0.5 - age * 0.4})` : `rgba(${theme.sweepRgb},${0.4 - age * 0.32})`;
       ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(pts[i - 1].x, pts[i - 1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
+      const from = i > 1 ? midpoint(pts[i - 2], pts[i - 1]) : pts[i - 1];
+      const to = i < pts.length - 1 ? midpoint(pts[i - 1], pts[i]) : pts[i];
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, to.x, to.y);
+      ctx.stroke();
     }
   }
 
