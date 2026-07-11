@@ -102,7 +102,7 @@
   .compass-btn svg { display: block; }
   #compass-needle { transition: transform 0.1s linear; transform-origin: 12px 12px; }
 
-  .count { position: absolute; top: 16px; right: 16px; text-align: right; z-index: 5; }
+  .count { position: absolute; top: 16px; right: 16px; text-align: right; z-index: 5; cursor: pointer; }
   .count .n { font-size: 30px; font-weight: 700; line-height: 1; }
   .count .l { font-size: 9.5px; letter-spacing: 0.12em; color: var(--ink-faint); text-transform: uppercase; margin-top: 3px; }
 
@@ -152,10 +152,19 @@
   .sheet-links a[href] { color: var(--ink-soft); }
   .sheet-links a[href]:hover { color: var(--sweep); }
 
+  /* header-count breakdown panel: compact 3-column table (label / now / total) */
+  .bd-table { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px 14px; align-items: center; margin-top: 6px; padding-right: 34px; /* clears the floating close button */ }
+  .bd-hcell { font-size: 9px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; text-align: right; }
+  .bd-hcell:first-child { text-align: left; }
+  .bd-lbl { font-size: 12.5px; color: var(--ink-soft); }
+  .bd-num { font-size: 15px; font-weight: 600; text-align: right; min-width: 22px; }
+
   .gate { position: absolute; inset: 0; background: var(--void); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 30px; z-index: 40; overflow-y: auto; }
   .gate h1 { font-size: 17px; letter-spacing: 0.12em; font-weight: 700; text-transform: uppercase; }
   .gate h1 b { color: var(--sweep); }
   .gate p { font-size: 12.5px; color: var(--ink-soft); max-width: 320px; line-height: 1.7; }
+  .gate-headline { font-weight: 600; color: var(--ink); font-size: 14.5px; }
+  .gate-credit { font-size: 9.5px; color: var(--ink-faint); max-width: 320px; line-height: 1.5; margin-top: -8px; }
   /* deliberately a quiet footnote at the very bottom of the gate — a boxed
      card above the button read as too prominent (Sullivan's feedback) */
   .gate-why {
@@ -261,15 +270,46 @@
   </div>
 </div>
 
+<div class="sheet" id="breakdown-sheet">
+  <button class="sheet-close" id="bd-close">&times;</button>
+  <div class="bd-table">
+    <div class="bd-hcell"></div>
+    <div class="bd-hcell" id="bd-h-visible">now</div>
+    <div class="bd-hcell" id="bd-h-day">24h</div>
+    <div class="bd-hcell" id="bd-h-session">total</div>
+    <div class="bd-lbl" id="bd-lbl-airliner">commercial airliner</div>
+    <div class="bd-num" id="bd-v-airliner">0</div>
+    <div class="bd-num" id="bd-d-airliner">0</div>
+    <div class="bd-num" id="bd-s-airliner">0</div>
+    <div class="bd-lbl" id="bd-lbl-jet">private jet</div>
+    <div class="bd-num" id="bd-v-jet">0</div>
+    <div class="bd-num" id="bd-d-jet">0</div>
+    <div class="bd-num" id="bd-s-jet">0</div>
+    <div class="bd-lbl" id="bd-lbl-heli">helicopter</div>
+    <div class="bd-num" id="bd-v-heli">0</div>
+    <div class="bd-num" id="bd-d-heli">0</div>
+    <div class="bd-num" id="bd-s-heli">0</div>
+    <div class="bd-lbl" id="bd-lbl-hobby">small hobby plane</div>
+    <div class="bd-num" id="bd-v-hobby">0</div>
+    <div class="bd-num" id="bd-d-hobby">0</div>
+    <div class="bd-num" id="bd-s-hobby">0</div>
+    <div class="bd-lbl" id="bd-lbl-other">other</div>
+    <div class="bd-num" id="bd-v-other">0</div>
+    <div class="bd-num" id="bd-d-other">0</div>
+    <div class="bd-num" id="bd-s-other">0</div>
+  </div>
+</div>
+
 <div class="gate" id="gate">
   <h1>Over<b>head</b></h1>
-  <p id="gate-intro">A live radar of the aircraft in your sky. No sign-up, no key. Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.</p>
+  <p class="gate-headline" id="gate-headline">There's traffic overhead. See it live.</p>
+  <p id="gate-intro">Real-time radar of every aircraft in your sky — callsigns, altitudes, headings. No sign-up, no app, just planes.</p>
   <button class="primary" id="gate-btn">📍 Use my location</button>
 
-  <div class="addr-or" id="addr-or">prefer not to? an address works too — no permission needed</div>
+  <div class="addr-or" id="addr-or">Rather not share? Type any address instead — no permission pop-up.</div>
   <div class="addr-block show" id="addr-block">
     <div class="addr-row">
-      <input id="addr-input" type="text" placeholder="City, street, or place" autocomplete="off">
+      <input id="addr-input" type="text" placeholder="City, street or landmark" autocomplete="off">
       <button class="go" id="addr-go">Go</button>
     </div>
   </div>
@@ -283,7 +323,8 @@
     <button data-lang="de">Deutsch</button>
     <button data-lang="zh">简体中文</button>
   </div>
-  <div class="gate-why"><b id="why-t">Why location?</b><span id="why-b">The radar centers on where you stand. Your position is used for one thing only — asking airplanes.live which aircraft are above you, straight from your browser. It's never stored and never sent anywhere else. Your browser will ask for permission first.</span></div>
+  <div class="gate-why"><b id="why-t">Why location?</b><span id="why-b">Overhead centres the scope on you. Your position is used for one thing only: querying airplanes.live for the traffic above you, straight from your browser. It's never stored and never sent anywhere else — and your browser asks for permission first.</span></div>
+  <p class="gate-credit" id="gate-credit">Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.</p>
 </div>
 
 <script>
@@ -336,13 +377,15 @@
   const HTML_LANG = { en: "en-GB", fr: "fr", pt: "pt-PT", de: "de", zh: "zh-Hans" };
   const I18N = {
     en: {
-      intro: 'A live radar of the aircraft in your sky. No sign-up, no key. Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.',
+      headline: "There's traffic overhead. See it live.",
+      intro: "Real-time radar of every aircraft in your sky — callsigns, altitudes, headings. No sign-up, no app, just planes.",
+      credit: 'Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.',
       useLocation: "📍 Use my location",
-      orAddress: "prefer not to? an address works too — no permission needed",
-      addrPlaceholder: "City, street, or place",
+      orAddress: "Rather not share? Type any address instead — no permission pop-up.",
+      addrPlaceholder: "City, street or landmark",
       go: "Go",
       whyTitle: "Why location?",
-      whyBody: "The radar centers on where you stand. Your position is used for one thing only — asking airplanes.live which aircraft are above you, straight from your browser. It's never stored and never sent anywhere else. Your browser will ask for permission first.",
+      whyBody: "Overhead centres the scope on you. Your position is used for one thing only: querying airplanes.live for the traffic above you, straight from your browser. It's never stored and never sent anywhere else — and your browser asks for permission first.",
       locating: "locating…",
       geoUnavailable: "geolocation unavailable on this device — use the address box below",
       geoBlocked: "location blocked — use the address box below instead",
@@ -354,6 +397,8 @@
       conditionsTip: "☁ cloud ceiling — aircraft above it are dimmed, they may be hidden behind the clouds. 🛬 ground level at your position — shown while an aircraft on screen is flying low",
       aircraft: "aircraft",
       hint: "tap an aircraft for details",
+      bdNow: "now", bd24h: "24h", bdTotal: "total",
+      breakdownTip: "Tap for a breakdown by aircraft type — now = on screen, 24h = seen in the last day, total = seen ever, from anywhere",
       compassTip: "Compass: the view rotates to the way you're facing. Tap to switch back to north-up.",
       homeTip: "Back to the start screen",
       standby: "standby",
@@ -375,18 +420,20 @@
       themeToDark: "Switch to dark mode", themeToLight: "Switch to light mode",
       type_airliner: "Commercial Airliner", type_jet: "Private Jet", type_hobby: "Small Hobby Plane",
       type_heli: "Helicopter", type_drone: "Drone", type_space: "Space Vehicle",
-      type_airship: "Airship", type_aircraft: "Aircraft",
+      type_airship: "Airship", type_aircraft: "Aircraft", type_other: "Other",
       sun: "sun", moon: "moon",
       cards: ["N", "E", "S", "W"]
     },
     fr: {
-      intro: 'Un radar en direct des avions dans votre ciel. Sans inscription, sans clé. Données du réseau ouvert <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
+      headline: "Il y a du trafic au-dessus de vous. Regardez-le en direct.",
+      intro: "Radar en temps réel de tous les avions dans votre ciel: indicatifs, altitudes, caps. Sans inscription, sans appli, juste des avions.",
+      credit: 'Données du réseau ouvert <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
       useLocation: "📍 Utiliser ma position",
-      orAddress: "vous préférez éviter ? une adresse suffit — aucune permission requise",
+      orAddress: "Vous préférez éviter ? Indiquez simplement une adresse, sans géolocalisation.",
       addrPlaceholder: "Ville, rue ou lieu",
       go: "OK",
       whyTitle: "Pourquoi la position ?",
-      whyBody: "Le radar se centre sur l'endroit où vous êtes. Votre position ne sert qu'à une seule chose : demander à airplanes.live quels avions vous survolent, directement depuis votre navigateur. Elle n'est jamais stockée ni envoyée ailleurs. Votre navigateur demandera d'abord la permission.",
+      whyBody: "Overhead centre le scope sur vous. Votre position ne sert qu'à une seule chose : interroger airplanes.live sur le trafic au-dessus de vous, directement depuis votre navigateur. Elle n'est jamais stockée ni transmise à quiconque et votre navigateur vous demande d'abord l'autorisation.",
       locating: "localisation…",
       geoUnavailable: "géolocalisation indisponible sur cet appareil — utilisez le champ d'adresse ci-dessous",
       geoBlocked: "position bloquée — utilisez plutôt le champ d'adresse ci-dessous",
@@ -398,6 +445,8 @@
       conditionsTip: "☁ plafond nuageux — les avions au-dessus sont estompés, ils peuvent être cachés par les nuages. 🛬 niveau du sol à votre position — affiché quand un avion à l'écran vole bas",
       aircraft: "avions",
       hint: "touchez un avion pour les détails",
+      bdNow: "maintenant", bd24h: "24h", bdTotal: "total",
+      breakdownTip: "Touchez pour une répartition par type d'avion — maintenant = à l'écran, 24h = vus au cours du dernier jour, total = vus depuis toujours, où que ce soit",
       compassTip: "Boussole : la vue pivote dans la direction où vous regardez. Touchez pour remettre le nord en haut.",
       homeTip: "Retour à l'écran d'accueil",
       standby: "en attente",
@@ -419,18 +468,20 @@
       themeToDark: "Passer en mode sombre", themeToLight: "Passer en mode clair",
       type_airliner: "Avion de ligne", type_jet: "Jet privé", type_hobby: "Petit avion de loisir",
       type_heli: "Hélicoptère", type_drone: "Drone", type_space: "Véhicule spatial",
-      type_airship: "Dirigeable", type_aircraft: "Aéronef",
+      type_airship: "Dirigeable", type_aircraft: "Aéronef", type_other: "Autre",
       sun: "soleil", moon: "lune",
       cards: ["N", "E", "S", "O"]
     },
     pt: {
-      intro: 'Um radar em direto dos aviões no seu céu. Sem registo, sem chave. Dados da rede aberta <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
+      headline: "Tráfego aéreo à vista. Siga-o em direto.",
+      intro: "Radar em tempo real de todas as aeronaves no seu céu — indicativos, altitudes, rumos. Sem registo, sem aplicação, só aviões.",
+      credit: 'Dados da rede aberta <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
       useLocation: "📍 Usar a minha localização",
-      orAddress: "prefere não usar? uma morada também serve — sem permissões",
-      addrPlaceholder: "Cidade, rua ou lugar",
+      orAddress: "Prefere não partilhar? Escreva simplesmente uma morada, sem geolocalização.",
+      addrPlaceholder: "Cidade, rua ou local",
       go: "Ir",
       whyTitle: "Porquê a localização?",
-      whyBody: "O radar centra-se onde você está. A sua posição serve apenas para uma coisa — perguntar à airplanes.live que aviões estão por cima de si, diretamente do seu navegador. Nunca é guardada nem enviada para outro lado. O navegador pedirá primeiro permissão.",
+      whyBody: "O Overhead centra o scope em si. A sua posição serve apenas para uma coisa: consultar o airplanes.live sobre o tráfego acima de si, diretamente a partir do seu navegador. Nunca é guardada nem enviada para outro lado — e o navegador pede-lhe primeiro autorização.",
       locating: "a localizar…",
       geoUnavailable: "geolocalização indisponível neste dispositivo — use a caixa de morada abaixo",
       geoBlocked: "localização bloqueada — use antes a caixa de morada abaixo",
@@ -442,6 +493,8 @@
       conditionsTip: "☁ teto de nuvens — os aviões acima dele aparecem esbatidos, podem estar escondidos pelas nuvens. 🛬 nível do solo na sua posição — mostrado quando um avião no ecrã voa baixo",
       aircraft: "aviões",
       hint: "toque num avião para ver detalhes",
+      bdNow: "agora", bd24h: "24h", bdTotal: "total",
+      breakdownTip: "Toque para ver a repartição por tipo de avião — agora = no ecrã, 24h = vistos no último dia, total = vistos sempre, em qualquer local",
       compassTip: "Bússola: a vista roda para a direção em que está virado. Toque para voltar ao norte em cima.",
       homeTip: "Voltar ao ecrã inicial",
       standby: "em espera",
@@ -463,18 +516,20 @@
       themeToDark: "Mudar para o modo escuro", themeToLight: "Mudar para o modo claro",
       type_airliner: "Avião Comercial", type_jet: "Jato Privado", type_hobby: "Pequeno Avião de Recreio",
       type_heli: "Helicóptero", type_drone: "Drone", type_space: "Veículo Espacial",
-      type_airship: "Dirigível", type_aircraft: "Aeronave",
+      type_airship: "Dirigível", type_aircraft: "Aeronave", type_other: "Outro",
       sun: "sol", moon: "lua",
       cards: ["N", "E", "S", "O"]
     },
     de: {
-      intro: 'Ein Live-Radar der Flugzeuge an Ihrem Himmel. Keine Anmeldung, kein Schlüssel. Daten aus dem offenen Netzwerk <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
+      headline: "Es gibt Flugverkehr. Sehen Sie ihn live.",
+      intro: "Echtzeit-Radar aller Flugzeuge in Ihrem Himmel – Funkrufe, Flughöhen, Flugrichtungen. Keine Anmeldung erforderlich, keine App, nur Flugzeuge.",
+      credit: 'Daten aus dem offenen Netzwerk <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
       useLocation: "📍 Meinen Standort verwenden",
-      orAddress: "lieber nicht? eine Adresse geht auch — keine Berechtigung nötig",
-      addrPlaceholder: "Stadt, Straße oder Ort",
+      orAddress: "Bevorzugen Sie es nicht, Ihren Standort zu teilen? Geben Sie stattdessen eine beliebige Adresse ohne Geolokalisierung ein.",
+      addrPlaceholder: "Stadt, Straße oder Sehenswürdigkeit",
       go: "Los",
-      whyTitle: "Warum Standort?",
-      whyBody: "Das Radar zentriert sich auf Ihren Standort. Ihre Position wird nur für eines verwendet — airplanes.live direkt aus Ihrem Browser zu fragen, welche Flugzeuge über Ihnen sind. Sie wird nie gespeichert und nie woandershin gesendet. Ihr Browser fragt zuerst um Erlaubnis.",
+      whyTitle: "Warum den Standort?",
+      whyBody: '"Overhead" richtet den Fokus auf Sie. Ihre Position wird nur für eine Sache verwendet: die Abfrage von "airplanes.live" für den Flugverkehr über Ihnen, direkt aus Ihrem Browser. Die Daten werden weder gespeichert noch an einen anderen Ort gesendet – und Ihr Browser bittet zuerst um Ihre Erlaubnis.',
       locating: "Standort wird ermittelt…",
       geoUnavailable: "Standortbestimmung auf diesem Gerät nicht verfügbar — nutzen Sie das Adressfeld unten",
       geoBlocked: "Standort blockiert — nutzen Sie stattdessen das Adressfeld unten",
@@ -486,6 +541,8 @@
       conditionsTip: "☁ Wolkenuntergrenze — Flugzeuge darüber sind abgedunkelt, sie könnten hinter den Wolken verborgen sein. 🛬 Bodenhöhe an Ihrer Position — angezeigt, wenn ein Flugzeug auf dem Bildschirm tief fliegt",
       aircraft: "Flugzeuge",
       hint: "Flugzeug antippen für Details",
+      bdNow: "jetzt", bd24h: "24h", bdTotal: "gesamt",
+      breakdownTip: "Tippen für eine Aufschlüsselung nach Flugzeugtyp — jetzt = auf dem Bildschirm, 24h = im letzten Tag gesehen, gesamt = jemals gesehen, an jedem Ort",
       compassTip: "Kompass: die Ansicht dreht sich in Ihre Blickrichtung. Antippen für Norden oben.",
       homeTip: "Zurück zum Startbildschirm",
       standby: "Bereitschaft",
@@ -507,18 +564,20 @@
       themeToDark: "Zum dunklen Modus wechseln", themeToLight: "Zum hellen Modus wechseln",
       type_airliner: "Verkehrsflugzeug", type_jet: "Privatjet", type_hobby: "Kleines Sportflugzeug",
       type_heli: "Hubschrauber", type_drone: "Drohne", type_space: "Raumfahrzeug",
-      type_airship: "Luftschiff", type_aircraft: "Luftfahrzeug",
+      type_airship: "Luftschiff", type_aircraft: "Luftfahrzeug", type_other: "Sonstige",
       sun: "Sonne", moon: "Mond",
       cards: ["N", "O", "S", "W"]
     },
     zh: {
-      intro: '实时雷达，显示您上空的飞机。无需注册，无需密钥。数据来自开放的 <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> 网络。',
+      headline: "上方有飞机。实时查看。",
+      intro: "您所在天空中的所有飞机的实时雷达——包括航班号、高度和航向。无需注册，无需应用，只需飞机。",
+      credit: '数据来自开放的 <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> 网络。',
       useLocation: "📍 使用我的位置",
-      orAddress: "不想授权？输入地址也可以——无需任何权限",
-      addrPlaceholder: "城市、街道或地点",
+      orAddress: "不想分享？请直接输入任何地址，无需地理定位。",
+      addrPlaceholder: "城市、街道或地标",
       go: "搜索",
       whyTitle: "为什么需要位置？",
-      whyBody: "雷达以您所在的位置为中心。您的位置只用于一件事——由浏览器直接向 airplanes.live 查询您上空的飞机。位置绝不会被存储，也不会发送到其他任何地方。浏览器会先征求您的许可。",
+      whyBody: "“上方”功能将焦点集中在您身上。您的位置仅用于查询“airplanes.live”，直接从您的浏览器获取您上方飞机的实时交通信息。您的位置信息不会被存储，也不会发送到任何其他地方——而且，您的浏览器会首先要求权限。",
       locating: "定位中…",
       geoUnavailable: "此设备无法定位——请使用下方的地址输入框",
       geoBlocked: "位置权限被拒绝——请改用下方的地址输入框",
@@ -530,6 +589,8 @@
       conditionsTip: "☁ 云底高度——高于云底的飞机会变暗，它们可能被云层遮挡。🛬 您所在位置的地面海拔——屏幕上有飞机低空飞行时显示",
       aircraft: "飞机",
       hint: "点按飞机查看详情",
+      bdNow: "当前", bd24h: "24小时", bdTotal: "总计",
+      breakdownTip: "点按查看按机型的分类统计——当前 = 屏幕上显示的，24小时 = 过去24小时内见过的，总计 = 在任何地点、任何时候见过的全部",
       compassTip: "指南针：视图会旋转到您面朝的方向。点按可切回北向朝上。",
       homeTip: "返回起始页",
       standby: "待机",
@@ -551,7 +612,7 @@
       themeToDark: "切换到深色模式", themeToLight: "切换到浅色模式",
       type_airliner: "商业客机", type_jet: "私人喷气机", type_hobby: "小型飞机",
       type_heli: "直升机", type_drone: "无人机", type_space: "航天器",
-      type_airship: "飞艇", type_aircraft: "飞行器",
+      type_airship: "飞艇", type_aircraft: "飞行器", type_other: "其他",
       sun: "日", moon: "月",
       cards: ["北", "东", "南", "西"]
     }
@@ -981,16 +1042,22 @@
   // sitting in the `planes` Map (the Map is only pruned for going quiet
   // entirely, not for falling out of range, so .size would read stale/too
   // high for up to 90s after switching to a smaller range).
-  function countVisible() {
+  // Split out by type (for the header-count breakdown panel) so there's one
+  // source of truth for "what counts as visible" — countVisible() just sums it.
+  function countVisibleByType() {
     const now = Date.now();
-    let n = 0;
+    const counts = { airliner: 0, jet: 0, heli: 0, hobby: 0, other: 0 };
     for (const p of planes.values()) {
       try {
         const gd = haversineKm(me, estimatedPosition(p, now));
-        if (gd <= rangeKm && nakedEyeVisible(p, gd)) n++;
+        if (gd <= rangeKm && nakedEyeVisible(p, gd)) counts[countBucket(typeKey(p))]++;
       } catch { /* skip malformed */ }
     }
-    return n;
+    return counts;
+  }
+  function countVisible() {
+    const c = countVisibleByType();
+    return c.airliner + c.jet + c.heli + c.hobby + c.other;
   }
   function updateCountDisplay() { document.getElementById("count-n").textContent = countVisible(); }
 
@@ -1376,6 +1443,61 @@
     const k = typeKey(p);
     return k ? t("type_" + k) : (p.typeDesc || p.typeCode || t("type_aircraft"));
   }
+  // Folds drone/space/airship/no-bucket into "other" so the header-count
+  // breakdown panel always has exactly 5 rows.
+  function countBucket(k) {
+    return (k === "airliner" || k === "jet" || k === "heli" || k === "hobby") ? k : "other";
+  }
+
+  // ----- header-count breakdown: aircraft ever seen (lifetime + rolling 24h) -----
+  // One persisted record per ICAO hex — { bucket, lastSeenAt } — powers two
+  // derived views: LIFETIME (every hex ever recorded, no time limit, no
+  // location scoping — survives app restarts AND a change of watching
+  // location, per Sullivan's explicit ask) and a rolling LAST-24-HOURS count
+  // (only hexes whose most recent sighting falls within the trailing 24h;
+  // ages out on its own as time passes, extends again if the aircraft
+  // reappears). Both are derived from the same map so there's nothing to
+  // keep in sync — the map is simply filtered two different ways.
+  const SEEN_KEY = "overhead-seen-stats";
+  const SEEN_24H_MS = 24 * 60 * 60 * 1000;
+  let sightings = loadSightings();
+  let seenStatsDirty = false, lastSeenSaveAt = 0;
+  function loadSightings() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SEEN_KEY));
+      return (raw && typeof raw === "object") ? raw : {};
+    } catch { return {}; }
+  }
+  function saveSightings() {
+    try { localStorage.setItem(SEEN_KEY, JSON.stringify(sightings)); } catch { /* storage unavailable — not fatal */ }
+  }
+  function markSeen(icao, bucket, now) {
+    sightings[icao] = { bucket, lastSeenAt: now };
+    seenStatsDirty = true;
+  }
+  // Writing to localStorage on every animation frame a plane is on screen
+  // would be wasteful — flush at most once every 5s while there's something
+  // new to persist (mirrors the poll-driven save cadence used elsewhere in
+  // this file, e.g. the cloud ceiling fetch).
+  function flushSeenStatsIfDue(now) {
+    if (seenStatsDirty && now - lastSeenSaveAt > 5000) {
+      saveSightings();
+      lastSeenSaveAt = now;
+      seenStatsDirty = false;
+    }
+  }
+  function lifetimeCounts() {
+    const counts = { airliner: 0, jet: 0, heli: 0, hobby: 0, other: 0 };
+    for (const icao in sightings) counts[sightings[icao].bucket]++;
+    return counts;
+  }
+  function last24hCounts(now) {
+    const counts = { airliner: 0, jet: 0, heli: 0, hobby: 0, other: 0 };
+    for (const icao in sightings) {
+      if (now - sightings[icao].lastSeenAt < SEEN_24H_MS) counts[sightings[icao].bucket]++;
+    }
+    return counts;
+  }
 
   // ----- naked-eye visibility -----
   // Whether a plane is big/close enough to actually spot with the unaided eye.
@@ -1441,8 +1563,21 @@
         if (proj.dist > displayRangeKm * RANGE_MARGIN) continue;
         if (!nakedEyeVisible(p, proj.dist)) continue; // too small/far to actually see (always-on filter)
         visible.push({ p, proj });
+        // Every frame this ICAO hex is actually drawn on the radar, refresh
+        // its "last seen" timestamp for the breakdown panel (lifetime +
+        // rolling 24h counts). Hooking this to the same per-frame visible-
+        // gather loop that drives the icons themselves (rather than
+        // ingest(), which only runs once per 45s poll) is deliberate: a
+        // plane can drift into naked-eye range purely through dead-
+        // reckoning between polls, and only the draw loop sees that moment
+        // — matching this app's "count = what you could actually see"
+        // philosophy (same scoping precedent as the low-flying ground
+        // readout above).
+        markSeen(p.icao, countBucket(typeKey(p)), now);
       } catch (e) { console.warn("skipped projecting aircraft", p.icao, e); }
     }
+    flushSeenStatsIfDue(now);
+    if (breakdownEl.classList.contains("open")) updateBreakdownDisplay();
 
     // Ground-level readout (top-left, alongside cloud ceiling): the USER's
     // ground elevation, shown while ANY currently-drawn aircraft is flying
@@ -1864,13 +1999,16 @@
 
   function endPointer(e) {
     if (orbit && e.pointerId === orbit.id) {
-      // a tap on empty space (no drag) dismisses the open detail sheet —
-      // same "tap outside to close" convention as the sheet's own X button
-      if (!orbit.moved && sheet.classList.contains("open")) closeSheet();
+      // a tap on empty space (no drag) dismisses whichever panel is open —
+      // same "tap outside to close" convention as their own X buttons
+      if (!orbit.moved) {
+        if (sheet.classList.contains("open")) closeSheet();
+        else if (breakdownEl.classList.contains("open")) closeBreakdown();
+      }
       orbit = null;
     }
     if (tapCandidate && e.pointerId === tapCandidate.id) {
-      if (!tapCandidate.moved) { selected = tapCandidate.hitIcao; openSheet(); }
+      if (!tapCandidate.moved) { closeBreakdown(); selected = tapCandidate.hitIcao; openSheet(); }
       tapCandidate = null;
     }
   }
@@ -1878,6 +2016,29 @@
   cv.addEventListener("pointercancel", endPointer);
 
   const sheet = document.getElementById("sheet");
+  const breakdownEl = document.getElementById("breakdown-sheet");
+  function updateBreakdownDisplay() {
+    const now = Date.now();
+    const live = countVisibleByType();
+    const day = last24hCounts(now);
+    const lifetime = lifetimeCounts();
+    for (const k of ["airliner", "jet", "heli", "hobby", "other"]) {
+      document.getElementById("bd-v-" + k).textContent = live[k];
+      document.getElementById("bd-d-" + k).textContent = day[k];
+      document.getElementById("bd-s-" + k).textContent = lifetime[k];
+    }
+  }
+  function openBreakdown() {
+    if (!me) return;
+    closeSheet();
+    updateBreakdownDisplay();
+    breakdownEl.classList.add("open");
+  }
+  function closeBreakdown() { breakdownEl.classList.remove("open"); }
+  document.querySelector(".count").addEventListener("click", () => {
+    breakdownEl.classList.contains("open") ? closeBreakdown() : openBreakdown();
+  });
+  document.getElementById("bd-close").addEventListener("click", closeBreakdown);
 
   // Everything is stored internally in SI (m, m/s); the sheet formats on the
   // fly in either everyday metric (the default — Sullivan's explicit choice,
@@ -2226,7 +2387,7 @@
   }
 
   function reopenGate() {
-    closeSheet(); // the gate covers the radar, but the sheet must not survive into the next session
+    closeSheet(); closeBreakdown(); // the gate covers the radar, neither panel should survive into the next session
     clearTimeout(pollTimer); pollTimer = null; failStreak = 0; me = null; planes.clear();
     clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
     clearInterval(cloudTimer); cloudTimer = null;
@@ -2365,7 +2526,13 @@
     set("k-hdg", "heading"); set("k-vr", "climb");
     set("link-community", "community");
     set("link-donate", "support");
-    document.getElementById("gate-intro").innerHTML = t("intro"); // contains the attribution link
+    set("bd-h-visible", "bdNow"); set("bd-h-day", "bd24h"); set("bd-h-session", "bdTotal");
+    for (const k of ["airliner", "jet", "heli", "hobby", "other"]) set("bd-lbl-" + k, "type_" + k);
+    document.querySelector(".count").title = t("breakdownTip");
+    if (breakdownEl.classList.contains("open")) updateBreakdownDisplay();
+    set("gate-headline", "headline");
+    set("gate-intro", "intro");
+    document.getElementById("gate-credit").innerHTML = t("credit"); // contains the attribution link
     addrInput.placeholder = t("addrPlaceholder");
     document.getElementById("ceiling-box").title = t("conditionsTip");
     document.getElementById("brand").title = t("homeTip");
