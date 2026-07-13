@@ -691,7 +691,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v61";
+  const APP_VERSION = "v62";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -1728,14 +1728,17 @@
     if (selected) {
       const sp = planes.get(selected);
       if (sp) {
+        const altM = estimatedAltitude(sp, now);
+        const distKm = haversineKm(me, estimatedPosition(sp, now));
         document.getElementById("d-alt").innerHTML = isOnGround(sp, now)
           ? `${GROUND_ICON} ${t("onGround")}`
-          : fmtAlt(estimatedAltitude(sp, now)) +
+          : fmtAlt(altM) +
             (isAboveClouds(sp) ? ` <span title="${t("aboveClouds")}">☁️</span>` : "");
         document.getElementById("d-spd").innerHTML = fmtSpd(displayVel(sp, now));
         document.getElementById("d-hdg").innerHTML = `${Math.round(displayTrack(sp, now))}<small>°</small>`;
-        document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(sp, now)));
+        document.getElementById("d-dist").innerHTML = fmtDist(distKm);
         document.getElementById("d-vr").innerHTML = fmtVr(displayVrate(sp, now));
+        try { drawElevationGauge(altM, distKm); } catch (e) { console.warn("skipped elevation gauge", e); }
       }
     }
 
@@ -1813,6 +1816,130 @@
     ctx.restore();
     ctx.fillStyle = theme.moonBody; ctx.font = "9px ui-monospace, monospace";
     ctx.fillText(t("moon"), pt.x + 11, pt.y + 3);
+  }
+
+  // ---------- elevation gauge (bottom-left corner, only while a plane is
+  // selected / the sheet is open) ----------
+  // "Which way do I turn" is already solved by the map + heading-up mode —
+  // the icon's on-screen position IS its bearing relative to where you're
+  // facing. The one thing the top-down map can't show is "how far up do I
+  // tilt my head", which is what this gauge is purely for: a quarter circle
+  // pivoting at the canvas's own bottom-left corner, a screen region the
+  // main ring circle never reaches at any tilt (R is only 6px short of half
+  // the canvas — see resize() — so the circle is inscribed in the square
+  // and its four corners are always clear). 0° (the horizontal spoke) is
+  // the horizon; 90° (the vertical spoke) is straight overhead. This is
+  // REAL sky elevation as seen from the user, independent of the radar's
+  // own on-screen 3D tilt — that tilt is a stylistic view of the MAP, so
+  // the gauge is drawn billboarded (outside the ctx.scale squish block,
+  // alongside the plane icons/labels) and never itself squishes.
+  //
+  // Deliberately static this round: a live "where the phone itself is
+  // pointing" arrow (reusing the same deviceorientation listener that
+  // already drives the compass) was proposed and explicitly deferred by
+  // Sullivan — this app's gesture/orientation features have a history of
+  // needing several rounds of on-device tuning (see the two-finger
+  // tilt+rotate saga referenced above), and there is no way to verify
+  // device-tilt math without his phone. If it's picked up later, beta/gamma
+  // are already available on the same onOrientation(e) event.
+  const ELEV_GAUGE_MARGIN = 16; // inset from the true canvas corner, CSS px
+  function elevGaugeGeometry() {
+    const gx = ELEV_GAUGE_MARGIN, gy = cssSize - ELEV_GAUGE_MARGIN;
+    const toCenter = Math.hypot(cx - gx, cy - gy);
+    // Stays clear of the main ring circle (radius R) at any screen size.
+    // The lower floor here is deliberately small (12px, just a guard against
+    // a degenerate zero/negative radius) rather than a "legible minimum" —
+    // toCenter-R-8 is provably >=~12.6px already at resize()'s own smallest
+    // possible canvas (cssSize 180), so a bigger floor would fight the
+    // clearance term at exactly that extreme and force an overlap (caught by
+    // the verification harness at cssSize=180 before this was lowered).
+    const gr = Math.max(12, Math.min(toCenter - R - 8, 110));
+    return { gx, gy, gr };
+  }
+  // Point on the gauge's arc for elevation e (0..90°). e=0 sits on the
+  // horizontal spoke (the horizon), e=90 on the vertical spoke (zenith) —
+  // the elevation degree IS the canvas angle from the pivot, no separate
+  // mapping needed.
+  function elevGaugePoint(e, g) {
+    const a = toRad(Math.max(0, Math.min(90, e)));
+    return { x: g.gx + g.gr * Math.cos(a), y: g.gy - g.gr * Math.sin(a) };
+  }
+  // Real-world elevation angle of a point heightM above the USER (not sea
+  // level — same groundElevM convention as aboveGroundM/altitudeLiftPx), at
+  // ground distance distKm. atan2 so straight overhead (distance 0) reads a
+  // clean 90° instead of dividing by zero.
+  function elevationDeg(heightM, distKm) {
+    return Math.atan2(Math.max(0, heightM), Math.max(0, distKm) * 1000) * 180 / Math.PI;
+  }
+  // Read-only overlay, not a drag surface — a touch landing here must do
+  // nothing at all (see the pointerdown guard below), not spin/tilt the
+  // radar the way the rest of empty canvas does.
+  function inElevGaugeZone(px, py) {
+    if (!selected) return false;
+    const g = elevGaugeGeometry();
+    return px >= 0 && px <= g.gx + g.gr + 40 && py >= g.gy - g.gr - 14 && py <= cssSize;
+  }
+  function drawElevationGauge(altM, distKm) {
+    const g = elevGaugeGeometry();
+    const heightM = (altM ?? (groundElevM ?? 0)) - (groundElevM ?? 0);
+    const planeDeg = elevationDeg(heightM, distKm);
+
+    // the pie-slice guide: two straight spokes plus the arc joining them
+    ctx.strokeStyle = theme.ringMinor; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(g.gx + g.gr, g.gy); ctx.lineTo(g.gx, g.gy); ctx.lineTo(g.gx, g.gy - g.gr);
+    ctx.stroke();
+    ctx.beginPath();
+    for (let e = 0; e <= 90; e += 3) {
+      const pt = elevGaugePoint(e, g);
+      if (e === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.strokeStyle = theme.ringMajor; ctx.stroke();
+
+    // zenith label, top of the arc — the only tick label besides the
+    // ground icon, to keep a ~50-110px corner widget uncluttered
+    ctx.fillStyle = theme.rangeLabel; ctx.font = "9px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("90°", g.gx, g.gy - g.gr - 8);
+    ctx.textAlign = "start";
+
+    // ground reference, fixed at 0° — the same 🛬 glyph used everywhere
+    // else in the app for "the user's own ground level"
+    ctx.font = "11px ui-monospace, monospace";
+    ctx.fillText(GROUND_ICON, g.gx + g.gr - 9, g.gy - 2);
+
+    // sun / moon at their true elevation — same visibility thresholds as
+    // drawCelestial() above, small dots in their existing theme colors (no
+    // label: there's no room, and the color alone already tells them apart)
+    if (sunPos && sunPos.alt > -0.83) {
+      const p = elevGaugePoint(sunPos.alt, g);
+      ctx.fillStyle = theme.gold;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    if (moonPos && moonPos.alt > -0.3) {
+      const p = elevGaugePoint(moonPos.alt, g);
+      ctx.fillStyle = theme.moonBody;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // the selected aircraft, in red: a radial needle plus a small
+    // triangular head pointing outward, echoing the heading-up needle
+    // already drawn at the top of the main radar
+    const pt = elevGaugePoint(planeDeg, g);
+    const a = toRad(Math.max(0, Math.min(90, planeDeg)));
+    ctx.strokeStyle = theme.hotHex; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(g.gx, g.gy); ctx.lineTo(pt.x, pt.y); ctx.stroke();
+    ctx.save(); ctx.translate(pt.x, pt.y); ctx.rotate(-a);
+    ctx.fillStyle = theme.hotHex;
+    ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-3, -5); ctx.lineTo(-3, 5); ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // numeric readout, to the right of the gauge — fixed at the same
+    // height as the ground icon (the arc's rightmost, ring-safest point)
+    // rather than tracking the marker around the arc, so it stays put and
+    // legible whether the plane reads 2° or 88°
+    ctx.fillStyle = theme.hotHex; ctx.font = "bold 18px ui-monospace, monospace";
+    ctx.fillText(Math.round(planeDeg) + "°", g.gx + g.gr + 14, g.gy - 2);
   }
 
   // One of 4 distinct pictograms instead of a generic triangle, picked from
@@ -1987,10 +2114,12 @@
 
   cv.addEventListener("pointerdown", (e) => {
     if (orbit || tapCandidate) return; // one active touch/drag at a time
+    const rect = cv.getBoundingClientRect();
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    if (inElevGaugeZone(px, py)) return; // read-only overlay — not a drag/tap surface
     const hint = document.getElementById("hint"); if (hint) hint.style.opacity = "0";
     cv.setPointerCapture(e.pointerId);
-    const rect = cv.getBoundingClientRect();
-    const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    const hit = hitTest(px, py);
     if (hit) {
       tapCandidate = { id: e.pointerId, x0: e.clientX, y0: e.clientY, hitIcao: hit, moved: false };
     } else {
