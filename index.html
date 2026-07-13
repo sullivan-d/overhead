@@ -691,7 +691,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v62";
+  const APP_VERSION = "v63";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -1374,6 +1374,7 @@
         icao,
         call: (a.flight || a.r || "").trim() || "—",
         flightCallsign: (a.flight || "").trim(), // used for the route lookup; blank for GA aircraft with no flight number
+        reg: (a.r || "").trim(), // fallback route-lookup key for GA/private aircraft that fly under their tail number as ATC callsign
         lat, lon,
         alt: altM,
         vel: velMs,
@@ -2323,8 +2324,16 @@
     setShape(p);
 
     const routeEl = document.getElementById("d-route");
-    routeEl.innerHTML = p.flightCallsign ? `<span class="codes">${t("routeLoading")}</span>` : "";
-    fetchRoute(p.flightCallsign).then(route => {
+    // Plenty of GA/private aircraft never squawk a flight number at all — they
+    // fly IFR under their own registration as the ATC callsign instead, and
+    // adsbdb's route DB is keyed by callsign, so it can still have their route
+    // under the tail number even though `flightCallsign` is blank. Fall back
+    // to the registration (dashes stripped — real callsigns never carry them)
+    // before giving up; adsbdb itself is still the authority on whether a
+    // route actually exists for that string.
+    const routeQuery = p.flightCallsign || p.reg.replace(/[^A-Z0-9]/gi, "");
+    routeEl.innerHTML = routeQuery ? `<span class="codes">${t("routeLoading")}</span>` : "";
+    fetchRoute(routeQuery).then(route => {
       if (selected !== p.icao) return; // sheet moved on to another aircraft
       if (!route) { routeEl.textContent = ""; return; }
       const o = route.origin?.iata_code || route.origin?.icao_code;
