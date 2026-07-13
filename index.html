@@ -139,14 +139,21 @@
      ellipsis when it doesn't) so the sheet height never varies by type name */
   .sheet-type { font-size: 12px; color: var(--ink-soft); margin-top: 3px; line-height: 1.4; height: 2.8em;
     display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .sheet-route { font-size: 11px; color: var(--sweep); margin-top: 4px; letter-spacing: 0.04em; min-height: 14px; }
+  .sheet-route { font-size: 11px; color: var(--sweep); margin-top: 4px; letter-spacing: 0.04em; height: 14px; line-height: 14px; }
   .sheet-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; margin-top: 18px; flex: 1; align-content: start; }
   .sheet-stats .stat.wide { grid-column: 1 / -1; }
   .stat .k { font-size: 9px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
   /* nowrap: a value+unit ("722 m/min") must stay on one line even if it
      runs over the silhouette a little — Sullivan's spec, and the wrap was
-     the other thing (besides type-name lines) making sheet heights vary */
-  .stat .v { font-size: 17px; font-weight: 600; margin-top: 3px; white-space: nowrap; }
+     the other thing (besides type-name lines) making sheet heights vary.
+     height is PINNED: ☁️/🛬 (and ▲/▼ on some font stacks) fall back to an
+     emoji/symbol font with taller metrics, which otherwise inflates just
+     that row's line box — so a plane with a ☁️ next to its altitude got a
+     sheet a few px taller than one without. line-height alone is NOT
+     enough (baseline alignment still unions the fallback font's ascent
+     into the line box) — the fixed height caps the geometry and lets an
+     oversized glyph overflow invisibly instead. */
+  .stat .v { font-size: 17px; font-weight: 600; margin-top: 3px; white-space: nowrap; line-height: 20px; height: 20px; }
   .stat .v small { font-size: 10px; color: var(--ink-soft); font-weight: 400; }
   .sheet-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--grid-line); }
   .units-btn {
