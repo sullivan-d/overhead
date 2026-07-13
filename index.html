@@ -162,10 +162,11 @@
     background: none; border: 1px solid var(--ring); color: var(--ink-soft); font-family: inherit;
     font-size: 10px; letter-spacing: 0.06em; padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap;
   }
-  .sheet-links { display: flex; gap: 14px; }
+  .sheet-links { display: flex; align-items: center; gap: 14px; }
   .sheet-links a { font-size: 10px; color: var(--ink-faint); text-decoration: none; letter-spacing: 0.05em; white-space: nowrap; }
   .sheet-links a[href] { color: var(--ink-soft); }
   .sheet-links a[href]:hover { color: var(--sweep); }
+  .app-version { font-size: 9px; color: var(--ink-faint); letter-spacing: 0.05em; white-space: nowrap; }
 
   /* header-count breakdown panel: compact 3-column table (label / now / total) */
   .bd-table { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px 14px; align-items: center; margin-top: 6px; padding-right: 34px; /* clears the floating close button */ }
@@ -280,6 +281,7 @@
     <button class="units-btn" id="units-btn" title="Switch between everyday metric units (m, km/h) and the feet/knots used in aviation">units: m · km/h</button>
     <div class="sheet-links">
       <a id="link-donate" href="https://ko-fi.com/overheadapp" target="_blank" rel="noopener">🤍 support</a>
+      <span class="app-version" id="app-version"></span>
     </div>
   </div>
 </div>
@@ -668,6 +670,9 @@
   const GROUND_ICON = "🛬";
   // Support link shown at the very bottom of the detail sheet.
   const DONATE_URL = "https://ko-fi.com/overheadapp";
+  // Shown next to the support link, bottom-right of the sheet footer. Keep in
+  // lockstep with sw.js's CACHE version — bump both together on every release.
+  const APP_VERSION = "v58";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -2196,6 +2201,7 @@
     if (selected) renderSheet(); // re-format the open sheet in place
   });
   updateUnitsBtn();
+  document.getElementById("app-version").textContent = APP_VERSION;
 
   // ---------- sheet: swipe down to dismiss ----------
   // Dragging the sheet downward follows the finger 1:1; releasing past the
