@@ -135,12 +135,18 @@
   :root[data-theme="light"] .sheet-shape img { filter: none; opacity: 0.82; }
   .sheet-shape img[hidden] { display: none; }
   .sheet-call { font-size: 22px; font-weight: 700; letter-spacing: 0.05em; color: var(--sweep); }
-  .sheet-type { font-size: 12px; color: var(--ink-soft); margin-top: 3px; min-height: 15px; }
+  /* exactly-two-lines box (reserved even when one line fits, clamped with an
+     ellipsis when it doesn't) so the sheet height never varies by type name */
+  .sheet-type { font-size: 12px; color: var(--ink-soft); margin-top: 3px; line-height: 1.4; height: 2.8em;
+    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .sheet-route { font-size: 11px; color: var(--sweep); margin-top: 4px; letter-spacing: 0.04em; min-height: 14px; }
   .sheet-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; margin-top: 18px; flex: 1; align-content: start; }
   .sheet-stats .stat.wide { grid-column: 1 / -1; }
   .stat .k { font-size: 9px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
-  .stat .v { font-size: 17px; font-weight: 600; margin-top: 3px; }
+  /* nowrap: a value+unit ("722 m/min") must stay on one line even if it
+     runs over the silhouette a little — Sullivan's spec, and the wrap was
+     the other thing (besides type-name lines) making sheet heights vary */
+  .stat .v { font-size: 17px; font-weight: 600; margin-top: 3px; white-space: nowrap; }
   .stat .v small { font-size: 10px; color: var(--ink-soft); font-weight: 400; }
   .sheet-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--grid-line); }
   .units-btn {
@@ -1401,7 +1407,7 @@
   // (wingspanM, iconForType, SHAPE_BUCKET) switches on; typeLabel() is the
   // translated display string — never compare against the label, it changes
   // with the UI language.
-  const JET_HINTS = ["citation","learjet","gulfstream","falcon","challenger","global","phenom","hawker","legacy","lineage"];
+  const JET_HINTS = ["citation","learjet","gulfstream","falcon","challenger","global","phenom","hawker","legacy","lineage","pc24"];
   // Hyphens vary by feed ("A-350-900" vs "A350-900" vs "A350"), so strip
   // them before any regex/keyword match against a type description or ICAO
   // type code — otherwise e.g. WIDEBODY_RE's "a3[345]0" never matches
@@ -1424,12 +1430,12 @@
     if (cat === 10) return "airship";
     if (cat === 4 || cat === 5 || cat === 6) return "airliner";
     if (cat === 2 || cat === 3 || cat === 7) {
-      return JET_HINTS.some(k => desc.includes(k)) ? "jet" : "hobby";
+      return JET_HINTS.some(k => desc.includes(k) || code.includes(k)) ? "jet" : "hobby";
     }
     // No usable category byte — infer from the type string before giving up
     // and falling back to the small-plane icon (typeLabel's raw-description
     // fallback only kicks in below, once this too finds nothing).
-    if (JET_HINTS.some(k => desc.includes(k))) return "jet";
+    if (JET_HINTS.some(k => desc.includes(k) || code.includes(k))) return "jet";
     if (AIRLINER_TYPE_RE.test(desc) || AIRLINER_TYPE_RE.test(code)) return "airliner";
     return null; // no bucket — typeLabel falls back to the raw description
   }
