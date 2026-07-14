@@ -28,7 +28,22 @@ for (const f of files) {
   const [, , w, h] = m[1].trim().split(/\s+/).map(Number);
   const size = Math.min(Math.max(SIZE_OVERRIDE[f] || Math.max(w, h), SMIN), SMAX);
   const frac = FRAC_MIN + (1 - FRAC_MIN) * Math.log(size / SMIN) / Math.log(SMAX / SMIN);
-  const k = frac * Math.min(BOX_W / w, BOX_H / h);
+  // Scale against ONE reference length (the box's smaller side), not
+  // min(BOX_W/w, BOX_H/h) — with a non-square box (160x190) that picked
+  // whichever axis the shape's own aspect ratio happened to bind against,
+  // so a portrait shape (h > w, e.g. a helicopter's tail boom) rode the
+  // taller BOX_H=190 allowance while a landscape shape (w > h, e.g. a
+  // wide-winged jet) rode the shorter BOX_W=160 one — two same-frac (same
+  // true size) aircraft came out different max-dimension pixel sizes
+  // purely from silhouette orientation, not real size (e.g. EC145 at
+  // frac 0.65 rendered taller than the C25B jet at frac 0.69, when 0.69
+  // should read bigger). BOX_REF = min(BOX_W, BOX_H) guarantees every
+  // shape's larger on-screen dimension is exactly frac*BOX_REF regardless
+  // of orientation, and — since BOX_REF is the smaller of the two box
+  // sides — the other dimension always fits inside the box too, so no
+  // extra clamp is needed.
+  const BOX_REF = Math.min(BOX_W, BOX_H);
+  const k = frac * BOX_REF / Math.max(w, h);
   const dispW = +(k * w).toFixed(2), dispH = +(k * h).toFixed(2);
 
   // modal stroke-width currently in the file (style form or attr form)
