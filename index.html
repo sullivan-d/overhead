@@ -24,6 +24,7 @@
     --ink-faint: #4a5d78;
     --hot: #ff5c6c;
     --gold: #f5c451;
+    --moon: #8ba0bd; /* mirrors THEMES.moonBody — the moon-glyph gray */
     --grid-line: #16243a;
   }
   /* Light mode — a manual toggle (top-right, next to status), remembered in
@@ -40,6 +41,7 @@
     --ink-faint: #8492a6;
     --hot: #c62839;
     --gold: #a9740c;
+    --moon: #5c6b80; /* mirrors THEMES.moonBody (light) */
     --grid-line: #dde3ec;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -60,13 +62,32 @@
   .brand { font-weight: 700; letter-spacing: 0.16em; font-size: 13px; text-transform: uppercase; cursor: pointer; user-select: none; }
   .brand b { color: var(--sweep); }
   .header-right { display: flex; align-items: center; gap: 10px; }
-  .theme-btn {
-    background: none; border: 1px solid var(--ring); color: var(--ink-soft);
-    width: 24px; height: 24px; border-radius: 50%; cursor: pointer; padding: 0;
-    display: flex; align-items: center; justify-content: center; font-size: 12px;
-    flex-shrink: 0; transition: border-color 0.15s;
+  /* light/dark toggle — a sliding pill switch; the knob carries the current
+     mode's icon and glides across on toggle (knob left = dark, right = light) */
+  .theme-switch {
+    position: relative; width: 46px; height: 24px; border-radius: 12px;
+    background: var(--panel); border: 1px solid var(--ring);
+    cursor: pointer; padding: 0; flex-shrink: 0;
+    transition: border-color 0.15s, background 0.25s;
   }
-  .theme-btn:hover { border-color: var(--sweep); }
+  .theme-switch:hover { border-color: var(--sweep); }
+  .theme-switch .knob {
+    position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    border-radius: 50%; background: var(--void);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s;
+  }
+  /* the knob's icon is the same vendored SVG silhouette pair used for the
+     canvas sun/moon glyphs (see SUN_PATH/MOON_PATH in the script) — mask-
+     painted like the other .gi icons so the fill color comes from CSS:
+     gold for the sun, --moon gray for the moon, both already theme-adapted.
+     Which one shows is keyed off data-theme, same as the knob position. */
+  .theme-switch .knob .gi { width: 12px; height: 12px; vertical-align: 0; }
+  .theme-switch .ico-sun { color: var(--gold); display: none; }
+  .theme-switch .ico-moon { color: var(--moon); }
+  :root[data-theme="light"] .theme-switch .ico-sun { display: inline-block; }
+  :root[data-theme="light"] .theme-switch .ico-moon { display: none; }
+  :root[data-theme="light"] .theme-switch .knob { transform: translateX(22px); }
   .status { font-size: 10.5px; letter-spacing: 0.06em; color: var(--ink-soft); text-align: right; line-height: 1.5; }
   .status .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); margin-right: 5px; vertical-align: middle; }
   .status.live .dot { background: var(--sweep); box-shadow: 0 0 8px var(--sweep); animation: pulse 2s ease-in-out infinite; }
@@ -95,7 +116,8 @@
     width: 44px; height: 44px; border-radius: 50%;
     background: var(--panel); border: 1px solid var(--ring);
     display: flex; align-items: center; justify-content: center;
-    cursor: pointer; padding: 0; transition: border-color 0.15s, box-shadow 0.15s;
+    cursor: pointer; padding: 0;
+    transition: border-color 0.15s, box-shadow 0.15s, right 0.32s cubic-bezier(.2,.8,.2,1), bottom 0.32s cubic-bezier(.2,.8,.2,1);
   }
   .compass-btn.on { border-color: var(--sweep); box-shadow: 0 0 0 1px var(--sweep-dim); }
   .compass-btn.denied { border-color: var(--hot); box-shadow: 0 0 0 1px #ff5c6c33; }
@@ -134,6 +156,22 @@
   .sheet-shape img { max-width: 100%; max-height: 100%; opacity: 0.9; filter: invert(0.92); }
   :root[data-theme="light"] .sheet-shape img { filter: none; opacity: 0.82; }
   .sheet-shape img[hidden] { display: none; }
+  /* inline line-art glyphs (cloud ceiling marker, support heart) — hollow SVG
+     line icons in icons/, painted via CSS mask so they inherit the surrounding
+     text color (currentColor) and adapt to light/dark automatically, unlike a
+     fixed-color <img>. Sized in em so they track the font at each call site. */
+  .gi {
+    display: inline-block; width: 1.05em; height: 1.05em; vertical-align: -0.14em;
+    background-color: currentColor;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    -webkit-mask-position: center; mask-position: center;
+    -webkit-mask-size: contain; mask-size: contain;
+  }
+  .gi-cloud { -webkit-mask-image: url(icons/cloud.svg); mask-image: url(icons/cloud.svg); }
+  /* the heart always carries the theme accent (green), not the link text color */
+  .gi-heart { -webkit-mask-image: url(icons/heart.svg); mask-image: url(icons/heart.svg); background-color: var(--sweep); }
+  .gi-sun { -webkit-mask-image: url(icons/sun.svg); mask-image: url(icons/sun.svg); }
+  .gi-moon { -webkit-mask-image: url(icons/moon.svg); mask-image: url(icons/moon.svg); }
   .sheet-call { font-size: 22px; font-weight: 700; letter-spacing: 0.05em; color: var(--sweep); }
   /* exactly-two-lines box (reserved even when one line fits, clamped with an
      ellipsis when it doesn't) so the sheet height never varies by type name.
@@ -240,7 +278,7 @@
 <header>
   <div class="brand" id="brand">OVER<b>HEAD</b></div>
   <div class="header-right">
-    <button class="theme-btn" id="theme-btn" title="Toggle light/dark theme">🌙</button>
+    <button class="theme-switch" id="theme-btn" role="switch" aria-checked="false" title="Toggle light/dark theme"><span class="knob" id="theme-knob"><span class="gi gi-moon ico-moon"></span><span class="gi gi-sun ico-sun"></span></span></button>
     <div class="status" id="status"><span class="dot"></span><span id="status-txt">standby</span></div>
   </div>
 </header>
@@ -299,7 +337,7 @@
   <div class="sheet-foot">
     <button class="units-btn" id="units-btn" title="Switch between everyday metric units (m, km/h) and the feet/knots used in aviation">units: m · km/h</button>
     <div class="sheet-links">
-      <a id="link-donate" href="https://ko-fi.com/overheadapp" target="_blank" rel="noopener">🤍 support</a>
+      <a id="link-donate" href="https://ko-fi.com/overheadapp" target="_blank" rel="noopener"><span class="gi gi-heart"></span> <span id="donate-label"></span></a>
       <span class="app-version" id="app-version"></span>
     </div>
   </div>
@@ -451,7 +489,7 @@
       onGround: "On-Ground",
       unitsMetric: "units: m · km/h", unitsAviation: "units: ft · kt",
       unitsTip: "Switch between everyday metric units (m, km/h) and the feet/knots used in aviation",
-      support: "🤍 support",
+      support: "support",
       themeToDark: "Switch to dark mode", themeToLight: "Switch to light mode",
       type_airliner: "Commercial Airliner", type_jet: "Private Jet", type_hobby: "Small Hobby Plane",
       type_heli: "Helicopter", type_drone: "Drone", type_space: "Space Vehicle",
@@ -499,7 +537,7 @@
       onGround: "Au Sol",
       unitsMetric: "unités : m · km/h", unitsAviation: "unités : ft · kt",
       unitsTip: "Basculer entre les unités métriques (m, km/h) et les pieds/nœuds de l'aviation",
-      support: "🤍 soutenir",
+      support: "soutenir",
       themeToDark: "Passer en mode sombre", themeToLight: "Passer en mode clair",
       type_airliner: "Avion de ligne", type_jet: "Jet privé", type_hobby: "Petit avion de loisir",
       type_heli: "Hélicoptère", type_drone: "Drone", type_space: "Véhicule spatial",
@@ -547,7 +585,7 @@
       onGround: "Em Solo",
       unitsMetric: "unidades: m · km/h", unitsAviation: "unidades: ft · kt",
       unitsTip: "Alternar entre unidades métricas (m, km/h) e os pés/nós usados na aviação",
-      support: "🤍 apoiar",
+      support: "apoiar",
       themeToDark: "Mudar para o modo escuro", themeToLight: "Mudar para o modo claro",
       type_airliner: "Avião Comercial", type_jet: "Jato Privado", type_hobby: "Pequeno Avião de Recreio",
       type_heli: "Helicóptero", type_drone: "Drone", type_space: "Veículo Espacial",
@@ -595,7 +633,7 @@
       onGround: "Am Boden",
       unitsMetric: "Einheiten: m · km/h", unitsAviation: "Einheiten: ft · kt",
       unitsTip: "Zwischen metrischen Einheiten (m, km/h) und den in der Luftfahrt üblichen Fuß/Knoten wechseln",
-      support: "🤍 Unterstützen",
+      support: "Unterstützen",
       themeToDark: "Zum dunklen Modus wechseln", themeToLight: "Zum hellen Modus wechseln",
       type_airliner: "Verkehrsflugzeug", type_jet: "Privatjet", type_hobby: "Kleines Sportflugzeug",
       type_heli: "Hubschrauber", type_drone: "Drohne", type_space: "Raumfahrzeug",
@@ -643,7 +681,7 @@
       onGround: "地面",
       unitsMetric: "单位: m · km/h", unitsAviation: "单位: ft · kt",
       unitsTip: "在公制单位（米、公里/小时）与航空常用的英尺/节之间切换",
-      support: "🤍 支持",
+      support: "支持",
       themeToDark: "切换到深色模式", themeToLight: "切换到浅色模式",
       type_airliner: "商业客机", type_jet: "私人喷气机", type_hobby: "小型飞机",
       type_heli: "直升机", type_drone: "无人机", type_space: "航天器",
@@ -691,7 +729,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v72";
+  const APP_VERSION = "v74";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -775,6 +813,7 @@
     cv.style.width = cssSize + "px"; cv.style.height = cssSize + "px";
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     cx = cssSize / 2; cy = cssSize / 2; R = cssSize / 2 - 6;
+    positionCompass();
   }
   window.addEventListener("resize", resize);
 
@@ -1141,7 +1180,7 @@
   function updateCeilingDisplay() {
     const box = document.getElementById("ceiling-box");
     const parts = [];
-    if (cloudCeilM != null) parts.push("☁ " + fmtAlt(cloudCeilM));
+    if (cloudCeilM != null) parts.push('<span class="gi gi-cloud"></span> ' + fmtAlt(cloudCeilM));
     if (lowPlaneOnScreen && groundElevM != null) parts.push(GROUND_ICON + " " + fmtAlt(groundElevM));
     if (!parts.length) { box.classList.add("hidden"); return; }
     document.getElementById("ceiling-val").innerHTML = parts.join(" · ");
@@ -1778,7 +1817,7 @@
         document.getElementById("d-alt").innerHTML = isOnGround(sp, now)
           ? `${GROUND_ICON} ${t("onGround")}`
           : fmtAlt(altM) +
-            (isAboveClouds(sp) ? ` <span title="${t("aboveClouds")}">☁️</span>` : "");
+            (isAboveClouds(sp) ? ` <span class="gi gi-cloud" title="${t("aboveClouds")}"></span>` : "");
         document.getElementById("d-spd").innerHTML = fmtSpd(displayVel(sp, now));
         document.getElementById("d-hdg").innerHTML = `${Math.round(displayTrack(sp, now))}<small>°</small>`;
         document.getElementById("d-dist").innerHTML = fmtDist(distKm);
@@ -1838,30 +1877,39 @@
       drawSunIcon({ x: pt.x, y: squishY(pt.y) });
     }
   }
-  function drawSunIcon(pt) {
+  // The sun/moon silhouettes are the SAME artwork as icons/sun.svg /
+  // icons/moon.svg (Slamet Widodo, the Noun Project — the theme switch's
+  // knob uses those files via CSS mask), inlined here as Path2D because
+  // canvas fills can't read CSS variables or mask an <img> per frame —
+  // colors come from theme.gold / theme.moonBody, which already carry the
+  // light/dark adaptation. Both paths share the icons' 96×96 viewBox,
+  // artwork centered on (48,48); keep path data in sync with the SVG files.
+  // Path2D is browser-only — guard it so the Node vm verification harnesses
+  // (which run this whole script against a mocked DOM) don't die on load.
+  const CELESTIAL_VB = 96;
+  const SUN_PATH = typeof Path2D === "undefined" ? null : new Path2D("M49.755,13.787c0,0.969-0.786,1.754-1.755,1.754c-0.969,0-1.754-0.786-1.754-1.754V5.892c0-0.969,0.786-1.755,1.754-1.755c0.969,0,1.755,0.786,1.755,1.755V13.787L49.755,13.787z M48,21.17c7.409,0,14.116,3.003,18.971,7.858C71.827,33.884,74.83,40.591,74.83,48s-3.003,14.116-7.858,18.971C62.116,71.827,55.409,74.83,48,74.83c-7.409,0-14.116-3.003-18.971-7.858C24.173,62.116,21.17,55.409,21.17,48s3.003-14.116,7.858-18.971S40.591,21.17,48,21.17L48,21.17z M25.048,22.567l-5.582-5.582c-0.685-0.685-1.796-0.685-2.481,0c-0.685,0.685-0.685,1.796,0,2.481l5.582,5.582c0.685,0.685,1.796,0.685,2.481,0C25.733,24.363,25.733,23.252,25.048,22.567L25.048,22.567z M13.787,46.245c0.969,0,1.754,0.786,1.754,1.755s-0.786,1.755-1.754,1.755H5.892c-0.969,0-1.755-0.786-1.755-1.755s0.786-1.755,1.755-1.755H13.787L13.787,46.245z M22.567,70.952l-5.582,5.582c-0.685,0.685-0.685,1.796,0,2.481c0.685,0.685,1.796,0.685,2.481,0l5.582-5.582c0.685-0.685,0.685-1.796,0-2.481C24.363,70.267,23.252,70.267,22.567,70.952L22.567,70.952z M46.246,82.213c0-0.969,0.786-1.754,1.754-1.754c0.969,0,1.755,0.786,1.755,1.754v7.895c0,0.969-0.786,1.755-1.755,1.755c-0.969,0-1.754-0.786-1.754-1.755V82.213L46.246,82.213z M70.952,73.433l5.582,5.582c0.685,0.685,1.796,0.685,2.481,0c0.685-0.685,0.685-1.796,0-2.481l-5.582-5.582c-0.685-0.685-1.796-0.685-2.481,0C70.267,71.637,70.267,72.748,70.952,73.433L70.952,73.433z M82.213,49.755c-0.969,0-1.754-0.786-1.754-1.755s0.786-1.755,1.754-1.755h7.895c0.969,0,1.755,0.786,1.755,1.755s-0.786,1.755-1.755,1.755H82.213L82.213,49.755z M73.433,25.048l5.582-5.582c0.685-0.685,0.685-1.796,0-2.481c-0.685-0.685-1.796-0.685-2.481,0l-5.582,5.582c-0.685,0.685-0.685,1.796,0,2.481C71.637,25.733,72.748,25.733,73.433,25.048z");
+  const MOON_PATH = typeof Path2D === "undefined" ? null : new Path2D("M89.351,71.981c-4.164,6.108-9.78,11.15-16.353,14.628c-6.337,3.353-13.556,5.251-21.214,5.251c-12.547,0-23.907-5.086-32.13-13.309c-8.223-8.223-13.309-19.583-13.309-32.13c0-9.402,2.858-18.139,7.754-25.389C19.137,13.568,26.341,7.68,34.812,4.266c0.897-0.36,1.916,0.076,2.275,0.973c0.225,0.562,0.138,1.172-0.179,1.638l0.001,0c-2.331,3.42-4.169,7.199-5.412,11.236c-1.198,3.893-1.843,8.04-1.843,12.35c0,11.579,4.693,22.062,12.281,29.649c7.588,7.588,18.07,12.281,29.649,12.281c2.745,0,5.419-0.261,7.997-0.76c2.658-0.514,5.224-1.277,7.673-2.264c0.897-0.36,1.916,0.076,2.275,0.973C89.754,70.905,89.667,71.515,89.351,71.981L89.351,71.981z");
+  // sizePx is the drawn size of the full 96-unit viewBox, centered on pt —
+  // the artwork itself spans ~88 of those 96 units, so visible extent is a
+  // touch under sizePx. The mini (gauge) sizes must keep their max visible
+  // radius ≤ 5.6px or elevGaugeGeometry()'s 13px ring buffer no longer
+  // provably clears the main ring (see round 53).
+  function drawCelestialGlyph(path, pt, sizePx, color) {
+    if (!path) return;
     ctx.save(); ctx.translate(pt.x, pt.y);
-    ctx.fillStyle = theme.gold; ctx.strokeStyle = theme.gold; ctx.lineWidth = 1.3; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
-    for (let k = 0; k < 8; k++) {
-      const a = (Math.PI / 4) * k;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * 6, Math.sin(a) * 6);
-      ctx.lineTo(Math.cos(a) * 9, Math.sin(a) * 9);
-      ctx.stroke();
-    }
+    const k = sizePx / CELESTIAL_VB;
+    ctx.scale(k, k); ctx.translate(-48, -48);
+    ctx.fillStyle = color;
+    ctx.fill(path, "evenodd");
     ctx.restore();
+  }
+  function drawSunIcon(pt) {
+    drawCelestialGlyph(SUN_PATH, pt, 20, theme.gold); // ray tips ≈ 9.1px out, same as the old hand-drawn glyph
     ctx.fillStyle = theme.gold; ctx.font = "9px ui-monospace, monospace";
     ctx.fillText(t("sun"), pt.x + 11, pt.y + 3);
   }
   function drawMoonIcon(pt) {
-    ctx.save(); ctx.translate(pt.x, pt.y);
-    ctx.fillStyle = theme.moonBody;
-    ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
-    // the crescent "cutout" must match whatever's behind the canvas (the
-    // page background), or the illusion breaks — that's --void, themed too
-    ctx.fillStyle = theme.voidHex;
-    ctx.beginPath(); ctx.arc(2.6, -1.5, 5.2, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    drawCelestialGlyph(MOON_PATH, pt, 14, theme.moonBody); // ≈ 6px visible radius, same as before
     ctx.fillStyle = theme.moonBody; ctx.font = "9px ui-monospace, monospace";
     ctx.fillText(t("moon"), pt.x + 11, pt.y + 3);
   }
@@ -1892,7 +1940,12 @@
   // are already available on the same onOrientation(e) event.
   const ELEV_GAUGE_MARGIN = 16; // inset from the true canvas corner, CSS px
   function elevGaugeGeometry() {
-    const gx = ELEV_GAUGE_MARGIN, gy = cssSize - ELEV_GAUGE_MARGIN;
+    // gy is level with the radar RING's own bottom edge (cy+R), the same
+    // horizontal line the compass button's bottom edge now rests on
+    // (round 56) — Sullivan asked for the gauge to match it explicitly.
+    // gx keeps its own separate corner inset (ELEV_GAUGE_MARGIN); only the
+    // vertical line was asked to align.
+    const gx = ELEV_GAUGE_MARGIN, gy = cy + R;
     const toCenter = Math.hypot(cx - gx, cy - gy);
     // Stays clear of the main ring circle (radius R) at any screen size.
     // The 13px buffer reserves room for the sun/moon mini glyphs, which ride
@@ -1900,9 +1953,9 @@
     // case along the pivot→center diagonal leaves 13-7-5.6 ≈ 0.4px, still
     // provably clear; round 53). The lower floor is deliberately small (8px,
     // just a guard against a degenerate zero/negative radius) rather than a
-    // "legible minimum" — a bigger floor would fight the clearance term at
-    // resize()'s smallest possible canvas (cssSize 180, natural gr ~7.7px)
-    // and force an overlap (caught by the verification harness).
+    // "legible minimum" — with gy pinned to the ring's own edge the natural
+    // gr no longer comes as close to this floor as the old formula did, but
+    // the guard is kept regardless (verified by the harness at every size).
     const gr = Math.max(8, Math.min(toCenter - R - 13, 110));
     return { gx, gy, gr };
   }
@@ -2032,29 +2085,11 @@
     ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
   }
   // Miniatures of drawSunIcon/drawMoonIcon (~60% scale, no text label) for
-  // the elevation gauge's arc markers.
-  function drawMiniSun(pt) {
-    ctx.save(); ctx.translate(pt.x, pt.y);
-    ctx.fillStyle = theme.gold; ctx.strokeStyle = theme.gold; ctx.lineWidth = 1; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI * 2); ctx.fill();
-    for (let k = 0; k < 8; k++) {
-      const a = (Math.PI / 4) * k;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * 3.8, Math.sin(a) * 3.8);
-      ctx.lineTo(Math.cos(a) * 5.6, Math.sin(a) * 5.6);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-  function drawMiniMoon(pt) {
-    ctx.save(); ctx.translate(pt.x, pt.y);
-    ctx.fillStyle = theme.moonBody;
-    ctx.beginPath(); ctx.arc(0, 0, 3.8, 0, Math.PI * 2); ctx.fill();
-    // crescent cutout in the page-background color, same trick as drawMoonIcon
-    ctx.fillStyle = theme.voidHex;
-    ctx.beginPath(); ctx.arc(1.7, -1, 3.3, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
+  // the elevation gauge's arc markers. Max visible radius at these sizes:
+  // sun 43.9/96×12 ≈ 5.49px, moon 41.4/96×9 ≈ 3.88px — both within the
+  // 5.6px extent the gauge's ring-clearance buffer reserves (round 53).
+  function drawMiniSun(pt) { drawCelestialGlyph(SUN_PATH, pt, 12, theme.gold); }
+  function drawMiniMoon(pt) { drawCelestialGlyph(MOON_PATH, pt, 9, theme.moonBody); }
 
   // One of 4 distinct pictograms instead of a generic triangle, picked from
   // the friendly type bucket. Rare categories (drone/airship/glider/unknown)
@@ -2443,7 +2478,7 @@
     document.getElementById("d-alt").innerHTML = isOnGround(p, Date.now())
       ? `${GROUND_ICON} ${t("onGround")}`
       : fmtAlt(estimatedAltitude(p, Date.now())) +
-        (isAboveClouds(p) ? ` <span title="${t("aboveClouds")}">☁️</span>` : "");
+        (isAboveClouds(p) ? ` <span class="gi gi-cloud" title="${t("aboveClouds")}"></span>` : "");
     document.getElementById("d-spd").innerHTML = fmtSpd(displayVel(p, Date.now()));
     document.getElementById("d-hdg").innerHTML = `${Math.round(displayTrack(p, Date.now()))}<small>°</small>`;
     document.getElementById("d-dist").innerHTML = fmtDist(haversineKm(me, estimatedPosition(p, Date.now())));
@@ -2623,6 +2658,41 @@
     }
   });
 
+  // The compass button normally sits at the stage's own bottom-right corner
+  // (bottom:12px/right:16px in CSS) — but that corner is behind the sheet
+  // once it's open (see openSheet()'s comment: the sheet pads the STAGE's
+  // bottom, the button's CSS offsets are relative to the stage too, so they
+  // don't track the radar shrinking above it). While a plane is selected and
+  // the sheet is open, re-anchor the button to the canvas's own bottom-right
+  // corner instead, horizontally inset by the same ELEV_GAUGE_MARGIN the
+  // elevation gauge uses on the opposite (bottom-left) corner. Called from
+  // resize(), which openSheet()/closeSheet() already call.
+  function positionCompass() {
+    if (!sheet.classList.contains("open")) {
+      headingBtn.style.right = "";
+      headingBtn.style.bottom = "";
+      return;
+    }
+    const right = (stageEl.clientWidth - (cv.offsetLeft + cv.offsetWidth)) + ELEV_GAUGE_MARGIN;
+    // Vertical reference is the RADAR RING's own bottom edge (cy+R,
+    // canvas-local — R is 6px short of half the canvas, see resize()),
+    // per Sullivan's explicit direction ("same horizontal line as the
+    // gauge AND the radar map") and a follow-up AskUserQuestion confirming
+    // the map's ring — not the gauge's own pivot/tick geometry — is the
+    // intended anchor, and that the button's BOTTOM edge should rest ON
+    // that line rather than being centered on it (so the whole 44px
+    // circle stays inside the canvas, just above where the ring ends,
+    // instead of straddling it). Uses the FLAT (untilted) ring position
+    // regardless of the current tilt drag, matching the elevation gauge's
+    // own documented tilt-independence — otherwise the button would slide
+    // up and down as the map is tilted, which isn't what "the radar map
+    // when flat" was asking for.
+    const ringBottomY = cy + R; // canvas-local, flat/untilted
+    const bottom = (stageEl.clientHeight - (cv.offsetTop + cv.offsetHeight)) + (cssSize - ringBottomY);
+    headingBtn.style.right = right + "px";
+    headingBtn.style.bottom = bottom + "px";
+  }
+
   // Heading-up is on by default, but the orientation listener can only be
   // armed from a user gesture (iOS's DeviceOrientationEvent.requestPermission)
   // — so both gate paths (the GPS button and picking an address result) arm
@@ -2641,7 +2711,10 @@
   function applyTheme(name) {
     theme = THEMES[name] || THEMES.dark;
     document.documentElement.setAttribute("data-theme", name);
-    themeBtn.textContent = name === "light" ? "🌙" : "☀️";
+    // the knob's sun/moon icon flips in pure CSS off data-theme (it shows the
+    // CURRENT mode — the pill position is the state indicator); the title
+    // still says what a tap switches TO
+    themeBtn.setAttribute("aria-checked", name === "light" ? "true" : "false");
     themeBtn.title = name === "light" ? t("themeToDark") : t("themeToLight");
     themeColorMeta?.setAttribute("content", theme.voidHex);
   }
@@ -2830,7 +2903,7 @@
     set("why-b", "whyBody");
     set("k-alt", "altitude"); set("k-spd", "speed"); set("k-dist", "distance");
     set("k-hdg", "heading"); set("k-vr", "climb");
-    set("link-donate", "support");
+    set("donate-label", "support");
     set("bd-h-visible", "bdNow"); set("bd-h-day", "bd24h"); set("bd-h-session", "bdTotal");
     for (const k of ["airliner", "jet", "heli", "hobby", "other"]) set("bd-lbl-" + k, "type_" + k);
     document.querySelector(".count").title = t("breakdownTip");
