@@ -691,7 +691,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v69";
+  const APP_VERSION = "v70";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -1895,13 +1895,15 @@
     const gx = ELEV_GAUGE_MARGIN, gy = cssSize - ELEV_GAUGE_MARGIN;
     const toCenter = Math.hypot(cx - gx, cy - gy);
     // Stays clear of the main ring circle (radius R) at any screen size.
-    // The lower floor here is deliberately small (12px, just a guard against
-    // a degenerate zero/negative radius) rather than a "legible minimum" —
-    // toCenter-R-8 is provably >=~12.6px already at resize()'s own smallest
-    // possible canvas (cssSize 180), so a bigger floor would fight the
-    // clearance term at exactly that extreme and force an overlap (caught by
-    // the verification harness at cssSize=180 before this was lowered).
-    const gr = Math.max(12, Math.min(toCenter - R - 8, 110));
+    // The 13px buffer reserves room for the sun/moon mini glyphs, which ride
+    // just OUTSIDE the arc (centers at gr+7, glyph extent ~5.6px — worst
+    // case along the pivot→center diagonal leaves 13-7-5.6 ≈ 0.4px, still
+    // provably clear; round 53). The lower floor is deliberately small (8px,
+    // just a guard against a degenerate zero/negative radius) rather than a
+    // "legible minimum" — a bigger floor would fight the clearance term at
+    // resize()'s smallest possible canvas (cssSize 180, natural gr ~7.7px)
+    // and force an overlap (caught by the verification harness).
+    const gr = Math.max(8, Math.min(toCenter - R - 13, 110));
     return { gx, gy, gr };
   }
   // Point on the gauge's arc for elevation e (0..90°). e=0 sits on the
@@ -1995,11 +1997,18 @@
 
     // sun / moon at their true elevation — same visibility thresholds as
     // drawCelestial() above, as miniature versions of the main radar's
-    // glyphs (no label: no room, the glyph itself tells them apart). Moon
+    // glyphs (no label: no room, the glyph itself tells them apart),
+    // floated slightly OUTSIDE the arc like the ⏚ ground symbol (round 53;
+    // the +7px center offset is what elevGaugeGeometry()'s 13px ring buffer
+    // reserves room for — don't widen it without widening the buffer). Moon
     // FIRST, sun second — the sun must layer above the moon when they sit
     // close together (explicit ask, round 52).
-    if (moonPos && moonPos.alt > -0.3) drawMiniMoon(elevGaugePoint(moonPos.alt, g));
-    if (sunPos && sunPos.alt > -0.83) drawMiniSun(elevGaugePoint(sunPos.alt, g));
+    const celestialPt = (alt) => {
+      const ca = toRad(Math.max(0, Math.min(90, alt)));
+      return { x: g.gx + (g.gr + 7) * Math.cos(ca), y: g.gy - (g.gr + 7) * Math.sin(ca) };
+    };
+    if (moonPos && moonPos.alt > -0.3) drawMiniMoon(celestialPt(moonPos.alt));
+    if (sunPos && sunPos.alt > -0.83) drawMiniSun(celestialPt(sunPos.alt));
 
     // the selected aircraft: a solid triangle riding the inside of the arc,
     // tip on the arc pointing radially outward (the sketch's red marker) —
@@ -2014,9 +2023,11 @@
     // numeric readout, large, in the free space inside the arc (the
     // sketch's big "36°") — fixed position rather than tracking the marker
     // around the curve, so it stays put and legible at 2° or 88°; font
-    // scales with the arc so it fills a big desktop gauge too
+    // scales with the arc so it fills a big desktop gauge too. Same color
+    // and weight as the gauge's other figures, NOT red — only the marker
+    // triangle is red (explicit ask, round 53).
     const fs = Math.min(26, Math.max(14, Math.round(g.gr * 0.26)));
-    ctx.fillStyle = theme.hotHex; ctx.font = "bold " + fs + "px ui-monospace, monospace";
+    ctx.fillStyle = theme.rangeLabel; ctx.font = fs + "px ui-monospace, monospace";
     ctx.fillText(Math.round(planeDeg) + "°", g.gx + g.gr * 0.30, g.gy - g.gr * 0.30);
     ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
   }
