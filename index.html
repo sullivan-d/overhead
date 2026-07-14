@@ -691,7 +691,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v70";
+  const APP_VERSION = "v71";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -1948,24 +1948,25 @@
     }
     ctx.stroke();
 
-    // tick marks every 10° straddling the arc, degree labels inside it.
-    // The sketch labels every tick, but a phone-sized arc (gr ~55px) only
-    // has ~10px of arc per 10° — labels would collide — so label density
-    // adapts: every 10° when the arc is big enough, every 30° otherwise.
-    const labelStep = (g.gr * Math.PI / 18) >= 14 ? 10 : 30;
-    ctx.font = "7px ui-monospace, monospace";
+    // Graduation, kept as sparse as the main radar's own rings (round 54 —
+    // the earlier every-10° ticks read busier than anything else on the
+    // map, which divides its whole range into just 3 labeled bands). The
+    // gauge now does the same: ticks + labels at 30° and 60° only, plus a
+    // "90°" label at the zenith end (no tick needed there — the finial IS
+    // the mark). The ⏚ ground symbol already anchors the 0° end, so 0°
+    // carries no separate label either.
+    ctx.font = "8px ui-monospace, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    for (let e = 0; e <= 90; e += 10) {
+    ctx.fillStyle = theme.rangeLabel;
+    for (const e of [30, 60]) {
       const a = toRad(e), ca = Math.cos(a), sa = Math.sin(a);
       ctx.beginPath();
       ctx.moveTo(g.gx + (g.gr - 3) * ca, g.gy - (g.gr - 3) * sa);
       ctx.lineTo(g.gx + (g.gr + 3) * ca, g.gy - (g.gr + 3) * sa);
       ctx.stroke();
-      if (e % labelStep === 0) {
-        ctx.fillStyle = theme.rangeLabel;
-        ctx.fillText(e === 90 ? "90°" : String(e), g.gx + (g.gr - 11) * ca, g.gy - (g.gr - 11) * sa);
-      }
+      ctx.fillText(String(e), g.gx + (g.gr - 12) * ca, g.gy - (g.gr - 12) * sa);
     }
+    ctx.fillText("90°", g.gx, g.gy - g.gr + 12);
 
     // diamond finials on both ends of the arc, elongated radially, each
     // with a short stem through it (the sketch's compass-needle-like ends)
