@@ -691,7 +691,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v71";
+  const APP_VERSION = "v72";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -1948,24 +1948,23 @@
     }
     ctx.stroke();
 
-    // Graduation, kept as sparse as the main radar's own rings (round 54 —
-    // the earlier every-10° ticks read busier than anything else on the
-    // map, which divides its whole range into just 3 labeled bands). The
-    // gauge now does the same: ticks + labels at 30° and 60° only, plus a
-    // "90°" label at the zenith end (no tick needed there — the finial IS
-    // the mark). The ⏚ ground symbol already anchors the 0° end, so 0°
-    // carries no separate label either.
-    ctx.font = "8px ui-monospace, monospace";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = theme.rangeLabel;
-    for (const e of [30, 60]) {
-      const a = toRad(e), ca = Math.cos(a), sa = Math.sin(a);
+    // Graduation, decluttered further round 55: the round-54 30°/60°
+    // ticks+labels are gone, replaced by a single unlabeled midpoint tick
+    // at 45° (a plain reference mark, not a called-out number — explicit
+    // ask: no "45°" text anywhere on the gauge). The zenith end keeps its
+    // "90°" label (no tick needed there — the finial IS the mark); the ⏚
+    // ground symbol still anchors 0° with no separate label.
+    ctx.strokeStyle = theme.rangeLabel; ctx.lineWidth = 1;
+    {
+      const a = toRad(45), ca = Math.cos(a), sa = Math.sin(a);
       ctx.beginPath();
       ctx.moveTo(g.gx + (g.gr - 3) * ca, g.gy - (g.gr - 3) * sa);
       ctx.lineTo(g.gx + (g.gr + 3) * ca, g.gy - (g.gr + 3) * sa);
       ctx.stroke();
-      ctx.fillText(String(e), g.gx + (g.gr - 12) * ca, g.gy - (g.gr - 12) * sa);
     }
+    ctx.font = "8px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = theme.rangeLabel;
     ctx.fillText("90°", g.gx, g.gy - g.gr + 12);
 
     // diamond finials on both ends of the arc, elongated radially, each
