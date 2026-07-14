@@ -691,7 +691,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v63";
+  const APP_VERSION = "v64";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -1455,6 +1455,11 @@
   // A350-900 and A220-300 both rendered as "small plane" for exactly this
   // reason — typeKey fell all the way through to `return null`.
   const AIRLINER_TYPE_RE = /a1[89]0|a2[012]0|a3[0-9]{2}|a380|7[234567]7|md8[01]|md9[01]|dc8|dc9|dc10|il62|il76|il86|il96|tu134|tu154|tu204|tu214|crj\d{0,3}|erj\d{0,3}|e1[789]0|e19[05]|ssj100|superjet|c919|comac|an148|an158|an140|yak42|bcs[13]/i;
+  // Same fallback idea as JET_HINTS/AIRLINER_TYPE_RE above, for helicopters:
+  // model-name keywords plus common ICAO type-code substrings, matched
+  // against a hyphen-stripped/lowercased desc or code.
+  const HELI_HINTS = ["ecureuil","squirrel","eurocopter","airbus helicopters","helicopter","gazelle","alouette","dauphin","fennec","cougar","lama","agustawestland","agusta","sikorsky","hughes"];
+  const HELI_TYPE_RE = /as3[0-9]{2}|as532|ec1[0-9]{2}|ec225|h1[2-9][0-9]|h215|h225|bell ?[0-9]{3}|b0[0-9]{2}|b407|b412|b429|aw1[0-9]{2}|a109|a119|s76|s92|uh1n?|uh60|ah64|mi[0-9]{1,2}|ka3[0-9]|bk117|md5[02]0|md600|r22|r44|r66/i;
   function typeKey(p) {
     const cat = p.cat, desc = normType(p.typeDesc), code = normType(p.typeCode);
     if (cat === 8) return "heli";
@@ -1464,6 +1469,14 @@
     if (cat === 10) return "airship";
     if (cat === 4 || cat === 5 || cat === 6) return "airliner";
     if (cat === 2 || cat === 3 || cat === 7) {
+      // Regional jets (ERJ/CRJ family) report in this exact same "small
+      // aircraft" ADS-B category as private jets — it's assigned purely by
+      // MTOW, and a 50-seat regional jet is light enough to land in the
+      // same bracket as a Learjet. Reported 2026-07-14: an ERJ-145
+      // (category A2) rendered as "small hobby plane". Check for a known
+      // regional-airliner model before falling to the JET_HINTS/"hobby"
+      // guess below.
+      if (AIRLINER_TYPE_RE.test(desc) || AIRLINER_TYPE_RE.test(code)) return "airliner";
       return JET_HINTS.some(k => desc.includes(k) || code.includes(k)) ? "jet" : "hobby";
     }
     // No usable category byte — infer from the type string before giving up
@@ -1471,6 +1484,13 @@
     // fallback only kicks in below, once this too finds nothing).
     if (JET_HINTS.some(k => desc.includes(k) || code.includes(k))) return "jet";
     if (AIRLINER_TYPE_RE.test(desc) || AIRLINER_TYPE_RE.test(code)) return "airliner";
+    // Same idea, one more time, for helicopters: a missing category byte
+    // used to fall straight through to `null` (small-plane icon + the raw
+    // description leaking into the type line instead of a translated
+    // label). Reported 2026-07-14: an AS-355 Ecureuil 2 with no category
+    // byte did exactly that.
+    if (HELI_TYPE_RE.test(desc) || HELI_TYPE_RE.test(code) ||
+        HELI_HINTS.some(k => desc.includes(k) || code.includes(k))) return "heli";
     return null; // no bucket — typeLabel falls back to the raw description
   }
   function typeLabel(p) {
@@ -2287,10 +2307,20 @@
     hobby: "C172",
     drone: "Q4"
   };
+  // A few ADS-B ICAO type codes for a variant don't match the vendored
+  // filename, which is named after the base type — e.g. a real "Lockheed
+  // Martin C-130J-30 Hercules" reports code C30J (confirmed live via
+  // airplanes.live, 2026-07-14), but the vendored shape is C130.svg. Without
+  // this the exact-match lookup 404s and falls all the way to the generic
+  // per-bucket shape (A320, for this one, since C-130s categorize as
+  // "airliner" — see HELI/AIRLINER_TYPE_RE above) instead of the Hercules
+  // outline we actually have.
+  const SHAPE_CODE_ALIAS = { C30J: "C130" };
   const shapeImg = document.getElementById("d-shape");
   function setShape(p) {
     const bucket = SHAPE_BUCKET[typeKey(p)] || "Unidentified";
-    const code = (p.typeCode || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const rawCode = (p.typeCode || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const code = SHAPE_CODE_ALIAS[rawCode] || rawCode;
     shapeImg.onerror = () => {
       const stage = shapeImg.dataset.stage;
       if (stage === "exact")       { shapeImg.dataset.stage = "bucket";  shapeImg.src = `shapes/${bucket}.svg`; }

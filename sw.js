@@ -3,7 +3,7 @@
 // It deliberately never caches OpenSky / hexdb / Nominatim responses —
 // live data must always be fetched fresh, and nothing runs in the background.
 
-const CACHE = "overhead-v63";
+const CACHE = "overhead-v64";
 const SHELL = [
   "./",
   "./index.html",
