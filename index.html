@@ -167,7 +167,7 @@
   /* nowrap: a value+unit ("722 m/min") must stay on one line even if it
      runs over the silhouette a little — Sullivan's spec, and the wrap was
      the other thing (besides type-name lines) making sheet heights vary.
-     height is PINNED: ☁️/🛬 (and ▲/▼ on some font stacks) fall back to an
+     height is PINNED: ☁️/⏚ (and ▲/▼ on some font stacks) fall back to an
      emoji/symbol font with taller metrics, which otherwise inflates just
      that row's line box — so a plane with a ☁️ next to its altitude got a
      sheet a few px taller than one without. line-height alone is NOT
@@ -256,7 +256,7 @@
         <span class="rng-label">km</span>
       </div>
     </div>
-    <div class="rng-group hidden" id="ceiling-box" title="☁ cloud ceiling — aircraft above it are dimmed, they may be hidden behind the clouds. 🛬 ground level at your position — shown while an aircraft on screen is flying low">
+    <div class="rng-group hidden" id="ceiling-box" title="☁ cloud ceiling — aircraft above it are dimmed, they may be hidden behind the clouds. ⏚ ground level at your position — shown while an aircraft on screen is flying low">
       <div class="ceiling-val" id="ceiling-val">—</div>
     </div>
   </div>
@@ -429,7 +429,7 @@
       noMatch: "no match found — try a city or postcode",
       lookupFailed: "address lookup failed — check connection",
       range: "range",
-      conditionsTip: "☁ cloud ceiling — aircraft above it are dimmed, they may be hidden behind the clouds. 🛬 ground level at your position — shown while an aircraft on screen is flying low",
+      conditionsTip: "☁ cloud ceiling — aircraft above it are dimmed, they may be hidden behind the clouds. ⏚ ground level at your position — shown while an aircraft on screen is flying low",
       aircraft: "aircraft",
       hint: "tap an aircraft for details",
       bdNow: "now", bd24h: "24h", bdTotal: "total",
@@ -477,7 +477,7 @@
       noMatch: "aucun résultat — essayez une ville ou un code postal",
       lookupFailed: "recherche d'adresse échouée — vérifiez la connexion",
       range: "portée",
-      conditionsTip: "☁ plafond nuageux — les avions au-dessus sont estompés, ils peuvent être cachés par les nuages. 🛬 niveau du sol à votre position — affiché quand un avion à l'écran vole bas",
+      conditionsTip: "☁ plafond nuageux — les avions au-dessus sont estompés, ils peuvent être cachés par les nuages. ⏚ niveau du sol à votre position — affiché quand un avion à l'écran vole bas",
       aircraft: "avions",
       hint: "touchez un avion pour les détails",
       bdNow: "maintenant", bd24h: "24h", bdTotal: "total",
@@ -525,7 +525,7 @@
       noMatch: "sem resultados — tente uma cidade ou código postal",
       lookupFailed: "falha na pesquisa da morada — verifique a ligação",
       range: "alcance",
-      conditionsTip: "☁ teto de nuvens — os aviões acima dele aparecem esbatidos, podem estar escondidos pelas nuvens. 🛬 nível do solo na sua posição — mostrado quando um avião no ecrã voa baixo",
+      conditionsTip: "☁ teto de nuvens — os aviões acima dele aparecem esbatidos, podem estar escondidos pelas nuvens. ⏚ nível do solo na sua posição — mostrado quando um avião no ecrã voa baixo",
       aircraft: "aviões",
       hint: "toque num avião para ver detalhes",
       bdNow: "agora", bd24h: "24h", bdTotal: "total",
@@ -573,7 +573,7 @@
       noMatch: "kein Treffer — versuchen Sie eine Stadt oder Postleitzahl",
       lookupFailed: "Adresssuche fehlgeschlagen — Verbindung prüfen",
       range: "Reichweite",
-      conditionsTip: "☁ Wolkenuntergrenze — Flugzeuge darüber sind abgedunkelt, sie könnten hinter den Wolken verborgen sein. 🛬 Bodenhöhe an Ihrer Position — angezeigt, wenn ein Flugzeug auf dem Bildschirm tief fliegt",
+      conditionsTip: "☁ Wolkenuntergrenze — Flugzeuge darüber sind abgedunkelt, sie könnten hinter den Wolken verborgen sein. ⏚ Bodenhöhe an Ihrer Position — angezeigt, wenn ein Flugzeug auf dem Bildschirm tief fliegt",
       aircraft: "Flugzeuge",
       hint: "Flugzeug antippen für Details",
       bdNow: "jetzt", bd24h: "24h", bdTotal: "gesamt",
@@ -621,7 +621,7 @@
       noMatch: "未找到结果——试试城市或邮政编码",
       lookupFailed: "地址搜索失败——请检查网络连接",
       range: "范围",
-      conditionsTip: "☁ 云底高度——高于云底的飞机会变暗，它们可能被云层遮挡。🛬 您所在位置的地面海拔——屏幕上有飞机低空飞行时显示",
+      conditionsTip: "☁ 云底高度——高于云底的飞机会变暗，它们可能被云层遮挡。⏚ 您所在位置的地面海拔——屏幕上有飞机低空飞行时显示",
       aircraft: "飞机",
       hint: "点按飞机查看详情",
       bdNow: "当前", bd24h: "24小时", bdTotal: "总计",
@@ -686,12 +686,12 @@
   // for the simpler model ("you only need the ground level of the user").
   const AGL_LOW_THRESHOLD_M = 900; // ~3,000ft above the user's ground — "flying low" cutoff for the top-left readout
   const AGL_ON_GROUND_M = 20;      // above the user's ground — below this the sheet shows "on the ground" instead of an altitude
-  const GROUND_ICON = "🛬";
+  const GROUND_ICON = "⏚";
   // Support link shown at the very bottom of the detail sheet.
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v66";
+  const APP_VERSION = "v68";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -729,7 +729,7 @@
   // (estimatedAltitude) can drift below the observer's own elevation for a
   // steeply-descending aircraft near the end of the extrapolation window, so
   // it's clamped there; (b) the low-flying / on-the-ground checks
-  // (aboveGroundM below); (c) the value the top-left 🛬 readout displays.
+  // (aboveGroundM below); (c) the value the top-left ⏚ readout displays.
   let groundElevM = null;
   let failStreak = 0;       // consecutive failed polls (for retry pacing + status text)
   let pollInFlight = false; // guards against overlapping polls on visibility flapping
@@ -1413,8 +1413,27 @@
         prev.blendFrom = null;
         const oldAlt = rawAltitude(prev, now), newAlt = rawAltitude(np, now);
         const altGapM = (oldAlt != null && newAlt != null) ? Math.abs(oldAlt - newAlt) : 0;
-        const posGapM = haversineKm(rawPosition(prev, now), rawPosition(np, now)) * 1000;
-        if (altGapM <= BLEND_MAX_ALT_M && posGapM <= BLEND_MAX_POS_M) {
+        const oldPos = rawPosition(prev, now), newPos = rawPosition(np, now);
+        const posGapM = haversineKm(oldPos, newPos) * 1000;
+        // Landing/rollout-specific glitch (reported 2026-07-14): the model
+        // dead-reckons in a straight line along the last fix's `track`, but
+        // track readings get noisy at low ground speed (touchdown/taxi) and
+        // the rollout braking model has no notion of the aircraft turning
+        // off the runway — so the forecast can run AHEAD of, or beside,
+        // where the plane actually ends up. When the next real fix shows the
+        // true position is BEHIND that forecast (correction bearing more
+        // than 90° off the track that produced it), gliding there over the
+        // usual 4-30s reads as the plane visibly reversing on the map. A
+        // gap that size in a sensible direction is exactly what the blend
+        // is FOR (smoothing a forward correction); only a backward one needs
+        // to snap instead — same "too big/wrong to be a normal forecast
+        // miss" idea as the BLEND_MAX_* snap below, just keyed on direction
+        // instead of size. Below BACKWARD_MIN_GAP_M the bearing itself is
+        // noise (GPS jitter on a near-stationary plane), so it's ignored.
+        const BACKWARD_MIN_GAP_M = 15;
+        const backwardCorrection = posGapM > BACKWARD_MIN_GAP_M && prev.track != null &&
+          Math.abs(((bearing(oldPos, newPos) - prev.track + 540) % 360) - 180) > 90;
+        if (altGapM <= BLEND_MAX_ALT_M && posGapM <= BLEND_MAX_POS_M && !backwardCorrection) {
           np.blendFrom = prev;
           np.blendAt = now;
           np.blendMs = Math.min(Math.max(
@@ -1929,7 +1948,7 @@
     ctx.fillText("90°", g.gx, g.gy - g.gr - 8);
     ctx.textAlign = "start";
 
-    // ground reference, fixed at 0° — the same 🛬 glyph used everywhere
+    // ground reference, fixed at 0° — the same ⏚ glyph used everywhere
     // else in the app for "the user's own ground level"
     ctx.font = "11px ui-monospace, monospace";
     ctx.fillText(GROUND_ICON, g.gx + g.gr - 9, g.gy - 2);
