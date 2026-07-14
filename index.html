@@ -691,7 +691,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v68";
+  const APP_VERSION = "v69";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -1826,13 +1826,16 @@
     return { x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang) };
   }
   function drawCelestial() {
-    if (sunPos && sunPos.alt > -0.83) {
-      const pt = edgePoint(sunPos.az);
-      drawSunIcon({ x: pt.x, y: squishY(pt.y) });
-    }
+    // moon first, sun second — when their azimuths bring them close, the
+    // sun must layer ABOVE the moon (explicit ask, round 52; the gauge's
+    // mini glyphs follow the same order)
     if (moonPos && moonPos.alt > -0.3) {
       const pt = edgePoint(moonPos.az);
       drawMoonIcon({ x: pt.x, y: squishY(pt.y) });
+    }
+    if (sunPos && sunPos.alt > -0.83) {
+      const pt = edgePoint(sunPos.az);
+      drawSunIcon({ x: pt.x, y: squishY(pt.y) });
     }
   }
   function drawSunIcon(pt) {
@@ -1916,9 +1919,11 @@
   function elevationDeg(heightM, distKm) {
     return Math.atan2(Math.max(0, heightM), Math.max(0, distKm) * 1000) * 180 / Math.PI;
   }
-  // Read-only overlay, not a drag surface — a touch landing here must do
-  // nothing at all (see the pointerdown guard below), not spin/tilt the
-  // radar the way the rest of empty canvas does.
+  // Read-only overlay, not a drag surface — a touch landing here that hits
+  // no aircraft must do nothing at all (see the pointerdown guard below),
+  // not spin/tilt the radar the way the rest of empty canvas does. An
+  // aircraft drawn over the gauge still wins: hitTest runs before this
+  // zone is consulted (round 52).
   function inElevGaugeZone(px, py) {
     if (!selected) return false;
     const g = elevGaugeGeometry();
@@ -1929,62 +1934,115 @@
     const heightM = (altM ?? (groundElevM ?? 0)) - (groundElevM ?? 0);
     const planeDeg = elevationDeg(heightM, distKm);
 
-    // the pie-slice guide: two straight spokes plus the arc joining them
-    ctx.strokeStyle = theme.ringMinor; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(g.gx + g.gr, g.gy); ctx.lineTo(g.gx, g.gy); ctx.lineTo(g.gx, g.gy - g.gr);
-    ctx.stroke();
+    // Protractor-style, per Sullivan's sketch (round 52): the arc IS the
+    // instrument — no pivot spokes, no radial needle. Graduated ticks,
+    // diamond finials at both ends, and the readout sits in the free space
+    // inside the arc.
+    ctx.strokeStyle = theme.ringMajor; ctx.lineWidth = 1;
     ctx.beginPath();
     for (let e = 0; e <= 90; e += 3) {
       const pt = elevGaugePoint(e, g);
       if (e === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
     }
-    ctx.strokeStyle = theme.ringMajor; ctx.stroke();
+    ctx.stroke();
 
-    // zenith label, top of the arc — the only tick label besides the
-    // ground icon, to keep a ~50-110px corner widget uncluttered
-    ctx.fillStyle = theme.rangeLabel; ctx.font = "9px ui-monospace, monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("90°", g.gx, g.gy - g.gr - 8);
-    ctx.textAlign = "start";
+    // tick marks every 10° straddling the arc, degree labels inside it.
+    // The sketch labels every tick, but a phone-sized arc (gr ~55px) only
+    // has ~10px of arc per 10° — labels would collide — so label density
+    // adapts: every 10° when the arc is big enough, every 30° otherwise.
+    const labelStep = (g.gr * Math.PI / 18) >= 14 ? 10 : 30;
+    ctx.font = "7px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (let e = 0; e <= 90; e += 10) {
+      const a = toRad(e), ca = Math.cos(a), sa = Math.sin(a);
+      ctx.beginPath();
+      ctx.moveTo(g.gx + (g.gr - 3) * ca, g.gy - (g.gr - 3) * sa);
+      ctx.lineTo(g.gx + (g.gr + 3) * ca, g.gy - (g.gr + 3) * sa);
+      ctx.stroke();
+      if (e % labelStep === 0) {
+        ctx.fillStyle = theme.rangeLabel;
+        ctx.fillText(e === 90 ? "90°" : String(e), g.gx + (g.gr - 11) * ca, g.gy - (g.gr - 11) * sa);
+      }
+    }
 
-    // ground reference, fixed at 0° — the same ⏚ glyph used everywhere
-    // else in the app for "the user's own ground level"
-    ctx.font = "11px ui-monospace, monospace";
-    ctx.fillText(GROUND_ICON, g.gx + g.gr - 9, g.gy - 2);
+    // diamond finials on both ends of the arc, elongated radially, each
+    // with a short stem through it (the sketch's compass-needle-like ends)
+    ctx.fillStyle = theme.ringMajor;
+    for (const e of [0, 90]) {
+      const a = toRad(e), ca = Math.cos(a), sa = Math.sin(a);
+      ctx.beginPath();
+      ctx.moveTo(g.gx + (g.gr - 8) * ca, g.gy - (g.gr - 8) * sa);
+      ctx.lineTo(g.gx + (g.gr + 8) * ca, g.gy - (g.gr + 8) * sa);
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(g.gx + g.gr * ca, g.gy - g.gr * sa); ctx.rotate(-a);
+      ctx.beginPath();
+      ctx.moveTo(4.5, 0); ctx.lineTo(0, 2.8); ctx.lineTo(-4.5, 0); ctx.lineTo(0, -2.8);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    // ground reference, just outside the 0° end on the horizon line — the
+    // same ⏚ glyph used everywhere else for "the user's own ground level".
+    // Offset is tight (12px past the arc): at resize()'s smallest possible
+    // canvas (cssSize 180, gr ~12.7px) the ring's bottom chord passes only
+    // ~21px right of the arc end at this height, so a wider offset would
+    // put the glyph inside the ring there (caught by the round-52 harness).
+    ctx.fillStyle = theme.rangeLabel; ctx.font = "11px ui-monospace, monospace";
+    ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
+    ctx.fillText(GROUND_ICON, g.gx + g.gr + 12, g.gy - 1);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
 
     // sun / moon at their true elevation — same visibility thresholds as
-    // drawCelestial() above, small dots in their existing theme colors (no
-    // label: there's no room, and the color alone already tells them apart)
-    if (sunPos && sunPos.alt > -0.83) {
-      const p = elevGaugePoint(sunPos.alt, g);
-      ctx.fillStyle = theme.gold;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
-    }
-    if (moonPos && moonPos.alt > -0.3) {
-      const p = elevGaugePoint(moonPos.alt, g);
-      ctx.fillStyle = theme.moonBody;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
-    }
+    // drawCelestial() above, as miniature versions of the main radar's
+    // glyphs (no label: no room, the glyph itself tells them apart). Moon
+    // FIRST, sun second — the sun must layer above the moon when they sit
+    // close together (explicit ask, round 52).
+    if (moonPos && moonPos.alt > -0.3) drawMiniMoon(elevGaugePoint(moonPos.alt, g));
+    if (sunPos && sunPos.alt > -0.83) drawMiniSun(elevGaugePoint(sunPos.alt, g));
 
-    // the selected aircraft, in red: a radial needle plus a small
-    // triangular head pointing outward, echoing the heading-up needle
-    // already drawn at the top of the main radar
+    // the selected aircraft: a solid triangle riding the inside of the arc,
+    // tip on the arc pointing radially outward (the sketch's red marker) —
+    // drawn after the sun/moon so it can never hide under them
     const pt = elevGaugePoint(planeDeg, g);
     const a = toRad(Math.max(0, Math.min(90, planeDeg)));
-    ctx.strokeStyle = theme.hotHex; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(g.gx, g.gy); ctx.lineTo(pt.x, pt.y); ctx.stroke();
     ctx.save(); ctx.translate(pt.x, pt.y); ctx.rotate(-a);
     ctx.fillStyle = theme.hotHex;
-    ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-3, -5); ctx.lineTo(-3, 5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-11, -6); ctx.lineTo(-11, 6); ctx.closePath(); ctx.fill();
     ctx.restore();
 
-    // numeric readout, to the right of the gauge — fixed at the same
-    // height as the ground icon (the arc's rightmost, ring-safest point)
-    // rather than tracking the marker around the arc, so it stays put and
-    // legible whether the plane reads 2° or 88°
-    ctx.fillStyle = theme.hotHex; ctx.font = "bold 18px ui-monospace, monospace";
-    ctx.fillText(Math.round(planeDeg) + "°", g.gx + g.gr + 14, g.gy - 2);
+    // numeric readout, large, in the free space inside the arc (the
+    // sketch's big "36°") — fixed position rather than tracking the marker
+    // around the curve, so it stays put and legible at 2° or 88°; font
+    // scales with the arc so it fills a big desktop gauge too
+    const fs = Math.min(26, Math.max(14, Math.round(g.gr * 0.26)));
+    ctx.fillStyle = theme.hotHex; ctx.font = "bold " + fs + "px ui-monospace, monospace";
+    ctx.fillText(Math.round(planeDeg) + "°", g.gx + g.gr * 0.30, g.gy - g.gr * 0.30);
+    ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
+  }
+  // Miniatures of drawSunIcon/drawMoonIcon (~60% scale, no text label) for
+  // the elevation gauge's arc markers.
+  function drawMiniSun(pt) {
+    ctx.save(); ctx.translate(pt.x, pt.y);
+    ctx.fillStyle = theme.gold; ctx.strokeStyle = theme.gold; ctx.lineWidth = 1; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI * 2); ctx.fill();
+    for (let k = 0; k < 8; k++) {
+      const a = (Math.PI / 4) * k;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 3.8, Math.sin(a) * 3.8);
+      ctx.lineTo(Math.cos(a) * 5.6, Math.sin(a) * 5.6);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawMiniMoon(pt) {
+    ctx.save(); ctx.translate(pt.x, pt.y);
+    ctx.fillStyle = theme.moonBody;
+    ctx.beginPath(); ctx.arc(0, 0, 3.8, 0, Math.PI * 2); ctx.fill();
+    // crescent cutout in the page-background color, same trick as drawMoonIcon
+    ctx.fillStyle = theme.voidHex;
+    ctx.beginPath(); ctx.arc(1.7, -1, 3.3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
   // One of 4 distinct pictograms instead of a generic triangle, picked from
@@ -2161,10 +2219,14 @@
     if (orbit || tapCandidate) return; // one active touch/drag at a time
     const rect = cv.getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
-    if (inElevGaugeZone(px, py)) return; // read-only overlay — not a drag/tap surface
+    const hit = hitTest(px, py);
+    // The gauge is a read-only overlay: a touch on it must not orbit or
+    // count as tap-outside — but an aircraft drawn OVER the gauge stays
+    // tappable (round 52): hitTest runs first, and the dead zone only
+    // swallows touches that hit no plane.
+    if (!hit && inElevGaugeZone(px, py)) return;
     const hint = document.getElementById("hint"); if (hint) hint.style.opacity = "0";
     cv.setPointerCapture(e.pointerId);
-    const hit = hitTest(px, py);
     if (hit) {
       tapCandidate = { id: e.pointerId, x0: e.clientX, y0: e.clientY, hitIcao: hit, moved: false };
     } else {
