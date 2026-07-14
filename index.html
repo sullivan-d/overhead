@@ -691,7 +691,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v64";
+  const APP_VERSION = "v65";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -1668,7 +1668,12 @@
       ctx.fill();
     }
 
-    const sweepAng = (ts / 1000 * 0.6) % (Math.PI * 2);
+    // Anchored to the map's rotation exactly like every other angular
+    // element (project()'s bearings, cardinal letters below) — otherwise
+    // the sweep spins in fixed screen space while the map turns under
+    // heading-up or a manual rotate-drag, so it visibly slides relative
+    // to the rings/aircraft instead of moving together with them.
+    const sweepAng = (ts / 1000 * 0.6 - toRad(displayHeading())) % (Math.PI * 2);
     ctx.save(); ctx.translate(cx, cy);
     for (let k = 0; k < 26; k++) {
       const a = sweepAng - k * 0.025;
