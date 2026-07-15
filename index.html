@@ -172,6 +172,8 @@
   .gi-heart { -webkit-mask-image: url(icons/heart.svg); mask-image: url(icons/heart.svg); background-color: var(--sweep); }
   .gi-sun { -webkit-mask-image: url(icons/sun.svg); mask-image: url(icons/sun.svg); }
   .gi-moon { -webkit-mask-image: url(icons/moon.svg); mask-image: url(icons/moon.svg); }
+  .gi-pin { -webkit-mask-image: url(icons/pin.svg); mask-image: url(icons/pin.svg); }
+  .gi-globe { -webkit-mask-image: url(icons/globe.svg); mask-image: url(icons/globe.svg); }
   .sheet-call { font-size: 22px; font-weight: 700; letter-spacing: 0.05em; color: var(--sweep); }
   /* exactly-two-lines box (reserved even when one line fits, clamped with an
      ellipsis when it doesn't) so the sheet height never varies by type name.
@@ -377,7 +379,7 @@
   <h1>Over<b>head</b></h1>
   <p class="gate-headline" id="gate-headline">There's traffic overhead. See it live.</p>
   <p id="gate-intro">Real-time radar of every aircraft in your sky — callsigns, altitudes, headings. No sign-up, no app, just planes.</p>
-  <button class="primary" id="gate-btn">📍 Use my location</button>
+  <button class="primary" id="gate-btn"><span class="gi gi-pin"></span> <span id="gate-btn-label">Use my location</span></button>
 
   <div class="addr-or" id="addr-or">Rather not share? Type any address instead — no permission pop-up.</div>
   <div class="addr-block show" id="addr-block">
@@ -389,7 +391,7 @@
   <ul class="addr-results" id="addr-results"></ul>
   <div class="gate-err" id="gate-err"></div>
   <div class="lang-row" id="lang-row">
-    <span class="globe">🌐</span>
+    <span class="globe gi gi-globe"></span>
     <button data-lang="en">English</button>
     <button data-lang="fr">Français</button>
     <button data-lang="pt">Português</button>
@@ -453,7 +455,7 @@
       headline: "There's traffic overhead. See it live.",
       intro: "Real-time radar of every aircraft in your sky — callsigns, altitudes, headings. No sign-up, no app, just planes.",
       credit: 'Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.',
-      useLocation: "📍 Use my location",
+      useLocation: "Use my location",
       orAddress: "Rather not share? Type any address instead — no permission pop-up.",
       addrPlaceholder: "City, street or landmark",
       go: "Go",
@@ -501,7 +503,7 @@
       headline: "Il y a du trafic au-dessus de vous. Regardez-le en direct.",
       intro: "Radar en temps réel de tous les avions dans votre ciel: indicatifs, altitudes, caps. Sans inscription, sans appli, juste des avions.",
       credit: 'Données du réseau ouvert <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
-      useLocation: "📍 Utiliser ma position",
+      useLocation: "Utiliser ma position",
       orAddress: "Vous préférez éviter ? Indiquez simplement une adresse, sans géolocalisation.",
       addrPlaceholder: "Ville, rue ou lieu",
       go: "OK",
@@ -549,7 +551,7 @@
       headline: "Tráfego aéreo à vista. Siga-o em direto.",
       intro: "Radar em tempo real de todas as aeronaves no seu céu — indicativos, altitudes, rumos. Sem registo, sem aplicação, só aviões.",
       credit: 'Dados da rede aberta <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
-      useLocation: "📍 Usar a minha localização",
+      useLocation: "Usar a minha localização",
       orAddress: "Prefere não partilhar? Escreva simplesmente uma morada, sem geolocalização.",
       addrPlaceholder: "Cidade, rua ou local",
       go: "Ir",
@@ -597,7 +599,7 @@
       headline: "Es gibt Flugverkehr. Sehen Sie ihn live.",
       intro: "Echtzeit-Radar aller Flugzeuge in Ihrem Himmel – Funkrufe, Flughöhen, Flugrichtungen. Keine Anmeldung erforderlich, keine App, nur Flugzeuge.",
       credit: 'Daten aus dem offenen Netzwerk <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
-      useLocation: "📍 Meinen Standort verwenden",
+      useLocation: "Meinen Standort verwenden",
       orAddress: "Teilen Sie Ihren Standort lieber nicht? Geben Sie stattdessen einfach eine Adresse ein – ganz ohne Geolokalisierung.",
       addrPlaceholder: "Stadt, Straße oder Sehenswürdigkeit",
       go: "Los",
@@ -645,7 +647,7 @@
       headline: "上方有飞机。实时查看。",
       intro: "实时雷达，追踪您上空的所有飞机——呼号、高度和航向。无需注册，无需应用，只需飞机。",
       credit: '数据来自开放的 <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> 网络。',
-      useLocation: "📍 使用我的位置",
+      useLocation: "使用我的位置",
       orAddress: "不想分享？直接输入任意地址即可，无需地理定位。",
       addrPlaceholder: "城市、街道或地标",
       go: "搜索",
@@ -729,7 +731,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v75";
+  const APP_VERSION = "v76";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -2896,7 +2898,7 @@
     set("count-l", "aircraft");
     set("rng-label", "range");
     set("hint", "hint");
-    set("gate-btn", "useLocation");
+    set("gate-btn-label", "useLocation");
     set("addr-or", "orAddress");
     set("addr-go", "go");
     set("why-t", "whyTitle");

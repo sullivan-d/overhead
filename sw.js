@@ -3,7 +3,7 @@
 // It deliberately never caches OpenSky / hexdb / Nominatim responses —
 // live data must always be fetched fresh, and nothing runs in the background.
 
-const CACHE = "overhead-v75";
+const CACHE = "overhead-v76";
 const SHELL = [
   "./",
   "./index.html",
@@ -16,7 +16,9 @@ const SHELL = [
   "./icons/cloud.svg",
   "./icons/heart.svg",
   "./icons/sun.svg",
-  "./icons/moon.svg"
+  "./icons/moon.svg",
+  "./icons/pin.svg",
+  "./icons/globe.svg"
 ];
 
 self.addEventListener("install", (e) => {
