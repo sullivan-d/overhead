@@ -3,7 +3,7 @@
 // It deliberately never caches OpenSky / hexdb / Nominatim responses —
 // live data must always be fetched fresh, and nothing runs in the background.
 
-const CACHE = "overhead-v78";
+const CACHE = "overhead-v80";
 const SHELL = [
   "./",
   "./index.html",
@@ -18,7 +18,9 @@ const SHELL = [
   "./icons/sun.svg",
   "./icons/moon.svg",
   "./icons/pin.svg",
-  "./icons/globe.svg"
+  "./icons/globe.svg",
+  // new-contact detection "bip" — part of the static app shell, not live data
+  "./sounds/seatbelt-1.wav"
 ];
 
 self.addEventListener("install", (e) => {

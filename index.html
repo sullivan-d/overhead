@@ -731,9 +731,41 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v78";
+  const APP_VERSION = "v80";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
+  // Played once for every genuinely NEW contact (an ICAO never revealed this
+  // session) the instant the sweep line reveals it, while it's inside the
+  // SELECTED range (not the wider display/fetch margin — see the sweepAng
+  // reveal logic in draw()). One shared Audio element, rewound rather than
+  // reallocated per contact, so several aircraft swept in quick succession
+  // don't pile up separate objects.
+  const detectSound = new Audio("sounds/seatbelt-1.wav");
+  detectSound.volume = 0.6;
+  function playDetectSound() {
+    try {
+      // Setting currentTime before the browser has loaded ANY media data
+      // (readyState 0) throws InvalidStateError in some browsers — which,
+      // unguarded, aborted the whole try block before play() was ever
+      // called, silently dropping the sound entirely. Skipping the rewind
+      // in that case just means the very first play starts from wherever
+      // it happens to be (0, since it hasn't loaded far enough to be
+      // anywhere else) — harmless.
+      if (detectSound.readyState > 0) detectSound.currentTime = 0;
+      detectSound.play().catch((e) => console.warn("detect sound blocked:", e && e.message));
+    } catch (e) { console.warn("detect sound failed:", e && e.message); }
+  }
+  // Mobile browsers only allow Audio.play() from inside (or shortly after) a
+  // real user gesture — same constraint armCompass() already works around
+  // for the iOS orientation-permission prompt. Priming here, from the same
+  // gate-tap gesture, "unlocks" the element so the later autonomous play()
+  // calls triggered by sweep reveals aren't silently blocked.
+  function primeDetectSound() {
+    try {
+      detectSound.play().then(() => { detectSound.pause(); detectSound.currentTime = 0; })
+        .catch((e) => console.warn("could not prime detect sound:", e && e.message));
+    } catch (e) { console.warn("could not prime detect sound:", e && e.message); }
+  }
   // How far beyond the displayed range ring to fetch AND render. Used for both
   // so nothing counted in the header is silently excluded from the canvas —
   // they used to differ (fetch 1.15x, render cutoff 1.06x), which meant some
@@ -748,6 +780,37 @@
   let displayRangeKm = RANGE_KM_DEFAULT;
   const RANGE_TAU_MS = 300;
   let planes = new Map();
+  // ----- sweep-triggered first reveal -----
+  // An aircraft only APPEARS the first time the sweep beam crosses its
+  // bearing — before that it isn't drawn/hit-testable/counted at all. Once
+  // revealed it glides continuously like any live dead-reckoned aircraft
+  // (an earlier version also FROZE its position between sweeps, like a real
+  // rotating-beam radar display — Sullivan tried that and asked to go back
+  // to continuous gliding, keeping only the "first appearance" gate). So
+  // this is just a Set of ICAOs that have been swept at least once; no
+  // position/altitude/heading is stored here — draw() always uses live
+  // estimatedPosition()/estimatedAltitude() for anything already revealed.
+  let revealedIcaos = new Set();
+  // ICAOs revealed at least once THIS SESSION — drives the "new aircraft"
+  // blip + sound (a contact that's new to what's on screen right now, not
+  // necessarily new to `sightings`' lifetime history). Session-scoped:
+  // cleared in reopenGate() like the rest of the live tracking state.
+  // (Functionally the same set of ICAOs as revealedIcaos above at any given
+  // moment — kept separate because revealedIcaos is rebuilt from scratch
+  // via the out-of-range delete below, while sessionKnown must never lose
+  // an entry just because an aircraft temporarily drops out of range.)
+  let sessionKnown = new Set();
+  // Short-lived green flash markers for newly-revealed aircraft: icao ->
+  // { startedAt }. Drawn alongside the icon itself each frame while active,
+  // using that frame's own computed screen position (never stores raw x/y,
+  // since the squish/tilt transform can change while the flash is playing).
+  let activeBlips = new Map();
+  const BLIP_FLASH_MS = 900;
+  // Previous frame's raw (unwrapped) sweep angle — crossing detection needs
+  // to know which side of an aircraft's bearing the beam was on a moment
+  // ago. null until the second frame of any session (nothing can "cross"
+  // on the very first frame there's no prior angle to compare against).
+  let prevSweepAngRaw = null;
   let selected = null, pollTimer = null, lastFetch = 0, dailyCount = 0;
   // Cloud ceiling state. The model reports cloud base ABOVE GROUND at the
   // user's spot — that's what the display shows (it's the height you'd crane
@@ -820,6 +883,16 @@
   window.addEventListener("resize", resize);
 
   const toRad = d => d * Math.PI / 180;
+  // Wraps any angle (radians) into (-PI, PI] — used by the sweep-crossing
+  // check below to find the shortest signed offset between the sweep line
+  // and an aircraft's bearing, regardless of how large the raw (unwrapped)
+  // sweep angle has grown over a long session.
+  function wrapPi(a) {
+    a = a % (Math.PI * 2);
+    if (a > Math.PI) a -= Math.PI * 2;
+    else if (a <= -Math.PI) a += Math.PI * 2;
+    return a;
+  }
 
   // 3D tilt (like Google Maps' navigation view): on by default and
   // independent of heading-up — north-up and heading-up can each be viewed
@@ -1080,7 +1153,10 @@
     // In heading-up mode, subtract the device heading so the direction you
     // face sits at the top. In north-up mode, displayHeading is 0.
     const ang = toRad(brg - 90 - displayHeading());
-    return { x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang), dist };
+    // ang is exposed (not just consumed internally) so the sweep-crossing
+    // check in draw() can compare it against the sweep line's own angle
+    // without recomputing bearing/haversine a second time per aircraft.
+    return { x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang), dist, ang };
   }
   // Pixel radius of range ring i (1, 2, or 3 — thirds of the selected range),
   // using the exact same distance->pixel formula as project(). Ring i always
@@ -1123,8 +1199,11 @@
     const counts = { airliner: 0, jet: 0, heli: 0, hobby: 0, other: 0 };
     for (const p of planes.values()) {
       try {
+        // revealedIcaos.has(...) — only count a contact the beam has
+        // actually swept at least once (draw()'s visible list is built the
+        // same way), on top of the existing range/naked-eye test.
         const gd = haversineKm(me, estimatedPosition(p, now));
-        if (gd <= rangeKm && nakedEyeVisible(p, gd)) counts[countBucket(typeKey(p))]++;
+        if (revealedIcaos.has(p.icao) && gd <= rangeKm && nakedEyeVisible(p, gd)) counts[countBucket(typeKey(p))]++;
       } catch { /* skip malformed */ }
     }
     return counts;
@@ -1664,19 +1743,64 @@
     compassNeedle.style.transform = `rotate(${-displayHeading()}deg)`;
     ctx.clearRect(0, 0, cssSize, cssSize);
 
+    // The sweep angle drives both the drawn sweep line (further down) and
+    // the reveal check right below — computed here, once, so both share the
+    // exact same value for this frame. Left UNWRAPPED (no % 2π): trig is
+    // periodic so drawing doesn't need it wrapped, and staying unwrapped is
+    // what makes the crossing math below simple — only each aircraft's
+    // already-bounded bearing angle needs wrapPi, not the sweep itself.
+    const sweepAng = ts / 1000 * 0.6 - toRad(displayHeading());
+
     // gather visible aircraft once; used for both the ground-plane trail pass
     // and the billboarded icon pass below, and shields the whole frame from
     // one malformed record (see comment further down). Uses displayRangeKm
     // (not rangeKm) so aircraft slide off/on screen in step with the
     // animated zoom rather than popping in/out the instant the button is hit.
+    //
+    // Sweep-triggered FIRST reveal only: an aircraft doesn't enter `visible`
+    // until the beam has swept across its bearing at least once, but once
+    // revealed it glides continuously off the same live `liveProj` every
+    // frame after that — see revealedIcaos above for why the freeze-between-
+    // sweeps version was reverted. The crossing check itself only runs for
+    // aircraft NOT already revealed; once revealedIcaos has an ICAO there's
+    // nothing left to detect for it.
     const now = Date.now();
     const visible = [];
     for (const p of planes.values()) {
       try {
-        const proj = project(estimatedPosition(p, now));
-        if (proj.dist > displayRangeKm * RANGE_MARGIN) continue;
-        if (!nakedEyeVisible(p, proj.dist)) continue; // too small/far to actually see (always-on filter)
-        visible.push({ p, proj });
+        const liveProj = project(estimatedPosition(p, now));
+        if (liveProj.dist > displayRangeKm * RANGE_MARGIN || !nakedEyeVisible(p, liveProj.dist)) {
+          // out of range, or too small/far to see right now — has to be
+          // re-revealed by a fresh crossing if and when it comes back
+          revealedIcaos.delete(p.icao);
+          continue;
+        }
+        if (!revealedIcaos.has(p.icao)) {
+          // Signed angular offset from the sweep line to this aircraft's
+          // CURRENT bearing, this frame and (via prevSweepAngRaw) last
+          // frame. A sign flip between two small per-frame steps means the
+          // beam passed through the bearing since the last frame; the
+          // |Math.PI| guard rejects the OTHER place signs can flip —
+          // wrapPi's own ±π wraparound on the far side of the circle, which
+          // jumps by nearly 2π, not a small crossing step.
+          const rel = wrapPi(liveProj.ang - sweepAng);
+          let crossed = false;
+          if (prevSweepAngRaw != null) {
+            const relPrev = wrapPi(liveProj.ang - prevSweepAngRaw);
+            crossed = Math.sign(relPrev) !== Math.sign(rel) && Math.abs(relPrev - rel) < Math.PI;
+          }
+          if (!crossed) continue; // still not revealed — not drawn this frame
+          revealedIcaos.add(p.icao);
+          if (!sessionKnown.has(p.icao)) {
+            // a contact this radar hasn't shown before THIS session — flash
+            // + (if inside the actually-selected range, not just the wider
+            // display/fetch margin) the detection sound
+            sessionKnown.add(p.icao);
+            activeBlips.set(p.icao, { startedAt: now });
+            if (liveProj.dist <= rangeKm) playDetectSound();
+          }
+        }
+        visible.push({ p, proj: liveProj, altM: estimatedAltitude(p, now), trackDeg: p.track });
         // Every frame this ICAO hex is actually drawn on the radar, refresh
         // its "last seen" timestamp for the breakdown panel (lifetime +
         // rolling 24h counts). Hooking this to the same per-frame visible-
@@ -1690,6 +1814,17 @@
         markSeen(p.icao, countBucket(typeKey(p)), now);
       } catch (e) { console.warn("skipped projecting aircraft", p.icao, e); }
     }
+    // revealedIcaos/activeBlips persist across frames independently of the
+    // loop above, so aircraft the ingest() 90s prune has already dropped
+    // from `planes` need their own cleanup pass here or they'd linger.
+    for (const icao of revealedIcaos) if (!planes.has(icao)) revealedIcaos.delete(icao);
+    // activeBlips also needs a time-based sweep independent of `planes`
+    // membership: an aircraft that drifts out of range/naked-eye visibility
+    // mid-flash would otherwise leave a stale entry sitting here until the
+    // 90s prune eventually catches it (the billboarded render loop only
+    // expires a blip for aircraft still in `visible` this frame).
+    for (const [icao, blip] of activeBlips) if (now - blip.startedAt >= BLIP_FLASH_MS) activeBlips.delete(icao);
+    prevSweepAngRaw = sweepAng;
     flushSeenStatsIfDue(now);
     if (breakdownEl.classList.contains("open")) updateBreakdownDisplay();
 
@@ -1728,12 +1863,12 @@
       ctx.fill();
     }
 
-    // Anchored to the map's rotation exactly like every other angular
-    // element (project()'s bearings, cardinal letters below) — otherwise
-    // the sweep spins in fixed screen space while the map turns under
-    // heading-up or a manual rotate-drag, so it visibly slides relative
-    // to the rings/aircraft instead of moving together with them.
-    const sweepAng = (ts / 1000 * 0.6 - toRad(displayHeading())) % (Math.PI * 2);
+    // sweepAng was already computed above (shared with the sweep-crossing
+    // reveal check) — anchored to the map's rotation exactly like every
+    // other angular element (project()'s bearings, cardinal letters below),
+    // otherwise the sweep would spin in fixed screen space while the map
+    // turns under heading-up or a manual rotate-drag, visibly sliding
+    // relative to the rings/aircraft instead of moving together with them.
     ctx.save(); ctx.translate(cx, cy);
     for (let k = 0; k < 26; k++) {
       const a = sweepAng - k * 0.025;
@@ -1778,7 +1913,7 @@
 
     drawCelestial();
 
-    for (const { p, proj } of visible) {
+    for (const { p, proj, altM, trackDeg } of visible) {
       try {
         // above the cloud ceiling → dimmed (a single globalAlpha over the
         // whole stem+shadow+icon group — cheaper than per-color alpha work,
@@ -1788,7 +1923,7 @@
         // live (dead-reckoned) altitude, not the raw fix — so a landing
         // aircraft's icon visibly sinks onto the ground plane in step with
         // the altitude figure in its sheet, instead of hovering frozen
-        const lift = altitudeLiftPx(estimatedAltitude(p, now));
+        const lift = altitudeLiftPx(altM);
         const iconY = groundY - lift;
         if (lift > 1) {
           // faint stem + ground shadow: the aircraft floats above its actual
@@ -1801,7 +1936,17 @@
           ctx.fillStyle = `rgba(${theme.inkSoftRgb},0.55)`;
           ctx.beginPath(); ctx.arc(proj.x, groundY, 2, 0, Math.PI * 2); ctx.fill();
         }
-        drawPlane(proj.x, iconY, p.track - displayHeading(), p.icao === selected, p, proj.dist);
+        // the whole aircraft glows green while its blip is active (a contact
+        // newly revealed this session) — glowAge is null when there's no
+        // active blip, else 0 (just revealed) to 1 (fully faded)
+        const blip = activeBlips.get(p.icao);
+        let glowAge = null;
+        if (blip) {
+          const age = (now - blip.startedAt) / BLIP_FLASH_MS;
+          if (age >= 1) activeBlips.delete(p.icao);
+          else glowAge = age;
+        }
+        drawPlane(proj.x, iconY, trackDeg - displayHeading(), p.icao === selected, p, proj.dist, glowAge);
       } catch (e) { console.warn("skipped rendering aircraft", p.icao, e); }
     }
     ctx.globalAlpha = 1; // dimming must never leak into the next frame's rings/sweep
@@ -2215,13 +2360,42 @@
     return 1.4 - t * (1.4 - 0.7);
   }
 
-  function drawPlane(x, y, heading, sel, p, lateralDistKm) {
+  // glowAge: null when this aircraft has no active new-contact blip, else a
+  // 0 (just revealed) to 1 (fully faded) fraction through BLIP_FLASH_MS —
+  // see the billboarded render loop in draw(). While active, the whole
+  // aircraft glows with the radar's own sweep-green accent (theme.sweepRgb,
+  // not a new hardcoded color, so it still adapts to the light theme): a
+  // soft halo behind it plus its own silhouette redrawn in green on top,
+  // both fading out together.
+  function drawPlane(x, y, heading, sel, p, lateralDistKm, glowAge) {
     const scale = slantScale(p.alt, lateralDistKm);
     ctx.save(); ctx.translate(x, y); ctx.rotate(toRad(heading)); ctx.scale(scale, scale);
     ctx.fillStyle = sel ? theme.hotHex : theme.inkHex;
     ctx.strokeStyle = sel ? theme.hotHex : theme.inkHex;
     drawIconPath(iconForType(typeKey(p)));
     ctx.restore();
+    if (glowAge != null) {
+      const fade = 1 - glowAge;
+      // halo drawn in plain screen space (NOT inside a rotate/scale block)
+      // so its radius stays predictable regardless of the icon's own
+      // heading/size — canvas shadowBlur doesn't scale consistently under
+      // ctx.scale across browsers, a radial gradient sidesteps that entirely
+      ctx.save();
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, 18);
+      glow.addColorStop(0, `rgba(${theme.sweepRgb},${0.55 * fade})`);
+      glow.addColorStop(1, `rgba(${theme.sweepRgb},0)`);
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.translate(x, y); ctx.rotate(toRad(heading)); ctx.scale(scale, scale);
+      ctx.fillStyle = theme.sweepHex;
+      ctx.strokeStyle = theme.sweepHex;
+      drawIconPath(iconForType(typeKey(p)));
+      ctx.restore();
+    }
     if (sel) { ctx.strokeStyle = theme.hotHex; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.stroke(); }
     ctx.fillStyle = sel ? theme.hotHex : `rgba(${theme.inkSoftRgb},0.65)`;
     ctx.font = (sel ? "bold " : "") + "9px ui-monospace, monospace";
@@ -2232,6 +2406,7 @@
     const now = Date.now(); let best = null, bestD = 22;
     for (const p of planes.values()) {
       try {
+        if (!revealedIcaos.has(p.icao)) continue;             // not drawn — never swept yet
         const proj = project(estimatedPosition(p, now));
         if (proj.dist > displayRangeKm * RANGE_MARGIN) continue;      // not drawn — off range
         if (!nakedEyeVisible(p, proj.dist)) continue;                 // not drawn — filtered out
@@ -2787,6 +2962,11 @@
   function reopenGate() {
     closeSheet(); closeBreakdown(); // the gate covers the radar, neither panel should survive into the next session
     clearTimeout(pollTimer); pollTimer = null; failStreak = 0; me = null; planes.clear();
+    // sweep-reveal state is session-scoped too — a fresh location deserves a
+    // fresh sweep (a plane that was already revealed at the OLD location has
+    // no meaning at the new one), and "new aircraft" should reset for the
+    // new session rather than staying silent for contacts already seen today.
+    revealedIcaos.clear(); sessionKnown.clear(); activeBlips.clear(); prevSweepAngRaw = null;
     clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
     clearInterval(cloudTimer); cloudTimer = null;
     cloudCeilM = null; cloudCeilMslM = null; cloudFetchedAt = 0; groundElevM = null;
@@ -2866,6 +3046,7 @@
 
   document.getElementById("gate-btn").addEventListener("click", () => {
     armCompass(); // must run inside the tap gesture — see armCompass
+    primeDetectSound(); // same constraint, same fix — see primeDetectSound
     gateErr.textContent = t("locating");
     if (!navigator.geolocation) { gateErr.textContent = t("geoUnavailable"); addrInput.focus(); return; }
     navigator.geolocation.getCurrentPosition(
@@ -2893,7 +3074,7 @@
       for (const r of list) {
         const li = document.createElement("li");
         li.textContent = r.display_name;
-        li.addEventListener("click", () => { armCompass(); begin(+r.lat, +r.lon, r.display_name.split(",")[0]); });
+        li.addEventListener("click", () => { armCompass(); primeDetectSound(); begin(+r.lat, +r.lon, r.display_name.split(",")[0]); });
         addrResults.appendChild(li);
       }
     } catch { gateErr.textContent = t("lookupFailed"); }
