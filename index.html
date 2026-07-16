@@ -731,7 +731,7 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v77";
+  const APP_VERSION = "v78";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // How far beyond the displayed range ring to fetch AND render. Used for both
@@ -2378,21 +2378,20 @@
     ? `${fmt1(km)}<small> km</small>`
     : `${fmt1(km * NM_PER_KM)}<small> NM</small>`;
 
-  // 16-point compass name (e.g. "ENE") built from the same 4 localized base
-  // letters (t("cards"): N/E/S/W or their translated equivalents) used for
-  // the radar rim labels — a pragmatic composite, not a linguistically
-  // "native" 16-wind name in every language, but consistent with how this
-  // app already localizes cardinal letters (round 28).
-  const CARD16 = [
-    [0], [0, 0, 1], [0, 1], [1, 0, 1],
-    [1], [1, 2, 1], [2, 1], [2, 2, 1],
-    [2], [2, 2, 3], [2, 3], [3, 2, 3],
-    [3], [3, 0, 3], [0, 3], [0, 0, 3],
+  // 8-point compass name (N/NE/E/SE/S/SW/W/NW, max 2 characters) built from
+  // the same 4 localized base letters (t("cards"): N/E/S/W or their
+  // translated equivalents) used for the radar rim labels — a pragmatic
+  // composite, not a linguistically "native" 8-wind name in every language,
+  // but consistent with how this app already localizes cardinal letters
+  // (round 28).
+  const CARD8 = [
+    [0], [0, 1], [1], [2, 1],
+    [2], [2, 3], [3], [0, 3],
   ];
   const cardinalName = deg => {
     const c = t("cards");
-    const i = Math.round((((deg % 360) + 360) % 360) / 22.5) % 16;
-    return CARD16[i].map(k => c[k]).join("");
+    const i = Math.round((((deg % 360) + 360) % 360) / 45) % 8;
+    return CARD8[i].map(k => c[k]).join("");
   };
   const fmtHeading = deg => `${Math.round(deg)}<small>° • ${cardinalName(deg)}</small>`;
 
