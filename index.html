@@ -731,40 +731,58 @@
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v80";
+  const APP_VERSION = "v81";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
-  // Played once for every genuinely NEW contact (an ICAO never revealed this
-  // session) the instant the sweep line reveals it, while it's inside the
-  // SELECTED range (not the wider display/fetch margin — see the sweepAng
-  // reveal logic in draw()). One shared Audio element, rewound rather than
-  // reallocated per contact, so several aircraft swept in quick succession
-  // don't pile up separate objects.
-  const detectSound = new Audio("sounds/seatbelt-1.wav");
-  detectSound.volume = 0.6;
+  // Played every time the sweep line reveals an aircraft on screen (see the
+  // reveal logic in draw()). A SINGLE shared Audio element can't overlap
+  // itself — calling play() on one that's already mid-playback just restarts
+  // it, so two aircraft revealed close together (a common case: several
+  // contacts sitting near the same bearing all get crossed within the same
+  // sweep pass) audibly cut each other off and only one "bip" was ever
+  // heard. Fixed with a small round-robin pool of independent Audio
+  // elements instead of one — each concurrent reveal gets its own element,
+  // so their sounds genuinely overlap rather than fighting over one.
+  const DETECT_SOUND_POOL_SIZE = 6; // comfortably more than any realistic burst of near-simultaneous reveals
+  const detectSoundPool = Array.from({ length: DETECT_SOUND_POOL_SIZE }, () => {
+    const a = new Audio("sounds/seatbelt-1.wav");
+    a.volume = 0.6;
+    return a;
+  });
+  let detectSoundIdx = 0;
   function playDetectSound() {
     try {
+      const inst = detectSoundPool[detectSoundIdx];
+      detectSoundIdx = (detectSoundIdx + 1) % detectSoundPool.length;
       // Setting currentTime before the browser has loaded ANY media data
       // (readyState 0) throws InvalidStateError in some browsers — which,
       // unguarded, aborted the whole try block before play() was ever
       // called, silently dropping the sound entirely. Skipping the rewind
       // in that case just means the very first play starts from wherever
       // it happens to be (0, since it hasn't loaded far enough to be
-      // anywhere else) — harmless.
-      if (detectSound.readyState > 0) detectSound.currentTime = 0;
-      detectSound.play().catch((e) => console.warn("detect sound blocked:", e && e.message));
+      // anywhere else) — harmless. If the pool wraps around to an instance
+      // that's still playing from a moment ago, this restarts it — an
+      // acceptable trade for a bounded, fixed-size pool over an unbounded
+      // one that could pile up elements forever during a heavy burst.
+      if (inst.readyState > 0) inst.currentTime = 0;
+      inst.play().catch((e) => console.warn("detect sound blocked:", e && e.message));
     } catch (e) { console.warn("detect sound failed:", e && e.message); }
   }
   // Mobile browsers only allow Audio.play() from inside (or shortly after) a
   // real user gesture — same constraint armCompass() already works around
-  // for the iOS orientation-permission prompt. Priming here, from the same
-  // gate-tap gesture, "unlocks" the element so the later autonomous play()
-  // calls triggered by sweep reveals aren't silently blocked.
+  // for the iOS orientation-permission prompt. Priming EVERY pool element
+  // here, from the same gate-tap gesture, "unlocks" each of them so the
+  // later autonomous play() calls triggered by sweep reveals aren't
+  // silently blocked — some browsers (Safari in particular) grant the
+  // autoplay exemption per-element, not per-page, so priming only the first
+  // one would leave the rest of the pool blocked the first time they're used.
   function primeDetectSound() {
-    try {
-      detectSound.play().then(() => { detectSound.pause(); detectSound.currentTime = 0; })
-        .catch((e) => console.warn("could not prime detect sound:", e && e.message));
-    } catch (e) { console.warn("could not prime detect sound:", e && e.message); }
+    for (const inst of detectSoundPool) {
+      try {
+        inst.play().then(() => { inst.pause(); inst.currentTime = 0; })
+          .catch((e) => console.warn("could not prime detect sound:", e && e.message));
+      } catch (e) { console.warn("could not prime detect sound:", e && e.message); }
+    }
   }
   // How far beyond the displayed range ring to fetch AND render. Used for both
   // so nothing counted in the header is silently excluded from the canvas —
@@ -791,15 +809,6 @@
   // position/altitude/heading is stored here — draw() always uses live
   // estimatedPosition()/estimatedAltitude() for anything already revealed.
   let revealedIcaos = new Set();
-  // ICAOs revealed at least once THIS SESSION — drives the "new aircraft"
-  // blip + sound (a contact that's new to what's on screen right now, not
-  // necessarily new to `sightings`' lifetime history). Session-scoped:
-  // cleared in reopenGate() like the rest of the live tracking state.
-  // (Functionally the same set of ICAOs as revealedIcaos above at any given
-  // moment — kept separate because revealedIcaos is rebuilt from scratch
-  // via the out-of-range delete below, while sessionKnown must never lose
-  // an entry just because an aircraft temporarily drops out of range.)
-  let sessionKnown = new Set();
   // Short-lived green flash markers for newly-revealed aircraft: icao ->
   // { startedAt }. Drawn alongside the icon itself each frame while active,
   // using that frame's own computed screen position (never stores raw x/y,
@@ -1791,14 +1800,19 @@
           }
           if (!crossed) continue; // still not revealed — not drawn this frame
           revealedIcaos.add(p.icao);
-          if (!sessionKnown.has(p.icao)) {
-            // a contact this radar hasn't shown before THIS session — flash
-            // + (if inside the actually-selected range, not just the wider
-            // display/fetch margin) the detection sound
-            sessionKnown.add(p.icao);
-            activeBlips.set(p.icao, { startedAt: now });
-            if (liveProj.dist <= rangeKm) playDetectSound();
-          }
+          // Every transition from not-drawn to drawn gets a glow + sound —
+          // not just an aircraft's first-ever sighting this session. An
+          // aircraft that briefly left the screen (dropped out of the
+          // display margin, or momentarily failed the naked-eye filter) and
+          // is now reappearing is, from what's actually on screen, just as
+          // much a "new blip" as one that's never been seen before; gating
+          // this on a separate "have I ever shown this ICAO" set meant a
+          // returning contact appeared on screen with no acknowledgment at
+          // all. No range restriction either — anything the sweep reveals
+          // on screen (out to the display margin, not just the tighter
+          // selected range) gets both, matching what's actually visible.
+          activeBlips.set(p.icao, { startedAt: now });
+          playDetectSound();
         }
         visible.push({ p, proj: liveProj, altM: estimatedAltitude(p, now), trackDeg: p.track });
         // Every frame this ICAO hex is actually drawn on the radar, refresh
@@ -2964,9 +2978,8 @@
     clearTimeout(pollTimer); pollTimer = null; failStreak = 0; me = null; planes.clear();
     // sweep-reveal state is session-scoped too — a fresh location deserves a
     // fresh sweep (a plane that was already revealed at the OLD location has
-    // no meaning at the new one), and "new aircraft" should reset for the
-    // new session rather than staying silent for contacts already seen today.
-    revealedIcaos.clear(); sessionKnown.clear(); activeBlips.clear(); prevSweepAngRaw = null;
+    // no meaning at the new one).
+    revealedIcaos.clear(); activeBlips.clear(); prevSweepAngRaw = null;
     clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
     clearInterval(cloudTimer); cloudTimer = null;
     cloudCeilM = null; cloudCeilMslM = null; cloudFetchedAt = 0; groundElevM = null;
