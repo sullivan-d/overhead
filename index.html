@@ -815,13 +815,13 @@
   const GROUND_ICON = "⏚";
   // Support link shown at the very bottom of the detail sheet.
   const DONATE_URL = "https://ko-fi.com/overheadapp";
-  // Burned into every share card AND appended to its caption (see the share
-  // section below) — some share targets keep only the image file and drop
-  // the accompanying text, so the URL has to survive in the pixels too.
+  // Appended to every share caption (see the share section below), but
+  // deliberately kept OUT of the share card image itself — the card is meant
+  // to read as a clean photo, not an ad plastered with a URL.
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v82";
+  const APP_VERSION = "v83";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // Played every time the sweep line reveals an aircraft on screen (see the
@@ -881,6 +881,15 @@
   const RANGE_MARGIN = 1.1;
 
   let me = null, placeName = "", rangeKm = RANGE_KM_DEFAULT;
+  // True only when placeName came from a real geocoded address (the "here"
+  // text and the "change" button both treat it as display text either way,
+  // so this doesn't change any existing UI) — false for the GPS path, where
+  // placeName is just the generic translated label t("myLocation"), e.g.
+  // "my location". That label means something to the person looking at
+  // their OWN screen but nothing to a stranger reading a shared card, so
+  // the share feature (see buildShareAssets) falls back to coordinates
+  // instead of printing it verbatim when this is false.
+  let placeIsAddress = false;
   // rangeKm is the authoritative selected range (drives fetch radius + the
   // in-range count). displayRangeKm eases toward it so switching range
   // animates — rings' km labels count smoothly and aircraft slide to their
@@ -2857,10 +2866,12 @@
 
   async function buildShareAssets(p) {
     const now = Date.now();
-    // "my location" (the GPS-path placeName) is deliberately NOT special-
-    // cased here — only a genuinely empty placeName falls back to lat/lon,
-    // per spec; an address-search location already reads fine as a place.
-    const place = (placeName && placeName.trim()) ? placeName : `${me.lat.toFixed(3)}, ${me.lon.toFixed(3)}`;
+    // Only a genuinely geocoded address (placeIsAddress) is worth printing
+    // as-is — the GPS path's placeName is just the generic translated label
+    // t("myLocation") ("my location"), which means something on the
+    // sender's OWN screen but tells a recipient nothing about where the
+    // plane actually was. Coordinates at least answer that.
+    const place = (placeIsAddress && placeName.trim()) ? placeName : `${me.lat.toFixed(3)}, ${me.lon.toFixed(3)}`;
     // timeZoneName can't be combined with dateStyle/timeStyle — V8 throws
     // "Can't set option timeZoneName when dateStyle is used" (confirmed
     // against Chrome 150), not just an MDN caveat. dateStyle+timeStyle alone
@@ -2875,7 +2886,21 @@
     const altText = isOnGround(p, now) ? t("onGround") : stripTags(fmtAlt(estimatedAltitude(p, now)));
     const spdText = stripTags(fmtSpd(displayVel(p, now)));
     const distText = stripTags(fmtDist(haversineKm(me, estimatedPosition(p, now))));
-    const statsLine = [altText, spdText, distText].join("   ·   ");
+    // Bare numbers read as unlabeled noise to someone who's never seen the
+    // app's own sheet (where the same three figures sit under labeled
+    // headers) — reuse the same t("altitude")/t("speed")/t("distance")
+    // labels here instead of inventing separate abbreviations. Kept as an
+    // array (not just the joined line below) because the image draws these
+    // one per row — a single joined line at a legible font size ran wider
+    // than the text column and silently truncated the last stat off the
+    // card entirely; the caption has no such width limit, so it still gets
+    // the compact joined form.
+    const statLines = [
+      `${t("altitude")}: ${altText}`,
+      `${t("speed")}: ${spdText}`,
+      `${t("distance")}: ${distText}`
+    ];
+    const statsLine = statLines.join("   ·   ");
     const routeQuery = p.flightCallsign || p.reg.replace(/[^A-Z0-9]/gi, "");
     const route = routeQuery ? await fetchRoute(routeQuery) : null; // usually already cached by renderSheet's own lookup
     let routeLine = "";
@@ -2901,8 +2926,9 @@
     // Header: OVER/HEAD wordmark (same two-tone split as .brand) plus a
     // right-aligned capture timestamp. The timestamp matters — a recipient
     // reading this hours later must not think the aircraft is still up
-    // there — and it has to be burned into the PIXELS, not just the caption,
-    // since some share targets keep only the image file (see APP_URL below).
+    // there — so, unlike the app URL (kept out of the image on purpose, see
+    // the caption below), the timestamp has to be burned into the PIXELS,
+    // not just the caption, since some share targets keep only the file.
     c.textBaseline = "alphabetic";
     c.font = `700 34px ${SHARE_FONT}`;
     c.fillStyle = col.ink;
@@ -2967,21 +2993,22 @@
     y += 22 + 16; c.fillText(fitText(c, spottedLine, textMaxW), SHARE_PAD, y);
     c.fillStyle = col.ink;
     c.font = `600 26px ${SHARE_FONT}`;
-    y += 26 + 12; c.fillText(fitText(c, statsLine, textMaxW), SHARE_PAD, y);
+    for (const line of statLines) {
+      y += 26 + 10; c.fillText(fitText(c, line, textMaxW), SHARE_PAD, y);
+    }
     if (routeLine) {
       c.fillStyle = col.sweep;
       c.font = `400 22px ${SHARE_FONT}`;
       y += 22 + 14; c.fillText(fitText(c, routeLine, textMaxW), SHARE_PAD, y);
     }
-    c.fillStyle = col.inkFaint;
-    c.font = `400 18px ${SHARE_FONT}`;
-    y += 18 + 14; c.fillText(APP_URL, SHARE_PAD, y);
+    // The app URL is deliberately NOT drawn into the image itself (an
+    // explicit call — keep the card as a clean, shareable photo rather than
+    // an ad) — it only ever travels in the caption below. That means a
+    // share target that keeps the file but drops the accompanying text will
+    // lose the link; accepted trade-off.
 
     const blob = await new Promise(res => canvas.toBlob(res, "image/png"));
     if (!blob) throw new Error("canvas toBlob returned null");
-    // The URL appears both here (burned into the pixels above) AND on its
-    // own line in this caption — some share targets keep only the file,
-    // others keep only the text, so it has to survive either path alone.
     const caption = [
       `${p.call} — ${catLine}`,
       `${spottedLine} — ${stamp}`,
@@ -3294,8 +3321,8 @@
   // a second rAF loop each time would stack them up, doubling the render
   // work per return trip.
   let drawLoopStarted = false;
-  function begin(lat, lon, name) {
-    me = { lat, lon }; placeName = name || "";
+  function begin(lat, lon, name, isAddress) {
+    me = { lat, lon }; placeName = name || ""; placeIsAddress = !!isAddress;
     document.getElementById("gate").classList.add("hidden");
     const here = document.getElementById("here");
     here.innerHTML = (placeName ? placeName + " · " : "") + `<button id="change-loc">${t("change")}</button>`;
@@ -3420,7 +3447,7 @@
       for (const r of list) {
         const li = document.createElement("li");
         li.textContent = r.display_name;
-        li.addEventListener("click", () => { armCompass(); primeDetectSound(); begin(+r.lat, +r.lon, r.display_name.split(",")[0]); });
+        li.addEventListener("click", () => { armCompass(); primeDetectSound(); begin(+r.lat, +r.lon, r.display_name.split(",")[0], true); });
         addrResults.appendChild(li);
       }
     } catch { gateErr.textContent = t("lookupFailed"); }
