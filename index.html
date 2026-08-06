@@ -12,6 +12,28 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
 <title>Overhead</title>
+<!-- Link-preview metadata (English only — the UI language is chosen client-side,
+     long after any crawler has already read these tags, so there's no client-side
+     language to key off yet). og:image points at a 1200x630 cover image that does
+     NOT exist in the repo yet — og-cover.png still needs to be created at the
+     repo root, or link previews will show no thumbnail. -->
+<meta name="description" content="Real-time radar of the aircraft flying overhead — callsigns, altitudes, headings, live in your browser. No sign-up, no app, just planes.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Overhead">
+<meta property="og:title" content="Overhead — live plane radar">
+<meta property="og:description" content="Real-time radar of the aircraft flying overhead — callsigns, altitudes, headings, live in your browser. No sign-up, no app, just planes.">
+<meta property="og:url" content="https://sullivan-d.github.io/overhead/">
+<meta property="og:image" content="https://sullivan-d.github.io/overhead/og-cover.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:alt" content="Overhead — a live radar screen showing aircraft near the viewer">
+<meta property="og:locale" content="en_GB">
+<meta property="og:locale:alternate" content="fr_FR">
+<meta property="og:locale:alternate" content="pt_PT">
+<meta property="og:locale:alternate" content="de_DE">
+<meta property="og:locale:alternate" content="zh_CN">
+<meta name="twitter:card" content="summary_large_image">
 <style>
   :root {
     --void: #070b14;
@@ -149,8 +171,27 @@
     position: absolute; top: 18px; right: 20px; background: none; border: 1px solid var(--ring);
     color: var(--ink-soft); width: 30px; height: 30px; border-radius: 50%; font-size: 15px; cursor: pointer; z-index: 1;
   }
+  /* icon-only, floats above the shape column exactly like .sheet-close does —
+     same size/border/hover treatment, positioned one button-width + gap to
+     its left (8px gap: 20px close inset + 30px width + 8px = 58px). */
+  .sheet-share {
+    position: absolute; top: 18px; right: 58px; background: none; border: 1px solid var(--ring);
+    color: var(--ink-soft); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; z-index: 1;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+    transition: border-color 0.15s, color 0.15s, opacity 0.15s;
+  }
+  .sheet-share:hover { border-color: var(--sweep); color: var(--sweep); }
+  .sheet-share svg { display: block; }
+  /* dimmed + inert while the share card image is being generated — the click
+     handler also early-returns on this, this is just the visible half */
+  .sheet-share[aria-busy="true"] { opacity: 0.4; pointer-events: none; }
   .sheet-body { display: flex; align-items: stretch; gap: 14px; }
-  .sheet-left { flex: 1; min-width: 0; display: flex; flex-direction: column; padding-right: 34px; /* clears the floating close button */ }
+  /* padding-right cleared for BOTH floating buttons now (close + share), not
+     just close: the share button's left edge sits 88px in from the sheet's
+     own right edge (58px inset + 30px width); minus the sheet's own 20px
+     right padding (sheet-left's frame is already inset that far) plus a 4px
+     buffer — same margin the original 34px (close-only) figure used — gives 72px. */
+  .sheet-left { flex: 1; min-width: 0; display: flex; flex-direction: column; padding-right: 72px; }
   /* top-down silhouette of this exact aircraft type (AircraftShapesSVG, GPL-3.0 — see shapes/CREDITS.md) */
   .sheet-shape { flex-shrink: 0; width: 168px; display: flex; align-items: center; justify-content: center; }
   .sheet-shape img { max-width: 100%; max-height: 100%; opacity: 0.9; filter: invert(0.92); }
@@ -226,6 +267,19 @@
   .sheet-links a[href] { color: var(--ink-soft); }
   .sheet-links a[href]:hover { color: var(--sweep); }
   .app-version { font-size: 9px; color: var(--ink-faint); letter-spacing: 0.05em; white-space: nowrap; }
+  /* Confirms the clipboard/download fallback paths, which have no OS share
+     sheet of their own to speak for them (the button is icon-only). Absolutely
+     positioned so it overlays the foot rather than adding flow height — the
+     sheet's height must stay constant per-type (see the .sheet-type/.stat .v
+     comments above), and a toast that pushed content down would break that. */
+  .sheet-toast {
+    position: absolute; left: 20px; right: 20px; bottom: 8px; z-index: 2;
+    text-align: center; font-size: 10.5px; color: var(--ink); letter-spacing: 0.03em;
+    background: var(--panel); border: 1px solid var(--sweep); border-radius: 6px;
+    padding: 7px 10px; opacity: 0; transform: translateY(4px); pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .sheet-toast.show { opacity: 1; transform: translateY(0); }
 
   /* header-count breakdown panel: compact 3-column table (label / now / total) */
   .bd-table { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px 14px; align-items: center; margin-top: 6px; padding-right: 34px; /* clears the floating close button */ }
@@ -318,6 +372,12 @@
 
 <div class="sheet" id="sheet">
   <div class="sheet-grip"></div>
+  <button class="sheet-share" id="d-share" type="button" title="Share this aircraft" aria-label="Share this aircraft">
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+      <path d="M12 3v12M12 3l4 4M12 3L8 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
   <button class="sheet-close" id="d-close">&times;</button>
   <div class="sheet-body">
     <div class="sheet-left">
@@ -343,6 +403,7 @@
       <span class="app-version" id="app-version"></span>
     </div>
   </div>
+  <div class="sheet-toast" id="sheet-toast" role="status" aria-live="polite"></div>
 </div>
 
 <div class="sheet" id="breakdown-sheet">
@@ -492,6 +553,11 @@
       unitsMetric: "units: m · km/h", unitsAviation: "units: ft · kt",
       unitsTip: "Switch between everyday metric units (m, km/h) and the feet/knots used in aviation",
       support: "support",
+      shareTip: "Share this aircraft",
+      shareSpottedOver: "spotted over {place}",
+      shareTagline: "Spot planes near you — try Overhead",
+      shareCopiedDownloaded: "Caption copied · image saved",
+      shareDownloadedOnly: "Image saved — copy the caption manually",
       themeToDark: "Switch to dark mode", themeToLight: "Switch to light mode",
       type_airliner: "Commercial Airliner", type_jet: "Private Jet", type_hobby: "Small Hobby Plane",
       type_heli: "Helicopter", type_drone: "Drone", type_space: "Space Vehicle",
@@ -540,6 +606,11 @@
       unitsMetric: "unités : m · km/h", unitsAviation: "unités : ft · kt",
       unitsTip: "Basculer entre les unités métriques (m, km/h) et les pieds/nœuds de l'aviation",
       support: "soutenir",
+      shareTip: "Partager cet avion",
+      shareSpottedOver: "repéré au-dessus de {place}",
+      shareTagline: "Repérez les avions près de chez vous — essayez Overhead",
+      shareCopiedDownloaded: "Légende copiée · image enregistrée",
+      shareDownloadedOnly: "Image enregistrée — copiez la légende manuellement",
       themeToDark: "Passer en mode sombre", themeToLight: "Passer en mode clair",
       type_airliner: "Avion de ligne", type_jet: "Jet privé", type_hobby: "Petit avion de loisir",
       type_heli: "Hélicoptère", type_drone: "Drone", type_space: "Véhicule spatial",
@@ -588,6 +659,11 @@
       unitsMetric: "unidades: m · km/h", unitsAviation: "unidades: ft · kt",
       unitsTip: "Alternar entre unidades métricas (m, km/h) e os pés/nós usados na aviação",
       support: "apoiar",
+      shareTip: "Partilhar esta aeronave",
+      shareSpottedOver: "avistado sobre {place}",
+      shareTagline: "Veja aviões perto de si — experimente o Overhead",
+      shareCopiedDownloaded: "Legenda copiada · imagem guardada",
+      shareDownloadedOnly: "Imagem guardada — copie a legenda manualmente",
       themeToDark: "Mudar para o modo escuro", themeToLight: "Mudar para o modo claro",
       type_airliner: "Avião Comercial", type_jet: "Jato Privado", type_hobby: "Pequeno Avião de Recreio",
       type_heli: "Helicóptero", type_drone: "Drone", type_space: "Veículo Espacial",
@@ -636,6 +712,11 @@
       unitsMetric: "Einheiten: m · km/h", unitsAviation: "Einheiten: ft · kt",
       unitsTip: "Zwischen metrischen Einheiten (m, km/h) und den in der Luftfahrt üblichen Fuß/Knoten wechseln",
       support: "Unterstützen",
+      shareTip: "Dieses Flugzeug teilen",
+      shareSpottedOver: "gesichtet über {place}",
+      shareTagline: "Flugzeuge in Ihrer Nähe entdecken — mit Overhead",
+      shareCopiedDownloaded: "Bildunterschrift kopiert · Bild gespeichert",
+      shareDownloadedOnly: "Bild gespeichert — Bildunterschrift manuell kopieren",
       themeToDark: "Zum dunklen Modus wechseln", themeToLight: "Zum hellen Modus wechseln",
       type_airliner: "Verkehrsflugzeug", type_jet: "Privatjet", type_hobby: "Kleines Sportflugzeug",
       type_heli: "Hubschrauber", type_drone: "Drohne", type_space: "Raumfahrzeug",
@@ -684,6 +765,11 @@
       unitsMetric: "单位: m · km/h", unitsAviation: "单位: ft · kt",
       unitsTip: "在公制单位（米、公里/小时）与航空常用的英尺/节之间切换",
       support: "支持",
+      shareTip: "分享这架飞机",
+      shareSpottedOver: "发现于 {place} 上空",
+      shareTagline: "发现附近的飞机——试试 Overhead",
+      shareCopiedDownloaded: "文字已复制 · 图片已保存",
+      shareDownloadedOnly: "图片已保存——请手动复制文字",
       themeToDark: "切换到深色模式", themeToLight: "切换到浅色模式",
       type_airliner: "商业客机", type_jet: "私人喷气机", type_hobby: "小型飞机",
       type_heli: "直升机", type_drone: "无人机", type_space: "航天器",
@@ -729,9 +815,13 @@
   const GROUND_ICON = "⏚";
   // Support link shown at the very bottom of the detail sheet.
   const DONATE_URL = "https://ko-fi.com/overheadapp";
+  // Burned into every share card AND appended to its caption (see the share
+  // section below) — some share targets keep only the image file and drop
+  // the accompanying text, so the URL has to survive in the pixels too.
+  const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v81";
+  const APP_VERSION = "v82";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // Played every time the sweep line reveals an aircraft on screen (see the
@@ -2730,6 +2820,249 @@
   updateUnitsBtn();
   document.getElementById("app-version").textContent = APP_VERSION;
 
+  // ---------- share: PNG "spotting card" for user acquisition ----------
+  // Tapping the icon renders a portrait card (radar snapshot + read-out +
+  // silhouette) to an offscreen canvas, then hands it to whichever share
+  // mechanism the browser actually supports (see shareCard()'s fallback
+  // chain). Every color is re-read from the CSS custom properties at RENDER
+  // time rather than hardcoded, so a card built in light mode looks like
+  // light mode and dark like dark — same "theme.* not a literal hex"
+  // discipline the live radar canvas itself already follows.
+  const shareBtn = document.getElementById("d-share");
+  const shareToast = document.getElementById("sheet-toast");
+  const SHARE_W = 1080, SHARE_H = 1350, SHARE_PAD = 64;
+  const SHARE_FONT = 'ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace';
+  const SHARE_RADAR_Y = 168, SHARE_RADAR_SIZE = 780;
+  const SHARE_BOTTOM_Y = SHARE_RADAR_Y + SHARE_RADAR_SIZE + 42; // 990 — gap below the radar snapshot
+  const SHARE_SIL_W = 250, SHARE_SIL_H = 280; // bottom-right silhouette box
+
+  const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  // fmtAlt/fmtSpd/fmtDist/fmtVr return HTML (a <small> unit suffix) for the
+  // sheet's own innerHTML use — fine there, not for canvas fillText. They
+  // only ever wrap a plain unit string in <small> with no entities, so a
+  // blind tag strip is safe here (no risk of leaking literal "&amp;" etc).
+  const stripTags = html => html.replace(/<[^>]*>/g, "");
+  // Binary-search the longest prefix (+ "…") that still fits maxWidth —
+  // canvas has no native text-overflow, and this is cheap enough at this
+  // string length either way while staying correct regardless of length.
+  function fitText(c, text, maxWidth) {
+    if (c.measureText(text).width <= maxWidth) return text;
+    let lo = 0, hi = text.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (c.measureText(text.slice(0, mid) + "…").width <= maxWidth) lo = mid; else hi = mid - 1;
+    }
+    return text.slice(0, lo) + "…";
+  }
+
+  async function buildShareAssets(p) {
+    const now = Date.now();
+    // "my location" (the GPS-path placeName) is deliberately NOT special-
+    // cased here — only a genuinely empty placeName falls back to lat/lon,
+    // per spec; an address-search location already reads fine as a place.
+    const place = (placeName && placeName.trim()) ? placeName : `${me.lat.toFixed(3)}, ${me.lon.toFixed(3)}`;
+    // timeZoneName can't be combined with dateStyle/timeStyle — V8 throws
+    // "Can't set option timeZoneName when dateStyle is used" (confirmed
+    // against Chrome 150), not just an MDN caveat. dateStyle+timeStyle alone
+    // is what actually stops a recipient reading this later from assuming
+    // the plane is still overhead; a timezone abbreviation would be a nice
+    // extra but isn't worth hand-rolling a component-option format for.
+    const stamp = new Intl.DateTimeFormat(HTML_LANG[lang], {
+      dateStyle: "medium", timeStyle: "short"
+    }).format(new Date(now));
+    const spottedLine = t("shareSpottedOver").replace("{place}", place);
+    const catLine = typeLabel(p) + (p.typeDesc ? " · " + p.typeDesc : "");
+    const altText = isOnGround(p, now) ? t("onGround") : stripTags(fmtAlt(estimatedAltitude(p, now)));
+    const spdText = stripTags(fmtSpd(displayVel(p, now)));
+    const distText = stripTags(fmtDist(haversineKm(me, estimatedPosition(p, now))));
+    const statsLine = [altText, spdText, distText].join("   ·   ");
+    const routeQuery = p.flightCallsign || p.reg.replace(/[^A-Z0-9]/gi, "");
+    const route = routeQuery ? await fetchRoute(routeQuery) : null; // usually already cached by renderSheet's own lookup
+    let routeLine = "";
+    if (route) {
+      const o = route.origin?.iata_code || route.origin?.icao_code;
+      const d = route.destination?.iata_code || route.destination?.icao_code;
+      if (o && d) routeLine = `${o} → ${d}`;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = SHARE_W; canvas.height = SHARE_H;
+    const c = canvas.getContext("2d");
+    const col = {
+      void: cssVar("--void"), ink: cssVar("--ink"), inkSoft: cssVar("--ink-soft"),
+      inkFaint: cssVar("--ink-faint"), sweep: cssVar("--sweep")
+    };
+
+    // Background first — the live radar canvas is transparent and relies on
+    // the page's own background, so the card has to supply one explicitly.
+    c.fillStyle = col.void;
+    c.fillRect(0, 0, SHARE_W, SHARE_H);
+
+    // Header: OVER/HEAD wordmark (same two-tone split as .brand) plus a
+    // right-aligned capture timestamp. The timestamp matters — a recipient
+    // reading this hours later must not think the aircraft is still up
+    // there — and it has to be burned into the PIXELS, not just the caption,
+    // since some share targets keep only the image file (see APP_URL below).
+    c.textBaseline = "alphabetic";
+    c.font = `700 34px ${SHARE_FONT}`;
+    c.fillStyle = col.ink;
+    c.fillText("OVER", SHARE_PAD, 104);
+    const overW = c.measureText("OVER").width;
+    c.fillStyle = col.sweep;
+    c.fillText("HEAD", SHARE_PAD + overW, 104);
+    c.font = `400 22px ${SHARE_FONT}`;
+    c.fillStyle = col.inkSoft;
+    c.textAlign = "right";
+    c.fillText(stamp, SHARE_W - SHARE_PAD, 104);
+    c.textAlign = "left";
+
+    // Centre: a snapshot of the live radar canvas. Square in, square out, so
+    // it's a straight scale with no distortion (cv is always cssSize×cssSize).
+    c.drawImage(cv, 0, 0, cv.width, cv.height,
+      (SHARE_W - SHARE_RADAR_SIZE) / 2, SHARE_RADAR_Y, SHARE_RADAR_SIZE, SHARE_RADAR_SIZE);
+
+    // Bottom-right: the same top-down silhouette the sheet is showing right
+    // now — setShape()'s own fallback chain has already resolved it to the
+    // exact type or a sensible stand-in, so reusing shapeImg.src is both the
+    // simplest option and the one guaranteed to match what's on screen. The
+    // sheet recolors it via a CSS invert() filter, which drawImage does NOT
+    // carry over — rasterize to a scratch canvas and recolor with
+    // source-in instead (paints the fill color only where the source already
+    // had opaque pixels, i.e. exactly the silhouette's own shape).
+    let silDrawn = false;
+    if (!shapeImg.hidden && shapeImg.complete && shapeImg.naturalWidth > 0) {
+      try {
+        const sc = document.createElement("canvas");
+        sc.width = shapeImg.naturalWidth; sc.height = shapeImg.naturalHeight;
+        const sctx = sc.getContext("2d");
+        sctx.drawImage(shapeImg, 0, 0);
+        sctx.globalCompositeOperation = "source-in";
+        sctx.fillStyle = col.ink;
+        sctx.fillRect(0, 0, sc.width, sc.height);
+        const scale = Math.min(SHARE_SIL_W / sc.width, SHARE_SIL_H / sc.height);
+        const dw = sc.width * scale, dh = sc.height * scale;
+        const dx = SHARE_W - SHARE_PAD - SHARE_SIL_W + (SHARE_SIL_W - dw) / 2;
+        const dy = SHARE_BOTTOM_Y + (SHARE_SIL_H - dh) / 2;
+        c.globalAlpha = 0.9;
+        c.drawImage(sc, dx, dy, dw, dh);
+        c.globalAlpha = 1;
+        silDrawn = true;
+      } catch (err) { console.warn("share card: silhouette skipped", err); } // e.g. image genuinely not decoded yet
+    }
+
+    // Bottom-left read-out. Text width narrows when the silhouette actually
+    // rendered so the two columns never overlap.
+    const textMaxW = silDrawn
+      ? (SHARE_W - SHARE_PAD - SHARE_SIL_W - 24 - SHARE_PAD)
+      : (SHARE_W - SHARE_PAD * 2);
+    let y = SHARE_BOTTOM_Y;
+    c.fillStyle = col.sweep;
+    c.font = `700 46px ${SHARE_FONT}`;
+    y += 46; c.fillText(fitText(c, p.call, textMaxW), SHARE_PAD, y);
+    c.fillStyle = col.inkSoft;
+    c.font = `400 24px ${SHARE_FONT}`;
+    y += 24 + 10; c.fillText(fitText(c, catLine, textMaxW), SHARE_PAD, y);
+    c.fillStyle = col.inkFaint;
+    c.font = `400 22px ${SHARE_FONT}`;
+    y += 22 + 16; c.fillText(fitText(c, spottedLine, textMaxW), SHARE_PAD, y);
+    c.fillStyle = col.ink;
+    c.font = `600 26px ${SHARE_FONT}`;
+    y += 26 + 12; c.fillText(fitText(c, statsLine, textMaxW), SHARE_PAD, y);
+    if (routeLine) {
+      c.fillStyle = col.sweep;
+      c.font = `400 22px ${SHARE_FONT}`;
+      y += 22 + 14; c.fillText(fitText(c, routeLine, textMaxW), SHARE_PAD, y);
+    }
+    c.fillStyle = col.inkFaint;
+    c.font = `400 18px ${SHARE_FONT}`;
+    y += 18 + 14; c.fillText(APP_URL, SHARE_PAD, y);
+
+    const blob = await new Promise(res => canvas.toBlob(res, "image/png"));
+    if (!blob) throw new Error("canvas toBlob returned null");
+    // The URL appears both here (burned into the pixels above) AND on its
+    // own line in this caption — some share targets keep only the file,
+    // others keep only the text, so it has to survive either path alone.
+    const caption = [
+      `${p.call} — ${catLine}`,
+      `${spottedLine} — ${stamp}`,
+      statsLine,
+      routeLine,
+      t("shareTagline"),
+      APP_URL
+    ].filter(Boolean).join("\n");
+    const filename = `overhead-${(p.call || "spotted").replace(/[^A-Z0-9]/gi, "") || "spotted"}.png`;
+    return { blob, caption, filename };
+  }
+
+  function showShareToast(msg) {
+    shareToast.textContent = msg;
+    shareToast.classList.add("show");
+    clearTimeout(showShareToast._hideAt);
+    showShareToast._hideAt = setTimeout(() => shareToast.classList.remove("show"), 3200);
+  }
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000); // give the download time to actually start before freeing it
+  }
+  // Desktop Firefox, an insecure origin, or any share attempt above throwing
+  // a non-cancel error all land here: there's no OS share sheet to hand the
+  // image to, so the app does the next best thing itself — copy the caption
+  // (one paste away from wherever the user pastes it) and download the PNG
+  // alongside it. A toast confirms the outcome since the button is icon-only
+  // and neither path has a native UI of its own to speak for it. Clipboard
+  // access can itself be denied (permissions, insecure context) without that
+  // being fatal to the image download — the two are reported independently.
+  async function clipboardAndDownload(caption, blob, filename) {
+    let copied = false;
+    try {
+      if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(caption); copied = true; }
+    } catch { /* clipboard denied/unavailable — still deliver the image below */ }
+    downloadBlob(blob, filename);
+    showShareToast(copied ? t("shareCopiedDownloaded") : t("shareDownloadedOnly"));
+  }
+
+  async function shareCard() {
+    if (shareBtn.getAttribute("aria-busy") === "true") return;
+    const p = planes.get(selected);
+    if (!p || !me) return;
+    shareBtn.setAttribute("aria-busy", "true");
+    try {
+      const { blob, caption, filename } = await buildShareAssets(p);
+      const file = new File([blob], filename, { type: "image/png" });
+      // canShare({files}) is the correct feature test — plenty of browsers
+      // expose navigator.share() at all but reject a files payload
+      // specifically, only supporting the plain text/url form.
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], text: caption, title: "Overhead" });
+          return;
+        } catch (err) {
+          if (err?.name === "AbortError") return; // deliberate cancel, not a failure — don't fall through
+        }
+      }
+      if (navigator.share) {
+        try {
+          // `caption` already ends with APP_URL on its own line — a separate
+          // `url` field here would just duplicate it on targets that
+          // concatenate both fields into the shared text.
+          await navigator.share({ text: caption, title: "Overhead" });
+          return;
+        } catch (err) {
+          if (err?.name === "AbortError") return;
+        }
+      }
+      await clipboardAndDownload(caption, blob, filename);
+    } catch (err) {
+      console.warn("share failed", err);
+    } finally {
+      shareBtn.removeAttribute("aria-busy");
+    }
+  }
+  shareBtn.addEventListener("click", shareCard);
+
   // ---------- sheet: swipe down to dismiss ----------
   // Dragging the sheet downward follows the finger 1:1; releasing past the
   // threshold closes it, releasing short of it springs it back. The drag only
@@ -3129,6 +3462,8 @@
     document.getElementById("brand").title = t("homeTip");
     headingBtn.title = t("compassTip");
     unitsBtn.title = t("unitsTip");
+    shareBtn.title = t("shareTip");
+    shareBtn.setAttribute("aria-label", t("shareTip"));
     themeBtn.title = document.documentElement.getAttribute("data-theme") === "light" ? t("themeToDark") : t("themeToLight");
     updateUnitsBtn();
     updateCeilingDisplay(); // number formatting follows the language
