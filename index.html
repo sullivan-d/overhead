@@ -374,8 +374,10 @@
   <div class="sheet-grip"></div>
   <button class="sheet-share" id="d-share" type="button" title="Share this aircraft" aria-label="Share this aircraft">
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-      <path d="M12 3v12M12 3l4 4M12 3L8 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M8.1 10.7L15.9 6.3M8.1 13.3L15.9 17.7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="18" cy="5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <circle cx="6" cy="12" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <circle cx="18" cy="19" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/>
     </svg>
   </button>
   <button class="sheet-close" id="d-close">&times;</button>
@@ -821,7 +823,7 @@
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v83";
+  const APP_VERSION = "v84";
   const NM_PER_KM = 0.539957;
   const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
   // Played every time the sweep line reveals an aircraft on screen (see the
