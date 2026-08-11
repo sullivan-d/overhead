@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#070b14">
+<meta name="theme-color" content="#0f5cc8">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -35,436 +35,415 @@
 <meta property="og:locale:alternate" content="zh_CN">
 <meta name="twitter:card" content="summary_large_image">
 <style>
-  :root {
-    --void: #070b14;
-    --panel: #0e1626;
-    --sweep: #1ee0a8;
-    --sweep-dim: #1ee0a833;
-    --ring: #1c2c44;
-    --ink: #e8eef7;
-    --ink-soft: #8ba0bd;
-    --ink-faint: #4a5d78;
-    --hot: #ff5c6c;
-    --gold: #f5c451;
-    --moon: #8ba0bd; /* mirrors THEMES.moonBody — the moon-glyph gray */
-    --grid-line: #16243a;
-  }
-  /* Light mode — a manual toggle (top-right, next to status), remembered in
-     localStorage. The canvas itself is also re-themed in JS (see THEMES in
-     the script), since canvas drawing calls don't read CSS variables. */
-  :root[data-theme="light"] {
-    --void: #eef1f6;
-    --panel: #ffffff;
-    --sweep: #0c8f6c;
-    --sweep-dim: #0c8f6c22;
-    --ring: #c7d0dd;
-    --ink: #1b2430;
-    --ink-soft: #54647a;
-    --ink-faint: #8492a6;
-    --hot: #c62839;
-    --gold: #a9740c;
-    --moon: #5c6b80; /* mirrors THEMES.moonBody (light) */
-    --grid-line: #dde3ec;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body {
-    height: 100%;
-    background: var(--void);
-    color: var(--ink);
-    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
-    overscroll-behavior: none;
-  }
-  body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+/* ============================================================
+   G4 — SKY IN PROFILE, second cut
+   Barlow, cut heavy: a low-contrast grotesk that holds up at a
+   glance in daylight. Nothing at the top of the screen; every
+   control inside a thumb's sweep. The one soft thing on the
+   page is the smoke the app signs its name with.
+   ============================================================ */
+@font-face { font-family: "Field"; src: url("fonts/barlow-600.woff") format("woff"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Field"; src: url("fonts/barlow-900.woff") format("woff"); font-weight: 900; font-display: swap; }
 
-  header {
-    display: flex; align-items: baseline; justify-content: space-between;
-    padding: 14px 18px 10px; border-bottom: 1px solid var(--grid-line); flex-shrink: 0;
-  }
-  /* the brand doubles as a "home" button — tap it to go back to the gate */
-  .brand { font-weight: 700; letter-spacing: 0.16em; font-size: 13px; text-transform: uppercase; cursor: pointer; user-select: none; }
-  .brand b { color: var(--sweep); }
-  .header-right { display: flex; align-items: center; gap: 10px; }
-  /* light/dark toggle — a sliding pill switch; the knob carries the current
-     mode's icon and glides across on toggle (knob left = dark, right = light) */
-  .theme-switch {
-    position: relative; width: 46px; height: 24px; border-radius: 12px;
-    background: var(--panel); border: 1px solid var(--ring);
-    cursor: pointer; padding: 0; flex-shrink: 0;
-    transition: border-color 0.15s, background 0.25s;
-  }
-  .theme-switch:hover { border-color: var(--sweep); }
-  .theme-switch .knob {
-    position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
-    border-radius: 50%; background: var(--void);
-    display: flex; align-items: center; justify-content: center;
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s;
-  }
-  /* the knob's icon is the same vendored SVG silhouette pair used for the
-     canvas sun/moon glyphs (see SUN_PATH/MOON_PATH in the script) — mask-
-     painted like the other .gi icons so the fill color comes from CSS:
-     gold for the sun, --moon gray for the moon, both already theme-adapted.
-     Which one shows is keyed off data-theme, same as the knob position. */
-  .theme-switch .knob .gi { width: 12px; height: 12px; vertical-align: 0; }
-  .theme-switch .ico-sun { color: var(--gold); display: none; }
-  .theme-switch .ico-moon { color: var(--moon); }
-  :root[data-theme="light"] .theme-switch .ico-sun { display: inline-block; }
-  :root[data-theme="light"] .theme-switch .ico-moon { display: none; }
-  :root[data-theme="light"] .theme-switch .knob { transform: translateX(22px); }
-  .status { font-size: 10.5px; letter-spacing: 0.06em; color: var(--ink-soft); text-align: right; line-height: 1.5; }
-  .status .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); margin-right: 5px; vertical-align: middle; }
-  .status.live .dot { background: var(--sweep); box-shadow: 0 0 8px var(--sweep); animation: pulse 2s ease-in-out infinite; }
-  .status.paused .dot { background: var(--gold); }
-  .status.error .dot { background: var(--hot); }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+:root {
+  --void:#0f5cc8; --panel:#093574; --sweep:#ffffff; --sweep-dim:#ffffff2e;
+  --ring:#74a0df; --ink:#ffffff; --ink-soft:#dde8f7; --ink-faint:#d4e2f5;
+  /* --hot is the one thing on screen that means "this is the aircraft you
+     picked", and it was the LEAST readable colour in the app: #ff6b4a is
+     2.2:1 on the noon sky and 6.9:1 at midnight — exactly backwards for a
+     product used outdoors in daylight. It is now driven by the sky clock
+     (see the --hot patch on applySkyClock): rich coral at night, lifted to
+     this amber-orange under a bright sky, where it clears 3:1 against the
+     noon blue for the 19px/900 figures and the beads that carry it.
+     --on-hot is the ink that sits ON a hot fill. */
+  --hot:#ffa645; --on-hot:#093574; --gold:#ffdb59; --moon:#e6eefb; --grid-line:#3a79d2;
+  --on-sweep:#0a3f8f; --ring-minor:#578dd8; --crosshair:#24699e;
+  --trail-shadow:#0b4285; --range-label:#cfdef4; --cardinal:#ffffff;
+  --hair: rgba(255,255,255,0.16);
+  /* THE FIXED SPLIT: the list owns this much, the map owns the rest, and
+     nothing either of them does changes it. */
+  --list-h: 30vh;
+  --gap: 14px;
+}
+:root[data-theme="light"] { color-scheme: light; }
 
-  .stage { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 12px; }
-  #radar { display: block; touch-action: none; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--void); color: var(--ink);
+  font-family: "Field", "Barlow", system-ui, sans-serif; font-weight: 600;
+  overflow: hidden; display: flex; flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; color: inherit; }
+.hidden { display: none !important; }
 
-  .controls { position: absolute; top: 16px; left: 16px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
-  .rng-label { font-size: 9.5px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
-  .rng-btns { display: flex; gap: 4px; align-items: center; }
-  .rng-btns button {
-    background: var(--panel); border: 1px solid var(--ring); color: var(--ink-soft);
-    font-family: inherit; font-size: 11px; padding: 5px 9px; border-radius: 4px; cursor: pointer; transition: all 0.15s;
-  }
-  .rng-btns button.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
-  .rng-group { display: flex; flex-direction: column; gap: 6px; }
-  .rng-group.hidden { display: none; }
-  .ceiling-val { font-size: 11px; color: var(--ink-soft); letter-spacing: 0.04em; }
-  .ceiling-val small { font-size: 9px; color: var(--ink-faint); }
+/* the map takes whatever the fixed list leaves, and keeps it */
+.stage { position: relative; overflow: hidden; flex: 1 1 0; min-height: 160px; }
+canvas#radar { display: block; position: absolute; left: 0; top: 0; touch-action: none; }
+header, .hint, #sheet { display: none; }
+#ceiling-box {
+  /* right, not left: the left edge belongs to the elevation ladder */
+  position: absolute; right: 14px; top: calc(12px + env(safe-area-inset-top, 0px)); z-index: 30;
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85;
+}
+#ceiling-box .gi { width: 12px; height: 12px; vertical-align: -0.16em; }
 
-  .compass-btn {
-    position: absolute; bottom: 12px; right: 16px; z-index: 5;
-    width: 44px; height: 44px; border-radius: 50%;
-    background: var(--panel); border: 1px solid var(--ring);
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; padding: 0;
-    transition: border-color 0.15s, box-shadow 0.15s, right 0.32s cubic-bezier(.2,.8,.2,1), bottom 0.32s cubic-bezier(.2,.8,.2,1);
-  }
-  .compass-btn.on { border-color: var(--sweep); box-shadow: 0 0 0 1px var(--sweep-dim); }
-  .compass-btn.denied { border-color: var(--hot); box-shadow: 0 0 0 1px #ff5c6c33; }
-  .compass-btn svg { display: block; }
-  #compass-needle { transition: transform 0.1s linear; transform-origin: 12px 12px; }
+/* the compass rides the map's own bottom-right corner */
+.compass-btn {
+  position: absolute; right: 12px; bottom: 12px; z-index: 36;
+  width: 42px; height: 42px; border: 0; background: none; padding: 0;
+  cursor: pointer; opacity: 0.34; transition: opacity 0.25s;
+}
+.compass-btn.on { opacity: 0.95; }
 
-  .count { position: absolute; top: 16px; right: 16px; text-align: right; z-index: 5; cursor: pointer; }
-  .count .n { font-size: 30px; font-weight: 700; line-height: 1; }
-  .count .l { font-size: 9.5px; letter-spacing: 0.12em; color: var(--ink-faint); text-transform: uppercase; margin-top: 3px; }
+/* ---- THE LIST — fixed height, its own scroll ---- */
+.entries {
+  flex: 0 0 var(--list-h); min-height: 0;
+  overflow-y: auto; padding: 0 16px 4px; margin-top: var(--gap);
+  -webkit-overflow-scrolling: touch;
+  transition: flex-basis 0.3s ease;
+}
+/* THE SPLIT STAYS FIXED wherever it physically can. An opened record is a
+   constant 236px tall (see .d-t); on any screen whose share already holds it,
+   selecting an aircraft moves nothing at all — the direction's whole promise.
+   Only where the fixed share is SHORTER than one record does the list take
+   the difference, because the alternative is burying half the figures below
+   a fold inside a scroll box. */
+body.row-open { --list-h: max(30vh, 236px); }
+.entry + .entry { border-top: 1px solid var(--hair); }
+.entry .line {
+  display: grid; grid-template-columns: 19px 34px 1fr auto;
+  gap: 0 10px; align-items: center;
+  padding: 10px 0; cursor: pointer; background: none; border: 0;
+  width: 100%; text-align: left; font: inherit; color: inherit;
+}
+/* The tally: the same number the map draws beside this aircraft's icon and
+   the ladder draws beside its bead. It is the only thing that lets you match
+   the dot you are looking at to the row that describes it. */
+.entry .idx {
+  display: flex; align-items: center; justify-content: center;
+  width: 19px; height: 19px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.55);
+  font-size: 10.5px; font-weight: 900; letter-spacing: 0; line-height: 1;
+}
+.entry.on .idx { background: var(--hot); border-color: var(--hot); color: var(--on-hot); }
+.entry .sil { width: 34px; height: 30px; display: flex; align-items: center; justify-content: center; }
+.entry .sil img { max-width: 100%; max-height: 100%; filter: invert(1); opacity: 0.95; }
+.entry .nm { min-width: 0; }
+.entry .call { display: block; font-weight: 900; font-size: 19px; letter-spacing: -0.02em; line-height: 1.05; }
+/* 11px at 0.82 clears 4.5:1 on the noon sky; 9px at 0.5 was 2.7:1 and this
+   line is the answer to the question the app exists to answer. */
+.entry .phase { display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.82; margin-top: 2px;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry .figs { text-align: right; white-space: nowrap; }
+.entry .figs .up { display: block; font-size: 19px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.05; }
+.entry .figs .up small { font-size: 11px; font-weight: 600; opacity: 0.82; }
+.entry .figs .sub { display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.82; margin-top: 3px; }
+.entry.on .call, .entry.on .figs .up { color: var(--hot); }
+/* the three things an empty list can mean, and they do not look alike */
+.entries-note { padding: 16px 0 4px; max-width: 42ch; }
+.entries-note .hd { display: block; font-size: 14px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.25; }
+.entries-note .bd { display: block; font-size: 12px; font-weight: 600; line-height: 1.45; opacity: 0.82; margin-top: 5px; }
+.entries-note.working .hd { opacity: 0.82; }
+.entries-note.trouble .hd { color: var(--hot); }
 
-  .here {
-    position: absolute; bottom: 12px; left: 16px; z-index: 5;
-    font-size: 9.5px; letter-spacing: 0.05em; color: var(--ink-faint); max-width: 60%;
-  }
-  .here button {
-    background: none; border: none; color: var(--sweep); font-family: inherit; font-size: 9.5px;
-    cursor: pointer; padding: 0; text-decoration: underline; letter-spacing: 0.05em;
-  }
+.entry .detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s ease; }
+.entry.on .detail { grid-template-rows: 1fr; }
+.entry .detail-in { overflow: hidden; min-height: 0; }
+/* indented past the tally only, so the record gets the silhouette's width back */
+.entry .detail-in > div { display: flex; gap: 12px; align-items: flex-start; padding: 0 0 14px 29px; }
+.entry .d-sil { width: 64px; flex: none; }
+.entry .d-sil img { width: 100%; display: block; filter: invert(1); opacity: 0.95; }
+.entry .d-info { flex: 1; min-width: 0; }
+/* The record's height must not depend on which aircraft it describes, or the
+   guarantee below (a whole record fits the list's own share of the screen)
+   holds for a Cessna and fails for an "Airbus A350-900 · Air France". Two
+   lines reserved, always — the shipping app's sheet does the same. */
+.entry .d-t {
+  font-size: 12px; opacity: 0.82; line-height: 1.35; height: 32px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+/* the engine names these .codes and .cities — the airports on one line, the
+   towns under them, or they run together into "CDG → LHRParis → London" */
+.entry .d-r { font-size: 13px; min-height: 30px; margin-top: 4px; line-height: 1.25; }
+.entry .d-r .codes { display: block; font-weight: 900; letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entry .d-r .cities { display: block; font-size: 11px; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Three across, not two: five cells in two rows instead of three keeps the
+   whole record inside the list's own height, so the eight figures the brief
+   protects are all on screen at once rather than one scroll down. */
+.entry .d-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px 10px; margin-top: 10px; }
+.entry .d-cell .k { display: block; font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; opacity: 0.82; }
+.entry .d-cell .v { display: block; font-size: 16px; font-weight: 900; letter-spacing: -0.02em; margin-top: 1px; white-space: nowrap; }
+.entry .d-cell .v small { font-size: 10px; font-weight: 600; opacity: 0.82; }
 
-  .sheet {
-    position: absolute; left: 0; right: 0; bottom: 0; background: var(--panel);
-    border-top: 1px solid var(--sweep); border-radius: 16px 16px 0 0; padding: 18px 20px 24px;
-    transform: translateY(110%); transition: transform 0.32s cubic-bezier(.2,.8,.2,1); z-index: 20; box-shadow: 0 -12px 40px #0008;
-    touch-action: none; /* vertical swipes must reach the JS drag-to-dismiss, not scroll the page */
-  }
-  .sheet.open { transform: translateY(0); }
-  .sheet-grip { width: 38px; height: 4px; background: var(--ring); border-radius: 2px; margin: 0 auto 14px; }
-  .sheet-close {
-    position: absolute; top: 18px; right: 20px; background: none; border: 1px solid var(--ring);
-    color: var(--ink-soft); width: 30px; height: 30px; border-radius: 50%; font-size: 15px; cursor: pointer; z-index: 1;
-  }
-  /* icon-only, floats above the shape column exactly like .sheet-close does —
-     same size/border/hover treatment, positioned one button-width + gap to
-     its left (8px gap: 20px close inset + 30px width + 8px = 58px). */
-  .sheet-share {
-    position: absolute; top: 18px; right: 58px; background: none; border: 1px solid var(--ring);
-    color: var(--ink-soft); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; z-index: 1;
-    display: flex; align-items: center; justify-content: center; padding: 0;
-    transition: border-color 0.15s, color 0.15s, opacity 0.15s;
-  }
-  .sheet-share:hover { border-color: var(--sweep); color: var(--sweep); }
-  .sheet-share svg { display: block; }
-  /* dimmed + inert while the share card image is being generated — the click
-     handler also early-returns on this, this is just the visible half */
-  .sheet-share[aria-busy="true"] { opacity: 0.4; pointer-events: none; }
-  .sheet-body { display: flex; align-items: stretch; gap: 14px; }
-  /* padding-right cleared for BOTH floating buttons now (close + share), not
-     just close: the share button's left edge sits 88px in from the sheet's
-     own right edge (58px inset + 30px width); minus the sheet's own 20px
-     right padding (sheet-left's frame is already inset that far) plus a 4px
-     buffer — same margin the original 34px (close-only) figure used — gives 72px. */
-  .sheet-left { flex: 1; min-width: 0; display: flex; flex-direction: column; padding-right: 72px; }
-  /* top-down silhouette of this exact aircraft type (AircraftShapesSVG, GPL-3.0 — see shapes/CREDITS.md) */
-  .sheet-shape { flex-shrink: 0; width: 168px; display: flex; align-items: center; justify-content: center; }
-  .sheet-shape img { max-width: 100%; max-height: 100%; opacity: 0.9; filter: invert(0.92); }
-  :root[data-theme="light"] .sheet-shape img { filter: none; opacity: 0.82; }
-  .sheet-shape img[hidden] { display: none; }
-  /* inline line-art glyphs (cloud ceiling marker, support heart) — hollow SVG
-     line icons in icons/, painted via CSS mask so they inherit the surrounding
-     text color (currentColor) and adapt to light/dark automatically, unlike a
-     fixed-color <img>. Sized in em so they track the font at each call site. */
-  .gi {
-    display: inline-block; width: 1.05em; height: 1.05em; vertical-align: -0.14em;
-    background-color: currentColor;
-    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-    -webkit-mask-position: center; mask-position: center;
-    -webkit-mask-size: contain; mask-size: contain;
-  }
-  .gi-cloud { -webkit-mask-image: url(icons/cloud.svg); mask-image: url(icons/cloud.svg); }
-  /* the heart always carries the theme accent (green), not the link text color */
-  .gi-heart { -webkit-mask-image: url(icons/heart.svg); mask-image: url(icons/heart.svg); background-color: var(--sweep); }
-  .gi-sun { -webkit-mask-image: url(icons/sun.svg); mask-image: url(icons/sun.svg); }
-  .gi-moon { -webkit-mask-image: url(icons/moon.svg); mask-image: url(icons/moon.svg); }
-  .gi-pin { -webkit-mask-image: url(icons/pin.svg); mask-image: url(icons/pin.svg); }
-  .gi-globe { -webkit-mask-image: url(icons/globe.svg); mask-image: url(icons/globe.svg); }
-  .sheet-call { font-size: 22px; font-weight: 700; letter-spacing: 0.05em; color: var(--sweep); }
-  /* exactly-two-lines box (reserved even when one line fits, clamped with an
-     ellipsis when it doesn't) so the sheet height never varies by type name.
-     width matches .sheet-route's same-rule extension out to the screen's
-     horizontal middle (over the aircraft drawing if needed) so a long type
-     description gets the same generous budget before the 2-line clamp ever
-     has to cut it — same reasoning as the route line, just wrapped instead
-     of single-line since this box already spans two lines. */
-  .sheet-type { font-size: 12px; color: var(--ink-soft); margin-top: 3px; line-height: 1.4; height: 2.8em;
-    width: calc(50vw - 20px);
-    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  /* width runs deliberately past .sheet-left's own column and over the
-     aircraft drawing, out to the horizontal middle of the screen (Sullivan's
-     spec — same precedent as the stat values being allowed to run over the
-     silhouette a little, round 42) instead of stopping at the drawing's edge.
-     Base color/size here is the CITIES style, not the codes style: Chromium
-     renders a native text-overflow ellipsis in the CONTAINER's own color,
-     ignoring an inner span's override (confirmed empirically) — so if the
-     container stayed teal, the "…" rendered teal even when visually clipping
-     grey city text. Making the container grey-by-default and overriding just
-     the codes into their own span keeps the ellipsis correctly grey/small
-     matching the (usually-truncated) city name, whichever span it lands in. */
-  .sheet-route { font-size: 9px; color: var(--ink-faint); margin-top: 4px; letter-spacing: 0.05em;
-    width: calc(50vw - 20px); height: 14px; line-height: 14px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sheet-route .codes { color: var(--sweep); font-size: 11px; letter-spacing: 0.04em; }
-  .sheet-route .cities { margin-left: 8px; }
-  .sheet-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; margin-top: 18px; flex: 1; align-content: start; }
-  .sheet-stats .stat.wide { grid-column: 1 / -1; }
-  .stat .k { font-size: 9px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
-  /* nowrap: a value+unit ("722 m/min") must stay on one line even if it
-     runs over the silhouette a little — Sullivan's spec, and the wrap was
-     the other thing (besides type-name lines) making sheet heights vary.
-     height is PINNED: ☁️/⏚ (and ▲/▼ on some font stacks) fall back to an
-     emoji/symbol font with taller metrics, which otherwise inflates just
-     that row's line box — so a plane with a ☁️ next to its altitude got a
-     sheet a few px taller than one without. line-height alone is NOT
-     enough (baseline alignment still unions the fallback font's ascent
-     into the line box) — the fixed height caps the geometry and lets an
-     oversized glyph overflow invisibly instead. */
-  .stat .v { font-size: 17px; font-weight: 600; margin-top: 3px; white-space: nowrap; line-height: 20px; height: 20px; }
-  .stat .v small { font-size: 10px; color: var(--ink-soft); font-weight: 400; }
-  .sheet-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--grid-line); }
-  .units-btn {
-    background: none; border: 1px solid var(--ring); color: var(--ink-soft); font-family: inherit;
-    font-size: 10px; letter-spacing: 0.06em; padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap;
-  }
-  .sheet-links { display: flex; align-items: center; gap: 14px; }
-  .sheet-links a { font-size: 10px; color: var(--ink-faint); text-decoration: none; letter-spacing: 0.05em; white-space: nowrap; }
-  .sheet-links a[href] { color: var(--ink-soft); }
-  .sheet-links a[href]:hover { color: var(--sweep); }
-  .app-version { font-size: 9px; color: var(--ink-faint); letter-spacing: 0.05em; white-space: nowrap; }
-  /* Confirms the clipboard/download fallback paths, which have no OS share
-     sheet of their own to speak for them (the button is icon-only). Absolutely
-     positioned so it overlays the foot rather than adding flow height — the
-     sheet's height must stay constant per-type (see the .sheet-type/.stat .v
-     comments above), and a toast that pushed content down would break that. */
-  .sheet-toast {
-    position: absolute; left: 20px; right: 20px; bottom: 8px; z-index: 2;
-    text-align: center; font-size: 10.5px; color: var(--ink); letter-spacing: 0.03em;
-    background: var(--panel); border: 1px solid var(--sweep); border-radius: 6px;
-    padding: 7px 10px; opacity: 0; transform: translateY(4px); pointer-events: none;
-    transition: opacity 0.2s, transform 0.2s;
-  }
-  .sheet-toast.show { opacity: 1; transform: translateY(0); }
+/* ---- the line that only speaks when it has to ---- */
+.underline-bar {
+  flex: none; display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px 0; white-space: nowrap; overflow: hidden;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.85;
+}
+/* Four things share this row and the place name — the way back to the gate —
+   is the one that must stay readable, so the signature gives up the width. */
+#rail-mark { display: block; flex: none; width: 74px; height: 14px; cursor: pointer; }
+.underline-bar .here {
+  min-width: 5em; overflow: hidden; text-overflow: ellipsis;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; text-decoration: underline;
+  text-underline-offset: 3px; text-decoration-color: rgba(255,255,255,0.6);
+}
+.underline-bar .spacer { flex: 1; }
+.units-btn { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; letter-spacing: inherit; text-transform: inherit; text-decoration: underline; text-underline-offset: 3px; }
+/* the status speaks only when something is wrong — a rate-limited 429 from
+   airplanes.live carries no CORS header, so it cannot be told from offline */
+/* the rail's copy is the glance version; the list body carries the sentence
+   that actually explains an empty sky (see the three .entries-note states) */
+.status { display: flex; align-items: center; gap: 5px; opacity: 0; transition: opacity 0.3s; }
+.status.error, .status.paused { opacity: 1; }
+/* One line, four things, and the place name — the way back to the gate — was
+   the one that lost, truncating to "M…" the moment the status spoke. When
+   something is wrong the units toggle is the least of it, so it stands down
+   and gives the row its width back. */
+.underline-bar:has(.status.error) .units-btn,
+.underline-bar:has(.status.paused) .units-btn { display: none; }
+.status .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--hot); }
 
-  /* header-count breakdown panel: compact 3-column table (label / now / total) */
-  .bd-table { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px 14px; align-items: center; margin-top: 6px; padding-right: 34px; /* clears the floating close button */ }
-  .bd-hcell { font-size: 9px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; text-align: right; }
-  .bd-hcell:first-child { text-align: left; }
-  .bd-lbl { font-size: 12.5px; color: var(--ink-soft); }
-  .bd-num { font-size: 15px; font-weight: 600; text-align: right; min-width: 22px; }
+/* ---- the thumb row: the only real controls, all of them reachable ---- */
+.thumb-row {
+  flex: none; display: flex; align-items: center; gap: 14px;
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+}
+.rng-group { display: flex; align-items: center; }
+.rng-label { display: none; }
+.rng-btns { display: flex; align-items: center; gap: 12px; }
+.rng-btns .rng-label { display: none; }
+#rng button {
+  background: none; padding: 0; cursor: pointer;
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.72); color: rgba(255,255,255,0.92);
+  font-size: 13px; font-weight: 900; letter-spacing: -0.02em;
+  transition: opacity 0.2s, transform 0.2s, background 0.2s, color 0.2s, border-color 0.2s;
+}
+#rng button[data-km="5"] { transform: scale(0.7); }
+#rng button[data-km="10"] { transform: scale(0.85); }
+#rng button.on { background: #fff; border-color: #fff; color: var(--void); }
+#rng button:active { filter: brightness(0.9); }
 
-  .gate { position: absolute; inset: 0; background: var(--void); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 30px; z-index: 40; overflow-y: auto; }
-  .gate h1 { font-size: 17px; letter-spacing: 0.12em; font-weight: 700; text-transform: uppercase; }
-  .gate h1 b { color: var(--sweep); }
-  .gate p { font-size: 12.5px; color: var(--ink-soft); max-width: 320px; line-height: 1.7; }
-  .gate-headline { font-weight: 600; color: var(--ink); font-size: 14.5px; }
-  .gate-credit { font-size: 9.5px; color: var(--ink-faint); max-width: 320px; line-height: 1.5; margin-top: -8px; }
-  /* deliberately a quiet footnote at the very bottom of the gate — a boxed
-     card above the button read as too prominent (Sullivan's feedback) */
-  .gate-why {
-    font-size: 10px; color: var(--ink-faint); max-width: 320px; line-height: 1.6; text-align: left;
-    border-top: 1px solid var(--grid-line); padding-top: 12px; margin-top: 8px;
-  }
-  .gate-why b { display: block; font-size: 8.5px; letter-spacing: 0.12em; color: var(--ink-soft); text-transform: uppercase; margin-bottom: 5px; }
-  .gate button.primary { background: var(--sweep); color: var(--void); border: none; font-family: inherit; font-weight: 700; font-size: 13px; letter-spacing: 0.06em; padding: 13px 26px; border-radius: 6px; cursor: pointer; text-transform: uppercase; }
-  .gate.hidden { display: none; }
-  .gate-err { color: var(--hot); font-size: 11.5px; min-height: 16px; }
+/* the count is the live one: what is on the map right now */
+.count {
+  position: static; margin-left: auto; text-align: left;
+  display: flex; align-items: baseline; gap: 7px;
+  background: none; border: 0; padding: 6px 2px; cursor: pointer;
+}
+.count .n { font-size: 26px; font-weight: 900; line-height: 0.9; letter-spacing: -0.04em; }
+.count .l { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85; max-width: 6em; text-align: left; line-height: 1.15; margin: 0; color: inherit; }
 
-  .lang-row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; justify-content: center; }
-  .lang-row .globe { font-size: 12px; color: var(--ink-faint); }
-  .lang-row button {
-    background: var(--panel); border: 1px solid var(--ring); color: var(--ink-soft);
-    font-family: inherit; font-size: 10.5px; padding: 5px 9px; border-radius: 4px; cursor: pointer; transition: all 0.15s;
-  }
-  .lang-row button.on { border-color: var(--sweep); color: var(--sweep); background: var(--sweep-dim); }
+#breakdown-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+  /* shaded sky, not a hardcoded navy: --panel follows the sky clock, so the
+     panel is darker than the sky at every hour instead of turning LIGHTER
+     than it after dusk and inverting the elevation cue */
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border-radius: 16px 16px 0 0; padding: 20px 18px calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(104%); transition: transform 0.36s cubic-bezier(.2,.85,.25,1);
+}
+#breakdown-sheet.open { transform: translateY(0); }
+.sheet-close { position: absolute; top: 8px; right: 10px; background: none; border: 0; cursor: pointer; color: var(--ink); opacity: 0.85; padding: 5px 7px; line-height: 1; font-size: 21px; }
+/* the × used to sit on top of the last column header; the table starts below it */
+.bd-table { display: grid; grid-template-columns: 1fr auto auto auto; gap: 0 16px; margin-top: 14px; }
+.bd-hcell { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.82; text-align: right; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.3); }
+.bd-lbl { font-size: 13px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.18); }
+.bd-num { font-size: 15px; font-weight: 900; text-align: right; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.18); }
+.sheet-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 100px; z-index: 70; background: #fff; color: var(--void); padding: 5px 11px; border-radius: 999px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+.sheet-toast.show { opacity: 1; }
+.sheet-links { display: none; }
 
-  .addr-block { display: none; flex-direction: column; gap: 10px; width: 100%; max-width: 340px; }
-  .addr-block.show { display: flex; }
-  .addr-row { display: flex; gap: 6px; }
-  .addr-block input {
-    flex: 1; background: var(--panel); border: 1px solid var(--ring); color: var(--ink);
-    font-family: inherit; font-size: 13px; padding: 11px 12px; border-radius: 6px; outline: none;
-  }
-  .addr-block input:focus { border-color: var(--sweep); }
-  .addr-block button.go { background: var(--sweep); color: var(--void); border: none; font-family: inherit; font-weight: 700; font-size: 13px; padding: 0 18px; border-radius: 6px; cursor: pointer; }
-  .addr-or { font-size: 10px; letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
-  .addr-results { list-style: none; text-align: left; max-height: 180px; overflow-y: auto; width: 100%; max-width: 340px; }
-  .addr-results li { padding: 10px 12px; border: 1px solid var(--grid-line); border-radius: 6px; margin-bottom: 6px; font-size: 12px; color: var(--ink-soft); cursor: pointer; line-height: 1.4; }
-  .addr-results li:hover, .addr-results li:active { border-color: var(--sweep); color: var(--ink); }
+/* ---- THE GATE: the app writes its own name in smoke ---- */
+.gate { position: fixed; inset: 0; z-index: 90; background: var(--void); display: flex; flex-direction: column; padding: 30px 22px calc(26px + env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
+.gate.hidden { display: none; }
+.gate-inner { width: 100%; max-width: 460px; margin: 0 auto; display: flex; flex-direction: column; flex: 1; }
+#gate-sky { display: block; width: 100%; height: 74px; flex: none; }
+.gate-headline { font-size: clamp(30px, 9.4vw, 46px); font-weight: 900; line-height: 1.0; letter-spacing: -0.04em; margin: auto 0 0; }
+.gate-intro { font-size: 15px; font-weight: 600; line-height: 1.42; opacity: 0.85; margin: 16px 0 0; max-width: 34ch; }
+.gate-action { margin-top: 26px; }
+.primary { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; background: #fff; color: var(--void); border: 0; border-radius: 16px; padding: 20px; cursor: pointer; font-size: 16px; font-weight: 900; letter-spacing: -0.01em; transition: transform 0.15s; }
+.primary:active { transform: scale(0.985); }
+.primary .gi { width: 16px; height: 16px; }
+.addr-or { font-size: 13px; font-weight: 600; line-height: 1.45; opacity: 0.85; margin: 20px 0 8px; max-width: 44ch; }
+/* A field lit with a WHITE wash lands within about 4.5:1 of pure white, which
+   caps how quiet a placeholder can be and still be read — it was 2.1:1. The
+   pinned world already has a surface for this: shaded sky. Going darker
+   instead of lighter buys white ink 11.5:1 and lets the placeholder sit at a
+   genuinely quieter 0.62 and still clear 5:1. --panel follows the sky clock,
+   so the field stays a step below whatever hour it is. */
+.addr-row { display: flex; align-items: center; gap: 8px; background: var(--panel); border-radius: 16px; padding: 4px 4px 4px 16px; }
+.addr-row input { flex: 1; min-width: 0; background: none; border: 0; padding: 14px 0; font-size: 16px; outline: none; }
+.addr-row input::placeholder { color: rgba(255,255,255,0.62); }
+.addr-row .go { background: none; border: 1.5px solid rgba(255,255,255,0.55); border-radius: 12px; padding: 11px 15px; cursor: pointer; font-size: 13px; font-weight: 900; }
+.addr-results { list-style: none; margin: 8px 0 0; padding: 0; max-height: 176px; overflow-y: auto; }
+.addr-results li { margin-bottom: 6px; }
+.addr-results button { display: block; width: 100%; text-align: left; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--panel); font-size: 14px; cursor: pointer; }
+.gate-err { font-size: 13.5px; font-weight: 900; line-height: 1.35; color: var(--gold); min-height: 18px; margin-top: 12px; }
+.gate-err:empty { min-height: 0; margin-top: 0; }
+.gate-foot { margin-top: 26px; }
+.lang-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.lang-row .globe { width: 13px; height: 13px; opacity: 0.85; }
+.lang-row button { background: none; border: 0; padding: 2px 0; cursor: pointer; font-size: 11.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.82; }
+.lang-row button.on { opacity: 1; font-weight: 900; text-decoration: underline; }
+.gate-why { margin-top: 14px; font-size: 12px; line-height: 1.5; opacity: 0.82; max-width: 46ch; }
+.gate-why b { font-weight: 900; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; display: block; margin-bottom: 3px; }
+/* the attribution airplanes.live asks for, at a size it can actually be read
+   at — and in sentence case, because 42 characters of tracked caps is not */
+.gate-credit { margin: 10px 0 0; font-size: 11.5px; letter-spacing: 0.01em; opacity: 0.82; }
+.gate-credit a { color: inherit; text-underline-offset: 2px; }
+/* The build number. It used to ride in the detail sheet's footer, but this
+   redesign hides that whole row (.sheet-links), which took the version with
+   it — and the version is the one thing you need to read out loud when
+   something misbehaves on a phone. The gate is where it belongs anyway:
+   visible before you ever tap in, and out of the way once you have. */
+.gate-version { margin-top: 8px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }
 
-  .hint { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; font-size: 9.5px; letter-spacing: 0.08em; color: var(--ink-faint); z-index: 3; pointer-events: none; }
+/* A masked glyph with no intrinsic size collapses to 0×0 and vanishes in
+   silence — the cloud in the ceiling readout did exactly that. One default,
+   so no future context can drop an icon without saying so. */
+.gi { width: 1em; height: 1em; display: inline-block; background: currentColor; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-size: contain; mask-size: contain; -webkit-mask-position: center; mask-position: center; vertical-align: -0.12em; }
+.gi-pin { -webkit-mask-image: url(icons/pin.svg); mask-image: url(icons/pin.svg); }
+.gi-globe { -webkit-mask-image: url(icons/globe.svg); mask-image: url(icons/globe.svg); }
+.gi-heart { -webkit-mask-image: url(icons/heart.svg); mask-image: url(icons/heart.svg); }
+.gi-cloud { -webkit-mask-image: url(icons/cloud.svg); mask-image: url(icons/cloud.svg); }
+.gi-sun { -webkit-mask-image: url(icons/sun.svg); mask-image: url(icons/sun.svg); }
+.gi-moon { -webkit-mask-image: url(icons/moon.svg); mask-image: url(icons/moon.svg); }
+.gi-ground { -webkit-mask-image: url(icons/ground.svg); mask-image: url(icons/ground.svg); }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition-duration: 0.01ms !important; } }
+@media (max-height: 680px) {
+  :root { --list-h: 26vh; }
+  body.row-open { --list-h: max(26vh, 236px); }
+}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand" id="brand">OVER<b>HEAD</b></div>
-  <div class="header-right">
-    <button class="theme-switch" id="theme-btn" role="switch" aria-checked="false" title="Toggle light/dark theme"><span class="knob" id="theme-knob"><span class="gi gi-moon ico-moon"></span><span class="gi gi-sun ico-sun"></span></span></button>
-    <div class="status" id="status"><span class="dot"></span><span id="status-txt">standby</span></div>
-  </div>
-</header>
-
 <div class="stage">
-  <div class="controls">
-    <div class="rng-group" id="rng-group">
-      <span class="rng-label" id="rng-label">range</span>
-      <div class="rng-btns" id="rng">
-        <button data-km="5">5</button>
-        <button data-km="10" class="on">10</button>
-        <button data-km="20">20</button>
-        <span class="rng-label">km</span>
-      </div>
-    </div>
-    <div class="rng-group hidden" id="ceiling-box" title="☁ cloud ceiling — aircraft above it are dimmed, they may be hidden behind the clouds. ⏚ ground level at your position — shown while an aircraft on screen is flying low">
-      <div class="ceiling-val" id="ceiling-val">—</div>
-    </div>
-  </div>
-  <div class="count"><div class="n" id="count-n">0</div><div class="l" id="count-l">aircraft</div></div>
-
   <canvas id="radar"></canvas>
-  <div class="here" id="here"></div>
-  <button class="compass-btn on" id="heading-btn" title="Compass: the view rotates to the way you're facing. Tap to switch back to north-up.">
-    <svg viewBox="0 0 24 24" width="24" height="24">
-      <circle cx="12" cy="12" r="10.5" fill="none" stroke="var(--ring)" stroke-width="1"/>
+  <div class="hidden" id="ceiling-box"><span id="ceiling-val">—</span></div>
+  <button class="compass-btn on" id="heading-btn" title="Compass">
+    <svg viewBox="0 0 24 24" width="42" height="42" aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" stroke-width="0.8" opacity="0.5"/>
       <g id="compass-needle">
-        <path d="M12 3 L15 12 L12 10.3 L9 12 Z" fill="var(--hot)"/>
-        <path d="M12 21 L9 12 L12 13.7 L15 12 Z" fill="var(--ink-soft)"/>
+        <rect x="11.15" y="1.9" width="1.7" height="6.4" rx="0.85" fill="#fff"/>
       </g>
     </svg>
   </button>
-  <div class="hint" id="hint">tap an aircraft for details</div>
+  <div class="hint" id="hint">tap an aircraft</div>
 </div>
+
+<div class="entries"><div id="entry-list"></div></div>
+
+<div class="underline-bar">
+  <canvas id="rail-mark" aria-label="Overhead"></canvas>
+  <button class="here" id="here"></button>
+  <span class="spacer"></span>
+  <button class="units-btn" id="units-btn">units</button>
+  <div class="status" id="status"><span class="dot"></span><span id="status-txt">standby</span></div>
+</div>
+
+<div class="thumb-row">
+  <div class="rng-group" id="rng-group">
+    <span class="rng-label" id="rng-label">range</span>
+    <div class="rng-btns" id="rng">
+      <button data-km="5">5</button>
+      <button data-km="10" class="on">10</button>
+      <button data-km="20">20</button>
+    </div>
+  </div>
+  <button class="count" id="count-btn">
+    <span class="n" id="count-n">0</span>
+    <span class="l" id="count-l">aircraft</span>
+  </button>
+</div>
+
+<span class="hidden" id="brand"></span>
+<button class="theme-switch hidden" id="theme-btn" role="switch" aria-checked="false"><span class="knob" id="theme-knob"></span></button>
 
 <div class="sheet" id="sheet">
   <div class="sheet-grip"></div>
-  <button class="sheet-share" id="d-share" type="button" title="Share this aircraft" aria-label="Share this aircraft">
-    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-      <path d="M8.1 10.7L15.9 6.3M8.1 13.3L15.9 17.7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-      <circle cx="18" cy="5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/>
-      <circle cx="6" cy="12" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/>
-      <circle cx="18" cy="19" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/>
-    </svg>
-  </button>
+  <button class="sheet-share" id="d-share" type="button" aria-label="Share"></button>
   <button class="sheet-close" id="d-close">&times;</button>
-  <div class="sheet-body">
-    <div class="sheet-left">
-      <div class="sheet-head-text">
-        <div class="sheet-call" id="d-call">—</div>
-        <div class="sheet-type" id="d-type">looking up type…</div>
-        <div class="sheet-route" id="d-route"></div>
-      </div>
-      <div class="sheet-stats">
-        <div class="stat wide"><div class="k" id="k-alt">altitude</div><div class="v" id="d-alt">—</div></div>
-        <div class="stat"><div class="k" id="k-spd">speed</div><div class="v" id="d-spd">—</div></div>
-        <div class="stat"><div class="k" id="k-dist">distance</div><div class="v" id="d-dist">—</div></div>
-        <div class="stat"><div class="k" id="k-hdg">heading</div><div class="v" id="d-hdg">—</div></div>
-        <div class="stat"><div class="k" id="k-vr">climb</div><div class="v" id="d-vr">—</div></div>
-      </div>
+  <div class="sheet-body"><div class="sheet-left">
+    <div class="sheet-call" id="d-call">—</div>
+    <div class="sheet-type" id="d-type"></div>
+    <div class="sheet-route" id="d-route"></div>
+    <div class="sheet-stats">
+      <div class="stat wide"><div class="k" id="k-alt">altitude</div><div class="v" id="d-alt">—</div></div>
+      <div class="stat"><div class="k" id="k-spd">speed</div><div class="v" id="d-spd">—</div></div>
+      <div class="stat"><div class="k" id="k-dist">distance</div><div class="v" id="d-dist">—</div></div>
+      <div class="stat"><div class="k" id="k-hdg">heading</div><div class="v" id="d-hdg">—</div></div>
+      <div class="stat"><div class="k" id="k-vr">climb</div><div class="v" id="d-vr">—</div></div>
     </div>
-    <div class="sheet-shape"><img id="d-shape" alt="" draggable="false"></div>
-  </div>
-  <div class="sheet-foot">
-    <button class="units-btn" id="units-btn" title="Switch between everyday metric units (m, km/h) and the feet/knots used in aviation">units: m · km/h</button>
-    <div class="sheet-links">
-      <a id="link-donate" href="https://ko-fi.com/overheadapp" target="_blank" rel="noopener"><span class="gi gi-heart"></span> <span id="donate-label"></span></a>
-      <span class="app-version" id="app-version"></span>
-    </div>
-  </div>
-  <div class="sheet-toast" id="sheet-toast" role="status" aria-live="polite"></div>
+  </div><div class="sheet-shape"><img id="d-shape" alt="" draggable="false"></div></div>
+  <div class="sheet-foot"><div class="sheet-links">
+    <a id="link-donate" href="https://ko-fi.com/overheadapp" target="_blank" rel="noopener"><span class="gi gi-heart"></span> <span id="donate-label"></span></a>
+    <span class="app-version" id="app-version"></span>
+  </div></div>
 </div>
 
 <div class="sheet" id="breakdown-sheet">
   <button class="sheet-close" id="bd-close">&times;</button>
   <div class="bd-table">
     <div class="bd-hcell"></div>
-    <div class="bd-hcell" id="bd-h-visible">now</div>
-    <div class="bd-hcell" id="bd-h-day">24h</div>
-    <div class="bd-hcell" id="bd-h-session">total</div>
+    <div class="bd-hcell" id="bd-h-visible">now</div><div class="bd-hcell" id="bd-h-day">24h</div><div class="bd-hcell" id="bd-h-session">total</div>
     <div class="bd-lbl" id="bd-lbl-airliner">commercial airliner</div>
-    <div class="bd-num" id="bd-v-airliner">0</div>
-    <div class="bd-num" id="bd-d-airliner">0</div>
-    <div class="bd-num" id="bd-s-airliner">0</div>
+    <div class="bd-num" id="bd-v-airliner">0</div><div class="bd-num" id="bd-d-airliner">0</div><div class="bd-num" id="bd-s-airliner">0</div>
     <div class="bd-lbl" id="bd-lbl-jet">private jet</div>
-    <div class="bd-num" id="bd-v-jet">0</div>
-    <div class="bd-num" id="bd-d-jet">0</div>
-    <div class="bd-num" id="bd-s-jet">0</div>
+    <div class="bd-num" id="bd-v-jet">0</div><div class="bd-num" id="bd-d-jet">0</div><div class="bd-num" id="bd-s-jet">0</div>
     <div class="bd-lbl" id="bd-lbl-heli">helicopter</div>
-    <div class="bd-num" id="bd-v-heli">0</div>
-    <div class="bd-num" id="bd-d-heli">0</div>
-    <div class="bd-num" id="bd-s-heli">0</div>
+    <div class="bd-num" id="bd-v-heli">0</div><div class="bd-num" id="bd-d-heli">0</div><div class="bd-num" id="bd-s-heli">0</div>
     <div class="bd-lbl" id="bd-lbl-hobby">small hobby plane</div>
-    <div class="bd-num" id="bd-v-hobby">0</div>
-    <div class="bd-num" id="bd-d-hobby">0</div>
-    <div class="bd-num" id="bd-s-hobby">0</div>
+    <div class="bd-num" id="bd-v-hobby">0</div><div class="bd-num" id="bd-d-hobby">0</div><div class="bd-num" id="bd-s-hobby">0</div>
     <div class="bd-lbl" id="bd-lbl-other">other</div>
-    <div class="bd-num" id="bd-v-other">0</div>
-    <div class="bd-num" id="bd-d-other">0</div>
-    <div class="bd-num" id="bd-s-other">0</div>
+    <div class="bd-num" id="bd-v-other">0</div><div class="bd-num" id="bd-d-other">0</div><div class="bd-num" id="bd-s-other">0</div>
   </div>
 </div>
+<div class="sheet-toast" id="sheet-toast" role="status" aria-live="polite"></div>
 
 <div class="gate" id="gate">
-  <h1>Over<b>head</b></h1>
-  <p class="gate-headline" id="gate-headline">There's traffic overhead. See it live.</p>
-  <p id="gate-intro">Real-time radar of every aircraft in your sky — callsigns, altitudes, headings. No sign-up, no app, just planes.</p>
-  <button class="primary" id="gate-btn"><span class="gi gi-pin"></span> <span id="gate-btn-label">Use my location</span></button>
-
-  <div class="addr-or" id="addr-or">Rather not share? Type any address instead — no permission pop-up.</div>
-  <div class="addr-block show" id="addr-block">
-    <div class="addr-row">
-      <input id="addr-input" type="text" placeholder="City, street or landmark" autocomplete="off">
-      <button class="go" id="addr-go">Go</button>
+  <div class="gate-inner">
+    <canvas id="gate-sky" aria-label="Overhead"></canvas>
+    <p class="gate-headline" id="gate-headline">There's traffic overhead. See it live.</p>
+    <p class="gate-intro" id="gate-intro">Real-time radar of every aircraft in your sky — callsigns, altitudes, headings. No sign-up, no app, just planes.</p>
+    <div class="gate-action">
+      <button class="primary" id="gate-btn"><span class="gi gi-pin"></span> <span id="gate-btn-label">Use my location</span></button>
+      <!-- the error sits between the button that can fail and the box it
+           sends you to. Under the address block it was pointing at a control
+           ABOVE itself while every engine string says "below". -->
+      <div class="gate-err" id="gate-err" role="status" aria-live="polite"></div>
+      <div class="addr-or" id="addr-or">Rather not share? Type any address instead — no permission pop-up.</div>
+      <div class="addr-block" id="addr-block">
+        <div class="addr-row">
+          <input id="addr-input" type="text" placeholder="City, street or landmark" autocomplete="off" aria-label="Address">
+          <button class="go" id="addr-go">Go</button>
+        </div>
+      </div>
+      <ul class="addr-results" id="addr-results"></ul>
+    </div>
+    <div class="gate-foot">
+      <div class="lang-row" id="lang-row">
+        <span class="globe gi gi-globe" aria-hidden="true"></span>
+        <button data-lang="en">English</button>
+        <button data-lang="fr">Français</button>
+        <button data-lang="pt">Português</button>
+        <button data-lang="de">Deutsch</button>
+        <button data-lang="zh">简体中文</button>
+      </div>
+      <div class="gate-why"><b id="why-t">Why location?</b><span id="why-b"></span></div>
+      <p class="gate-credit" id="gate-credit">Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a> network.</p>
+      <!-- not translated content: a build number is the same string in every
+           language, so it is set directly, never through t() -->
+      <div class="gate-version" id="gate-version"></div>
     </div>
   </div>
-  <ul class="addr-results" id="addr-results"></ul>
-  <div class="gate-err" id="gate-err"></div>
-  <div class="lang-row" id="lang-row">
-    <span class="globe gi gi-globe"></span>
-    <button data-lang="en">English</button>
-    <button data-lang="fr">Français</button>
-    <button data-lang="pt">Português</button>
-    <button data-lang="de">Deutsch</button>
-    <button data-lang="zh">简体中文</button>
-  </div>
-  <div class="gate-why"><b id="why-t">Why location?</b><span id="why-b">Overhead centres the scope on you. Your position is used for one thing only: querying airplanes.live for the traffic above you, straight from your browser. It's never stored and never sent anywhere else — and your browser asks for permission first.</span></div>
-  <p class="gate-credit" id="gate-credit">Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.</p>
 </div>
-
 <script>
 (() => {
   "use strict";
@@ -480,28 +459,64 @@
   const RANGE_KM_DEFAULT = 10;
   const RANGE_KM_MAX = 20;        // keep in sync with the largest #rng button
 
+  // ---------- canvas palette ----------
   // Canvas drawing calls take literal color strings, not CSS variables, so
-  // light/dark mode needs its own JS-side palette mirroring the CSS one
-  // above. `theme` points at one of these and is only reassigned when the
-  // user toggles (see the theme-btn wiring near the bottom) — draw() reads
-  // it fresh every frame so a toggle re-colors the canvas immediately.
-  const THEMES = {
-    dark: {
-      ringMajor: "#1c2c44", ringMinor: "#14202f", crosshair: "#101c2e",
-      sweepHex: "#1ee0a8", sweepRgb: "30,224,168",
-      inkHex: "#e8eef7", inkSoftRgb: "139,160,189", rangeLabel: "#3a4d68", cardinal: "#4a5d78",
-      hotHex: "#ff5c6c", hotRgb: "255,92,108",
-      gold: "#f5c451", moonBody: "#8ba0bd", voidHex: "#070b14"
-    },
-    light: {
-      ringMajor: "#c7d0dd", ringMinor: "#dfe6ee", crosshair: "#d3dae4",
-      sweepHex: "#0c8f6c", sweepRgb: "12,143,108",
-      inkHex: "#1b2430", inkSoftRgb: "84,100,122", rangeLabel: "#8492a6", cardinal: "#54647a",
-      hotHex: "#c62839", hotRgb: "198,40,57",
-      gold: "#a9740c", moonBody: "#5c6b80", voidHex: "#eef1f6"
+  // the radar needs a JS-side palette. This USED to be a hand-maintained
+  // THEMES object duplicating every hex from the :root blocks above, which
+  // meant two places to edit and no way to tell they'd drifted — the whole
+  // "a hardcoded hex silently ignores the light/dark toggle" class of bug.
+  // Now there is one source of truth: the CSS custom properties. `theme` is
+  // rebuilt from them on every toggle and draw() reads it fresh every frame,
+  // so the canvas re-colors immediately.
+  //
+  // Adding a canvas color = add the CSS var to BOTH :root blocks and one line
+  // to readThemeFromCss(). There is no second palette to keep in sync.
+  const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  // Several canvas colors are composed at draw time with a varying alpha
+  // (`rgba(${theme.sweepRgb},0.4)`), which needs the channels separately.
+  // Deriving them from the SAME var rather than authoring a parallel
+  // `--sweep-rgb` is the point — a second declaration is a second thing to
+  // drift. Handles #rgb, #rrggbb and rgb()/rgba() sources; anything else
+  // returns null so a typo'd var name fails loudly at the call site instead
+  // of painting an invisible color.
+  function rgbTriple(color) {
+    const s = String(color).trim();
+    let m = s.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (m) {
+      const h = m[1].length === 3 ? m[1].replace(/./g, c => c + c) : m[1];
+      return `${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)}`;
     }
-  };
-  let theme = THEMES.dark;
+    m = s.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+    if (m) return `${Math.round(+m[1])},${Math.round(+m[2])},${Math.round(+m[3])}`;
+    return null;
+  }
+
+  // Key names are the canvas's own vocabulary, not the CSS var names — they
+  // read at the ~40 draw call sites, which is where they're actually used.
+  function readThemeFromCss() {
+    const sweep = cssVar("--sweep"), hot = cssVar("--hot"), inkSoft = cssVar("--ink-soft");
+    return {
+      ringMajor: cssVar("--ring"),
+      ringMinor: cssVar("--ring-minor"),
+      crosshair: cssVar("--crosshair"),
+      trailShadowRgb: rgbTriple(cssVar("--trail-shadow")),
+      sweepHex: sweep, sweepRgb: rgbTriple(sweep),
+      inkHex: cssVar("--ink"), inkSoftRgb: rgbTriple(inkSoft),
+      rangeLabel: cssVar("--range-label"),
+      cardinal: cssVar("--cardinal"),
+      hotHex: hot, hotRgb: rgbTriple(hot),
+      gold: cssVar("--gold"),
+      moonBody: cssVar("--moon"),
+      voidHex: cssVar("--void")
+    };
+  }
+  // Read once at parse time so `theme` is never undefined for an early
+  // draw(). <style> is in <head>, so the vars already resolve here; the
+  // data-theme attribute isn't set until applyTheme() runs, so this picks up
+  // the :root (dark) defaults — same starting state as the old
+  // `let theme = THEMES.dark`.
+  let theme = readThemeFromCss();
 
   // ---------- i18n ----------
   // Five UI languages, selectable on the gate (persisted to localStorage).
@@ -515,9 +530,13 @@
   const HTML_LANG = { en: "en-GB", fr: "fr", pt: "pt-PT", de: "de", zh: "zh-Hans" };
   const I18N = {
     en: {
+      entriesEmpty: "Nothing within naked-eye range just now.",
+      listLoading: "Finding what's in your sky…",
+      listOffline: "Can't reach the aircraft network. Retrying…",
+      nakedEyeNote: "Overhead only lists aircraft you could actually spot from where you are.",
       headline: "There's traffic overhead. See it live.",
       intro: "Real-time radar of every aircraft in your sky — callsigns, altitudes, headings. No sign-up, no app, just planes.",
-      credit: 'Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> network.',
+      credit: 'Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a> network.',
       useLocation: "Use my location",
       orAddress: "Rather not share? Type any address instead — no permission pop-up.",
       addrPlaceholder: "City, street or landmark",
@@ -568,9 +587,13 @@
       cards: ["N", "E", "S", "W"]
     },
     fr: {
+      entriesEmpty: "Rien à portée de l'œil nu pour l'instant.",
+      listLoading: "Recherche de ce qui passe au-dessus…",
+      listOffline: "Réseau d'aéronefs injoignable. Nouvel essai…",
+      nakedEyeNote: "Overhead ne liste que les avions repérables à l'œil nu d'où vous êtes.",
       headline: "Il y a du trafic au-dessus de vous. Regardez-le en direct.",
       intro: "Radar en temps réel de tous les avions dans votre ciel: indicatifs, altitudes, caps. Sans inscription, sans appli, juste des avions.",
-      credit: 'Données du réseau ouvert <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
+      credit: 'Données du réseau ouvert <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a>.',
       useLocation: "Utiliser ma position",
       orAddress: "Vous préférez éviter ? Indiquez simplement une adresse, sans géolocalisation.",
       addrPlaceholder: "Ville, rue ou lieu",
@@ -621,9 +644,13 @@
       cards: ["N", "E", "S", "O"]
     },
     pt: {
+      entriesEmpty: "Nada ao alcance da vista neste momento.",
+      listLoading: "A procurar o que passa no seu céu…",
+      listOffline: "Sem ligação à rede de aeronaves. A tentar de novo…",
+      nakedEyeNote: "O Overhead só lista aeronaves que consegue mesmo ver de onde está.",
       headline: "Tráfego aéreo à vista. Siga-o em direto.",
       intro: "Radar em tempo real de todas as aeronaves no seu céu — indicativos, altitudes, rumos. Sem registo, sem aplicação, só aviões.",
-      credit: 'Dados da rede aberta <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
+      credit: 'Dados da rede aberta <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a>.',
       useLocation: "Usar a minha localização",
       orAddress: "Prefere não partilhar? Escreva simplesmente uma morada, sem geolocalização.",
       addrPlaceholder: "Cidade, rua ou local",
@@ -674,9 +701,13 @@
       cards: ["N", "E", "S", "O"]
     },
     de: {
+      entriesEmpty: "Gerade nichts in Sichtweite.",
+      listLoading: "Suche, was über Ihnen fliegt…",
+      listOffline: "Flugzeugnetz nicht erreichbar. Neuer Versuch…",
+      nakedEyeNote: "Overhead listet nur Flugzeuge, die von hier aus wirklich zu sehen sind.",
       headline: "Es gibt Flugverkehr. Sehen Sie ihn live.",
       intro: "Echtzeit-Radar aller Flugzeuge in Ihrem Himmel – Funkrufe, Flughöhen, Flugrichtungen. Keine Anmeldung erforderlich, keine App, nur Flugzeuge.",
-      credit: 'Daten aus dem offenen Netzwerk <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a>.',
+      credit: 'Daten aus dem offenen Netzwerk <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a>.',
       useLocation: "Meinen Standort verwenden",
       orAddress: "Teilen Sie Ihren Standort lieber nicht? Geben Sie stattdessen einfach eine Adresse ein – ganz ohne Geolokalisierung.",
       addrPlaceholder: "Stadt, Straße oder Sehenswürdigkeit",
@@ -727,9 +758,13 @@
       cards: ["N", "O", "S", "W"]
     },
     zh: {
+      entriesEmpty: "此刻肉眼可及范围内没有飞机。",
+      listLoading: "正在搜寻你头顶的飞机…",
+      listOffline: "无法连接飞机数据网络，正在重试…",
+      nakedEyeNote: "Overhead 只列出你在此处真正能用肉眼看到的飞机。",
       headline: "上方有飞机。实时查看。",
       intro: "实时雷达，追踪您上空的所有飞机——呼号、高度和航向。无需注册，无需应用，只需飞机。",
-      credit: '数据来自开放的 <a href="https://airplanes.live" target="_blank" rel="noopener" style="color:var(--sweep)">airplanes.live</a> 网络。',
+      credit: '数据来自开放的 <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a> 网络。',
       useLocation: "使用我的位置",
       orAddress: "不想分享？直接输入任意地址即可，无需地理定位。",
       addrPlaceholder: "城市、街道或地标",
@@ -814,7 +849,7 @@
   // for the simpler model ("you only need the ground level of the user").
   const AGL_LOW_THRESHOLD_M = 900; // ~3,000ft above the user's ground — "flying low" cutoff for the top-left readout
   const AGL_ON_GROUND_M = 20;      // above the user's ground — below this the sheet shows "on the ground" instead of an altitude
-  const GROUND_ICON = "⏚";
+  const GROUND_ICON = '<span class="gi gi-ground"></span>';
   // Support link shown at the very bottom of the detail sheet.
   const DONATE_URL = "https://ko-fi.com/overheadapp";
   // Appended to every share caption (see the share section below), but
@@ -823,9 +858,41 @@
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v84";
+  const APP_VERSION = "v87";
   const NM_PER_KM = 0.539957;
-  const TRAIL_LEN = 5; // past fixes kept per aircraft, for the trail line
+
+  // ---------- variation switch ----------
+  // Three prototypes of the SAME sky. The only thing that differs between
+  // them is how much radar furniture survives on the canvas:
+  //   1 — instrumented: every ring, label, cardinal and stem, as before
+  //   2 — reduced: the outer ring and one companion, no crosshair, labels
+  //       only where they carry their weight
+  //   3 — pure sky: nothing painted but contrails, aircraft, sun and moon
+  // The DOM chrome (aircraft count, status line, range chips, ceiling
+  // readout, detail sheet) is IDENTICAL in all three — this dial governs
+  // only what is painted over the sky, never what the app knows or shows.
+  const UI_LEVEL = 1;
+  const UI = {
+    rings:           1,
+    crosshair:       false,
+    rangeLabels:     0,
+    cardinals:       true,
+    northTick:       true,
+    celestialLabels: false,
+    altStems:        true,
+    groundShadow:    true,
+    planeLabels:     "selected"
+  };
+
+  // Contrails ARE the sky here. A real one hangs for many minutes behind the
+  // aircraft, widening and softening until it is indistinguishable from
+  // cirrus — so a trail is no longer a 5-fix tail, it is the aircraft's whole
+  // recent flown path, aged. It belongs to the aircraft: when the aircraft
+  // goes quiet and is pruned, its contrail goes with it, which is why the sky
+  // fills up while you watch instead of arriving pre-populated.
+  const CONTRAIL_LIFE_MS = 12 * 60 * 1000; // a segment is fully dissolved by this age
+  const CONTRAIL_MAX_FIXES = 48;           // 12 min ÷ 45 s poll, with headroom for quick retries
+  const TRAIL_LEN = CONTRAIL_MAX_FIXES;    // the ground shadow reuses the same array
   // Played every time the sweep line reveals an aircraft on screen (see the
   // reveal logic in draw()). A SINGLE shared Audio element can't overlap
   // itself — calling play() on one that's already mid-playback just restarts
@@ -910,18 +977,26 @@
   // position/altitude/heading is stored here — draw() always uses live
   // estimatedPosition()/estimatedAltitude() for anything already revealed.
   let revealedIcaos = new Set();
+  // G4: what the list needs to name its own empty state
+  let revealPending = 0;   // contacts queued behind the 1.5s stagger
+  let feedSeen = false;    // a poll has come back at least once
   // Short-lived green flash markers for newly-revealed aircraft: icao ->
   // { startedAt }. Drawn alongside the icon itself each frame while active,
   // using that frame's own computed screen position (never stores raw x/y,
   // since the squish/tilt transform can change while the flash is playing).
   let activeBlips = new Map();
-  const BLIP_FLASH_MS = 900;
+  // The reveal animation: a cloud puffs in over the aircraft's true position,
+  // hangs, then dissipates and drifts off, leaving it revealed.
+  const BLIP_FLASH_MS = 1700;
+  // Sullivan's rule: one reveal every 1.5s, nearest first.
+  const REVEAL_STAGGER_MS = 1500;
+  let nextRevealAt = 0;
   // Previous frame's raw (unwrapped) sweep angle — crossing detection needs
   // to know which side of an aircraft's bearing the beam was on a moment
   // ago. null until the second frame of any session (nothing can "cross"
   // on the very first frame there's no prior angle to compare against).
   let prevSweepAngRaw = null;
-  let selected = null, pollTimer = null, lastFetch = 0, dailyCount = 0;
+  let selected = null, pollTimer = null, lastFetch = 0;
   // Cloud ceiling state. The model reports cloud base ABOVE GROUND at the
   // user's spot — that's what the display shows (it's the height you'd crane
   // your neck at). Aircraft altitudes are MSL though, so the dimming
@@ -969,6 +1044,8 @@
 
   const cv = document.getElementById("radar"), ctx = cv.getContext("2d");
   let cssSize = 0, DPR = 1, cx = 0, cy = 0, R = 0;
+  let cssW = 0, cssH = 0; // round 3 draws to the whole stage, not a square
+  let fitW = -1, fitH = -1; // the stage box resize() last fitted to
 
   function resize() {
     const stage = cv.parentElement;
@@ -976,18 +1053,47 @@
     // The detail sheet, when open, adds bottom padding to the stage (see
     // openSheet) so the radar shrinks and re-centers into the space above the
     // sheet instead of being half-hidden behind it.
+    // Round 3: the canvas is the whole stage rather than a square, and the
+    // elevation gauge is given RESERVED space out of it before the map is
+    // fitted — so the gauge can never be drawn over the radar, whichever
+    // shape it is currently in. `cssSize` is kept as the short side of the
+    // remaining map area, because the rest of the engine uses it as a scale.
     const cs = getComputedStyle(stage);
     const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
     const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-    const availW = stage.clientWidth - padX;
-    const availH = stage.clientHeight - padY;
-    const avail = Math.min(availW, availH);
-    cssSize = Math.max(180, avail);
+    cssW = Math.max(160, stage.clientWidth - padX);
+    cssH = Math.max(160, stage.clientHeight - padY);
+    const res = gaugeReserve();
+    const mapW = Math.max(120, cssW - res.left);
+    const mapH = Math.max(120, cssH - res.bottom);
+    cssSize = Math.max(140, Math.min(mapW, mapH));
     DPR = Math.min(window.devicePixelRatio || 1, 2.5);
-    cv.width = cssSize * DPR; cv.height = cssSize * DPR;
-    cv.style.width = cssSize + "px"; cv.style.height = cssSize + "px";
+    const pw = Math.round(cssW * DPR), ph = Math.round(cssH * DPR);
+    // the list animating open resizes the stage every frame; skipping the
+    // buffer reallocation when the pixel size is unchanged keeps that cheap
+    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+    cv.style.width = cssW + "px"; cv.style.height = cssH + "px";
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    cx = cssSize / 2; cy = cssSize / 2; R = cssSize / 2 - 6;
+    fitW = stage.clientWidth; fitH = stage.clientHeight;
+    cx = res.left + mapW / 2;
+    cy = mapH * MAP_CY_FRAC;
+    R = (cssSize / 2) * MAP_R_SCALE - 6;
+    // A direction may deliberately run the outer ring off the screen edges,
+    // but it must never run into the gauge's own strip — that is the whole
+    // point of reserving it.
+    if (res.left) R = Math.min(R, (cx - res.left) - 8);
+    // ...and it must never run off the TOP or BOTTOM, whatever the aspect.
+    // MAP_R_SCALE > 1 is a deliberate horizontal bleed on a portrait phone,
+    // where the map box is taller than it is wide. On a landscape or desktop
+    // viewport the short side flips, the same scale bleeds VERTICALLY
+    // instead, and the outer ring — the only distance reference a direction
+    // that switched its inner rings off still has — leaves the canvas along
+    // with the north dash and the N cardinal. Clamping both edges keeps the
+    // intended bleed on the axis it was tuned for and fits the ring on the
+    // other. Unconditional, not gated on res.bottom: a gauge that reserves
+    // nothing at the bottom (the ladder) still has a canvas with two ends.
+    R = Math.min(R, cy - 8, (mapH - cy) - 8);
+    R = Math.max(40, R);
     positionCompass();
   }
   window.addEventListener("resize", resize);
@@ -1295,7 +1401,15 @@
   function displayHeading() { return currentDisplayHeading; }
 
   const statusEl = document.getElementById("status"), statusTxt = document.getElementById("status-txt");
-  function setStatus(cls, txt) { statusEl.className = "status " + cls; statusTxt.textContent = txt; }
+  // liveStatusShown is true only while the status line is displaying the
+  // "live · N" form, so updateCountDisplay() can keep that N in step with the
+  // header count without clobbering "connecting…", "offline", or "paused".
+  let liveStatusShown = false;
+  function setStatus(cls, txt) { liveStatusShown = false; statusEl.className = "status " + cls; statusTxt.textContent = txt; }
+  function setLiveStatus() {
+    setStatus("live", `${t("live")} · ${lastCountShown ?? countVisible()}`);
+    liveStatusShown = true;
+  }
 
   // The header count must reflect what's actually shown — naked-eye visible
   // AND within the *currently selected* range — not every aircraft still
@@ -1322,7 +1436,24 @@
     const c = countVisibleByType();
     return c.airliner + c.jet + c.heli + c.hobby + c.other;
   }
-  function updateCountDisplay() { document.getElementById("count-n").textContent = countVisible(); }
+  // The header count is refreshed once per frame from draw() (see the
+  // visible-gather loop), not once per 45s poll: an aircraft enters and
+  // leaves the count through dead reckoning, a range change, or the sweep
+  // revealing it — none of which happen on a poll boundary, so a
+  // poll-driven count read 0 while an aircraft was already drawn and
+  // tappable, and the breakdown panel (recomputed per frame) contradicted
+  // it. draw() already has each aircraft's distance in hand, so it passes
+  // the tally in rather than paying for a second pass; the guard keeps the
+  // DOM untouched except on an actual change, same discipline as
+  // lowPlaneOnScreen.
+  let lastCountShown = null;
+  function updateCountDisplay(n) {
+    const v = n == null ? countVisible() : n;
+    if (v === lastCountShown) return;
+    lastCountShown = v;
+    document.getElementById("count-n").textContent = v;
+    if (liveStatusShown) setLiveStatus(); // keep "live · N" from going stale too
+  }
 
   // ---------- cloud ceiling (Open-Meteo) ----------
   // Ask every model that carries cloud_base for the current hour, plus
@@ -1425,7 +1556,6 @@
         cache: "no-store",
         signal: AbortSignal.timeout ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined
       });
-      dailyCount++;
       // unreachable in browsers today — airplanes.live 429s lack the CORS
       // header and reject as network errors before this line. Kept in case
       // they ever fix that; the catch treats it the same way regardless.
@@ -1433,7 +1563,7 @@
       const data = await res.json();
       ingest(data.ac || data.aircraft || []);
       lastFetch = Date.now(); failStreak = 0;
-      setStatus("live", `${t("live")} · ${countVisible()} · req ${dailyCount}`);
+      setLiveStatus();
     } catch {
       failStreak++;
       // first failure: likely a phone-radio blip, retry quickly and call it
@@ -1456,6 +1586,7 @@
   }
 
   function ingest(list) {
+    feedSeen = true;
     const seen = new Set(), now = Date.now();
     for (const a of list) {
       const lat = a.lat, lon = a.lon;
@@ -1478,9 +1609,17 @@
       // ground speed (kt) -> m/s ; baro_rate (ft/min) -> m/s
       const velMs  = a.gs != null ? a.gs * 0.514444 : null;
       const vrMs   = a.baro_rate != null ? a.baro_rate * 0.00508 : (a.geom_rate != null ? a.geom_rate * 0.00508 : null);
-      // trail: remember the last few real fixes (not interpolated frames) so
-      // we can draw a fading line behind the plane showing where it's been
-      const trail = prev ? [...prev.trail, { lat: prev.lat, lon: prev.lon }].slice(-TRAIL_LEN) : [];
+      // trail: the aircraft's flown path, from real fixes only (never
+      // interpolated frames). Each fix now carries its own ALTITUDE and its
+      // own TIME, because the contrail is drawn in the sky at the height the
+      // aircraft was actually at, and each segment ages independently.
+      // Pruned by age first, then by count — a burst of quick-retry polls
+      // must not shorten the visible trail's real-world duration.
+      const trail = prev
+        ? [...prev.trail, { lat: prev.lat, lon: prev.lon, alt: prev.alt, t: prev.posTime }]
+            .filter(f => now - f.t < CONTRAIL_LIFE_MS)
+            .slice(-CONTRAIL_MAX_FIXES)
+        : [];
       // "ground" carries no baro altitude of its own — settle at the user's
       // own ground elevation (close enough for a rolling/taxiing aircraft).
       const altM = a.alt_baro === "ground" ? (groundElevM ?? 0) : altMeters(a.alt_baro ?? a.alt_geom);
@@ -1674,7 +1813,8 @@
       planes.set(icao, np);
     }
     for (const [icao, p] of planes) if (!seen.has(icao) && now - p.seen > 90000) planes.delete(icao);
-    updateCountDisplay();
+    // no updateCountDisplay() here — draw() refreshes it every frame off the
+    // tally it already computes, so a poll-time call would only duplicate it
   }
 
   // ADSBExchange "category" is a letter+digit like "A3"; map to our numeric scale
@@ -1834,6 +1974,8 @@
   const compassNeedle = document.getElementById("compass-needle");
   let lastDrawTs = null;
   function draw(ts) {
+    if (cv.parentElement.clientWidth !== fitW ||
+        cv.parentElement.clientHeight !== fitH) resize();
     const dtMs = lastDrawTs == null ? 16 : Math.min(ts - lastDrawTs, 100);
     lastDrawTs = ts;
     smoothHeading(dtMs);
@@ -1851,7 +1993,7 @@
     // Needle always points to true north on screen, like Google Maps' compass:
     // as the radar rotates by displayHeading(), the needle counter-rotates.
     compassNeedle.style.transform = `rotate(${-displayHeading()}deg)`;
-    ctx.clearRect(0, 0, cssSize, cssSize);
+    ctx.clearRect(0, 0, cssW, cssH);
 
     // The sweep angle drives both the drawn sweep line (further down) and
     // the reveal check right below — computed here, once, so both share the
@@ -1859,7 +2001,6 @@
     // periodic so drawing doesn't need it wrapped, and staying unwrapped is
     // what makes the crossing math below simple — only each aircraft's
     // already-bounded bearing angle needs wrapPi, not the sweep itself.
-    const sweepAng = ts / 1000 * 0.6 - toRad(displayHeading());
 
     // gather visible aircraft once; used for both the ground-plane trail pass
     // and the billboarded icon pass below, and shields the whole frame from
@@ -1876,6 +2017,8 @@
     // nothing left to detect for it.
     const now = Date.now();
     const visible = [];
+    const pendingReveal = [];
+    let inRangeCount = 0;
     for (const p of planes.values()) {
       try {
         const liveProj = project(estimatedPosition(p, now));
@@ -1886,36 +2029,26 @@
           continue;
         }
         if (!revealedIcaos.has(p.icao)) {
-          // Signed angular offset from the sweep line to this aircraft's
-          // CURRENT bearing, this frame and (via prevSweepAngRaw) last
-          // frame. A sign flip between two small per-frame steps means the
-          // beam passed through the bearing since the last frame; the
-          // |Math.PI| guard rejects the OTHER place signs can flip —
-          // wrapPi's own ±π wraparound on the far side of the circle, which
-          // jumps by nearly 2π, not a small crossing step.
-          const rel = wrapPi(liveProj.ang - sweepAng);
-          let crossed = false;
-          if (prevSweepAngRaw != null) {
-            const relPrev = wrapPi(liveProj.ang - prevSweepAngRaw);
-            crossed = Math.sign(relPrev) !== Math.sign(rel) && Math.abs(relPrev - rel) < Math.PI;
-          }
-          if (!crossed) continue; // still not revealed — not drawn this frame
-          revealedIcaos.add(p.icao);
-          // Every transition from not-drawn to drawn gets a glow + sound —
-          // not just an aircraft's first-ever sighting this session. An
-          // aircraft that briefly left the screen (dropped out of the
-          // display margin, or momentarily failed the naked-eye filter) and
-          // is now reappearing is, from what's actually on screen, just as
-          // much a "new blip" as one that's never been seen before; gating
-          // this on a separate "have I ever shown this ICAO" set meant a
-          // returning contact appeared on screen with no acknowledgment at
-          // all. No range restriction either — anything the sweep reveals
-          // on screen (out to the display margin, not just the tighter
-          // selected range) gets both, matching what's actually visible.
-          activeBlips.set(p.icao, { startedAt: now });
-          playDetectSound();
+          // Not revealed yet — queue it and draw nothing this frame.
+          //
+          // The sweep used to gate this: a contact appeared the moment the
+          // beam crossed its bearing, which meant a worst case of a full
+          // rotation before you saw it. There is no beam any more, so
+          // reveals are PACED instead — one every REVEAL_STAGGER_MS,
+          // NEAREST FIRST, so the aircraft most likely to be the one
+          // actually overhead is the one that arrives first, and a burst of
+          // ten contacts still arrives as a readable sequence rather than
+          // all at once. Drained after this loop, where the whole candidate
+          // set is known and can be sorted.
+          pendingReveal.push({ icao: p.icao, dist: liveProj.dist });
+          continue;
         }
         visible.push({ p, proj: liveProj, altM: estimatedAltitude(p, now), trackDeg: p.track });
+        // Header count: same aircraft the icons come from, but held to the
+        // strictly SELECTED range rather than the wider display margin the
+        // draw loop tolerates — matching countVisibleByType()'s rule, which
+        // the breakdown panel's "now" column uses.
+        if (liveProj.dist <= rangeKm) inRangeCount++;
         // Every frame this ICAO hex is actually drawn on the radar, refresh
         // its "last seen" timestamp for the breakdown panel (lifetime +
         // rolling 24h counts). Hooking this to the same per-frame visible-
@@ -1929,6 +2062,20 @@
         markSeen(p.icao, countBucket(typeKey(p)), now);
       } catch (e) { console.warn("skipped projecting aircraft", p.icao, e); }
     }
+    // Drain one reveal per REVEAL_STAGGER_MS, nearest aircraft first. Sorted
+    // here rather than kept in a persistent queue because distance changes
+    // every frame — the nearest PENDING contact at the moment a slot opens is
+    // the right one to show, not whichever was nearest when it was enqueued.
+    revealPending = pendingReveal.length;
+    if (pendingReveal.length && now >= nextRevealAt) {
+      pendingReveal.sort((a, b) => a.dist - b.dist);
+      const next = pendingReveal[0];
+      revealedIcaos.add(next.icao);
+      activeBlips.set(next.icao, { startedAt: now });
+      playDetectSound();
+      nextRevealAt = now + REVEAL_STAGGER_MS;
+    }
+
     // revealedIcaos/activeBlips persist across frames independently of the
     // loop above, so aircraft the ingest() 90s prune has already dropped
     // from `planes` need their own cleanup pass here or they'd linger.
@@ -1939,7 +2086,7 @@
     // 90s prune eventually catches it (the billboarded render loop only
     // expires a blip for aircraft still in `visible` this frame).
     for (const [icao, blip] of activeBlips) if (now - blip.startedAt >= BLIP_FLASH_MS) activeBlips.delete(icao);
-    prevSweepAngRaw = sweepAng;
+    updateCountDisplay(inRangeCount);
     flushSeenStatsIfDue(now);
     if (breakdownEl.classList.contains("open")) updateBreakdownDisplay();
 
@@ -1961,12 +2108,28 @@
     ctx.save();
     ctx.translate(cx, cy); ctx.scale(1, currentSquish); ctx.translate(-cx, -cy);
     ctx.lineWidth = 1;
-    for (let i = 1; i <= 3; i++) {
+    // UI.rings keeps the OUTERMOST n of the three — the outer ring is the
+    // horizon of the selected range and is the last thing to go
+    // THE LENS: the disc inside the outer ring is a wash of lighter sky, so
+    // there is a visible difference between what is in range and what is in
+    // the margin band beyond it. Drawn inside the squish, under the rings.
+    {
+      const rOuter = ringRadiusPx(3);
+      const lens = ctx.createRadialGradient(cx, cy, 0, cx, cy, rOuter);
+      lens.addColorStop(0, `rgba(255,255,255,0.13)`);
+      lens.addColorStop(0.72, `rgba(255,255,255,0.075)`);
+      lens.addColorStop(1, `rgba(255,255,255,0.0)`);
+      ctx.fillStyle = lens;
+      ctx.beginPath(); ctx.arc(cx, cy, rOuter, 0, Math.PI * 2); ctx.fill();
+    }
+    for (let i = 1 + (3 - UI.rings); i <= 3; i++) {
       ctx.strokeStyle = i === 3 ? theme.ringMajor : theme.ringMinor;
       ctx.beginPath(); ctx.arc(cx, cy, ringRadiusPx(i), 0, Math.PI * 2); ctx.stroke();
     }
-    ctx.strokeStyle = theme.crosshair;
-    ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+    if (UI.crosshair) {
+      ctx.strokeStyle = theme.crosshair;
+      ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+    }
 
     if (headingUp && headingAvailable) {
       ctx.fillStyle = theme.sweepHex;
@@ -1978,55 +2141,64 @@
       ctx.fill();
     }
 
-    // sweepAng was already computed above (shared with the sweep-crossing
-    // reveal check) — anchored to the map's rotation exactly like every
-    // other angular element (project()'s bearings, cardinal letters below),
-    // otherwise the sweep would spin in fixed screen space while the map
-    // turns under heading-up or a manual rotate-drag, visibly sliding
-    // relative to the rings/aircraft instead of moving together with them.
-    ctx.save(); ctx.translate(cx, cy);
-    for (let k = 0; k < 26; k++) {
-      const a = sweepAng - k * 0.025;
-      ctx.strokeStyle = `rgba(${theme.sweepRgb},${0.10 * (1 - k / 26)})`; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(R * Math.cos(a), R * Math.sin(a)); ctx.stroke();
-    }
-    ctx.strokeStyle = `rgba(${theme.sweepRgb},0.55)`; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(R * Math.cos(sweepAng), R * Math.sin(sweepAng)); ctx.stroke();
-    ctx.restore();
-
+    // The rotating beam is gone — a radar sweep is explicitly out of this
+    // visual world. Only the "you are here" mark remains at the centre.
     ctx.fillStyle = theme.sweepHex; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = `rgba(${theme.sweepRgb},0.4)`; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
 
-    for (const { p, proj } of visible) {
-      try { drawTrail(p, proj); } catch (e) { console.warn("skipped trail", p.icao, e); }
+    if (UI.groundShadow) {
+      for (const { p, proj } of visible) {
+        try { drawTrail(p, proj); } catch (e) { console.warn("skipped trail", p.icao, e); }
+      }
     }
     ctx.restore(); // end ground-plane squish
 
     // ---- billboarded content: text and icons, repositioned to match the
     // tilt but drawn upright so nothing gets flattened into illegibility —
     // same idea as how map pins/labels stay readable in a tilted 3D map.
-    ctx.fillStyle = theme.rangeLabel; ctx.font = "9px ui-monospace, monospace";
-    for (let i = 1; i <= 3; i++) {
-      ctx.fillText(Math.round((rangeKm * i) / 3) + "km", cx + 3, squishY(cy - ringRadiusPx(i)) + 11);
+    ctx.fillStyle = theme.rangeLabel; ctx.font = "9px 'Hanken Grotesk', sans-serif";
+    // Offset off the vertical: straight above centre put every label on the
+    // crosshair and under the N cardinal.
+    for (let i = 1 + (3 - UI.rangeLabels); i <= 3; i++) {
+      const rr = ringRadiusPx(i), a = toRad(58);
+      ctx.fillText(Math.round((rangeKm * i) / 3) + "km",
+        cx + Math.cos(a) * rr + 3, squishY(cy + Math.sin(a) * rr) + 4);
     }
 
-    ctx.fillStyle = theme.cardinal; ctx.font = "bold 11px ui-monospace, monospace";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    // cardinal letters rotate with the scene so N always points to true north
-    // (localized: French/Portuguese use O for Ouest/Oeste, German O for Ost,
-    // Chinese the characters 北东南西)
     const rot = toRad(displayHeading());
-    const cardLtrs = t("cards");
-    const card = [[cardLtrs[0],0],[cardLtrs[1],90],[cardLtrs[2],180],[cardLtrs[3],270]];
-    for (const [ltr, deg] of card) {
-      const a = toRad(deg - 90) - rot;
-      const lx = cx + (R - 9) * Math.cos(a);
-      const ly = cy + (R - 9) * Math.sin(a);
-      ctx.fillText(ltr, lx, squishY(ly));
+    if (UI.cardinals) {
+      ctx.fillStyle = theme.cardinal; ctx.font = "bold 11px 'Hanken Grotesk', sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      // cardinal letters rotate with the scene so N always points to true north
+      // (localized: French/Portuguese use O for Ouest/Oeste, German O for Ost,
+      // Chinese the characters 北东南西)
+      const cardLtrs = t("cards");
+      const card = [[cardLtrs[0],0],[cardLtrs[1],90],[cardLtrs[2],180],[cardLtrs[3],270]];
+      for (const [ltr, deg] of card) {
+        const a = toRad(deg - 90) - rot;
+        const lx = cx + (R - 20) * Math.cos(a);
+        const ly = cy + (R - 20) * Math.sin(a);
+        ctx.fillText(ltr, lx, squishY(ly));
+      }
+      ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
     }
-    ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
+    if (UI.northTick) {
+      // no letters, but north still has to be findable — one tick on the rim
+      const a = toRad(-90) - rot;
+      ctx.strokeStyle = `rgba(${theme.sweepRgb},0.92)`; ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx + (R - 1) * Math.cos(a), squishY(cy + (R - 1) * Math.sin(a)));
+      ctx.lineTo(cx + (R - 9) * Math.cos(a), squishY(cy + (R - 9) * Math.sin(a)));
+      ctx.stroke();
+    }
 
     drawCelestial();
+
+    // Contrails go over the sun and moon (a real one crosses them) but under
+    // every aircraft, so each plane sits at the head of its own trail.
+    for (const { p, proj, altM } of visible) {
+      try { drawContrail(p, proj, altM, now); } catch (e) { console.warn("skipped contrail", p.icao, e); }
+    }
 
     for (const { p, proj, altM, trackDeg } of visible) {
       try {
@@ -2040,7 +2212,7 @@
         // the altitude figure in its sheet, instead of hovering frozen
         const lift = altitudeLiftPx(altM);
         const iconY = groundY - lift;
-        if (lift > 1) {
+        if (lift > 1 && UI.altStems) {
           // faint stem + ground shadow: the aircraft floats above its actual
           // ground track when tilted, like a pin dropped on a 3D map
           ctx.setLineDash([2, 3]);
@@ -2084,9 +2256,22 @@
         document.getElementById("d-hdg").innerHTML = fmtHeading(displayTrack(sp, now));
         document.getElementById("d-dist").innerHTML = fmtDist(distKm);
         document.getElementById("d-vr").innerHTML = fmtVr(displayVrate(sp, now));
-        try { drawElevationGauge(altM, distKm); } catch (e) { console.warn("skipped elevation gauge", e); }
+        /* round 3: the corner protractor is gone — the flat gauge below
+           answers this for every aircraft at once, in its own space */
       }
     }
+
+    try { drawFlatGauge(now, visible); } catch (e) { console.warn("gauge", e); }
+
+    lastVisible = visible;
+    if (now - listTickAt > 320) {
+      listTickAt = now;
+      try { renderList(false); } catch (e) { console.warn("list", e); }
+    }
+
+    try { drawIndexBadges(now); } catch (e) { console.warn("tally", e); }
+
+    try { drawFollowLabel(now); } catch (e) { console.warn("label", e); }
 
     requestAnimationFrame(draw);
   }
@@ -2098,6 +2283,12 @@
   // piece stays its own stroke() call (not one continuous path) so the
   // existing per-segment age fade still applies per piece, and adjacent
   // pieces share an endpoint so the curve stays visually continuous.
+  // The contrail's SHADOW on the ground plane. The trail itself now hangs in
+  // the sky at the altitude it was flown at (drawContrail); this flattened
+  // copy stays on the disc purely to say where over the ground that path
+  // runs. It is deliberately near-invisible — sky-coloured but darker, the
+  // way a real shadow is — because the moment it competes with the contrail
+  // above it, the sky stops reading as sky and starts reading as a chart.
   function drawTrail(p, headProj) {
     if (!p.trail.length) return;
     const pts = [...p.trail.map(project), headProj];
@@ -2107,8 +2298,9 @@
     const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
     for (let i = 1; i < pts.length; i++) {
       const age = 1 - i / (pts.length); // older segments (lower i) fade more
-      ctx.strokeStyle = p.icao === selected ? `rgba(${theme.hotRgb},${0.5 - age * 0.4})` : `rgba(${theme.sweepRgb},${0.4 - age * 0.32})`;
-      ctx.lineWidth = 1.5;
+      const al = (p.icao === selected ? 0.30 : 0.15) * (1 - age * 0.85);
+      ctx.strokeStyle = p.icao === selected ? `rgba(${theme.hotRgb},${al})` : `rgba(${theme.trailShadowRgb},${al})`;
+      ctx.lineWidth = 1.2;
       const from = i > 1 ? midpoint(pts[i - 2], pts[i - 1]) : pts[i - 1];
       const to = i < pts.length - 1 ? midpoint(pts[i - 1], pts[i]) : pts[i];
       ctx.beginPath();
@@ -2118,13 +2310,103 @@
     }
   }
 
+  // ---------- contrails: the sky itself ----------
+  // Drawn in the billboard pass, BEFORE the aircraft, with every past fix
+  // lifted to the altitude it was flown at — so the trail hangs in the sky
+  // where the aircraft actually was, and the aircraft sits at the head of its
+  // own trail rather than on top of a flat line.
+  //
+  // Aging is the whole mechanism. A fresh segment is the crisp double
+  // hairline you see right behind the engines; every segment behind it
+  // widens, softens and loses contrast until it is cirrus. The blur is faked
+  // with a stack of progressively wider, fainter strokes — a real canvas
+  // filter costs far too much to run per segment per frame, and this reads
+  // the same at these widths.
+  const CONTRAIL_FRESH_W = 1.0;  // px, the hairline immediately behind the aircraft
+  const CONTRAIL_SPREAD_W = 7;   // px, how wide a segment has spread by the time it dissolves
+  const CONTRAIL_PEAK_A = 0.52;  // opacity of a young segment
+  // core / halo / outer wash — [width multiple, opacity multiple]
+  const CONTRAIL_PASSES = [[2.4, 0.15], [1.6, 0.29], [1.0, 0.56]];
+  // A segment can never be drawn wider than it is long. Without this, the log
+  // radial scale bites: out near the rim one 45 s hop covers only a handful of
+  // pixels, and a spread-out segment painted 20px wide across an 8px span is a
+  // round white ball, not a trail. Observed immediately on the first frames.
+  const CONTRAIL_MAX_W_PER_LEN = 0.85;
+  // Contrails are a high-altitude phenomenon — the air has to be cold enough
+  // for the exhaust moisture to freeze, which in practice means cruise. A
+  // Cessna at 400m leaves nothing. Rather than cut low aircraft off entirely
+  // (their path is the one you most want to follow), the trail thins and fades
+  // toward the ground until it is a bare thread.
+  const CONTRAIL_ALT_FULL_M = 7000; // AGL at which a trail is at full strength
+  const CONTRAIL_ALT_FLOOR = 0.18;  // what is left of it down on the deck
+  function contrailPoint(f) {
+    const pr = project(f);
+    return { x: pr.x, y: squishY(pr.y) - altitudeLiftPx(f.alt) };
+  }
+  function contrailStrength(altM) {
+    const agl = Math.max(0, (altM || 0) - (groundElevM ?? 0));
+    return CONTRAIL_ALT_FLOOR + (1 - CONTRAIL_ALT_FLOOR) * Math.min(1, agl / CONTRAIL_ALT_FULL_M);
+  }
+  function drawContrail(p, headProj, headAltM, now) {
+    if (!p.trail.length) return;
+    const pts = p.trail.map(contrailPoint);
+    const ages = p.trail.map(f => Math.min(1, Math.max(0, (now - f.t) / CONTRAIL_LIFE_MS)));
+    const strs = p.trail.map(f => contrailStrength(f.alt));
+    pts.push({ x: headProj.x, y: squishY(headProj.y) - altitudeLiftPx(headAltM) });
+    ages.push(0);
+    strs.push(contrailStrength(headAltM));
+    if (pts.length < 2) return;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (let i = 1; i < pts.length; i++) {
+      const age = (ages[i - 1] + ages[i]) / 2;
+      const str = (strs[i - 1] + strs[i]) / 2;
+      // squared falloff: a trail holds its brightness for the first minutes,
+      // then goes quickly — which is what makes the fresh end read as fresh
+      const a = CONTRAIL_PEAK_A * (1 - age) * (1 - age) * str;
+      if (a <= 0.004) continue;
+      const from = pts[i - 1], to = pts[i];
+      const segLen = Math.hypot(to.x - from.x, to.y - from.y);
+      let w = CONTRAIL_FRESH_W + (CONTRAIL_SPREAD_W - CONTRAIL_FRESH_W) * Math.pow(age, 0.65) * str;
+      w = Math.min(w, Math.max(CONTRAIL_FRESH_W, segLen * CONTRAIL_MAX_W_PER_LEN));
+      for (const [wk, ak] of CONTRAIL_PASSES) {
+        ctx.strokeStyle = `rgba(255,255,255,${a * ak})`;
+        ctx.lineWidth = w * wk;
+        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+      }
+    }
+    // The signature detail: the freshest stretch is TWO parallel hairlines,
+    // one per engine group, before they merge. This is the thing that makes
+    // it read as a contrail rather than a route line drawn on a map.
+    const n = pts.length;
+    const a0 = pts[n - 2], b0 = pts[n - 1];
+    const dx = b0.x - a0.x, dy = b0.y - a0.y, len = Math.hypot(dx, dy);
+    if (len > 7) {
+      const nx = (-dy / len) * 1.25, ny = (dx / len) * 1.25;
+      ctx.strokeStyle = `rgba(255,255,255,${0.6 * contrailStrength(headAltM)})`;
+      ctx.lineWidth = 0.9;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(a0.x + nx * s, a0.y + ny * s);
+        ctx.lineTo(b0.x + nx * s, b0.y + ny * s);
+        ctx.stroke();
+      }
+    }
+  }
+
   // Sun/moon are drawn pinned to the outer ring at their true compass bearing
   // (they're effectively infinitely far away) — a fixed reference point you
   // can use to orient yourself even without heading-up mode, the same way
   // you'd glance at the sun in the sky.
   function edgePoint(azDeg) {
     const ang = toRad(azDeg - 90 - displayHeading());
-    return { x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang) };
+    // R can now run past the map area (a direction may deliberately bleed the
+    // ring off the edges), so the celestial ring is the largest circle that
+    // still sits inside the map's own reserved box.
+    const res = gaugeReserve();
+    const rEdge = Math.min(R, cx - res.left, cy, cssW - cx,
+                           (cssH - res.bottom) - cy) - 14;
+    return { x: cx + rEdge * Math.cos(ang), y: cy + rEdge * Math.sin(ang) };
   }
   function drawCelestial() {
     // moon first, sun second — when their azimuths bring them close, the
@@ -2139,41 +2421,87 @@
       drawSunIcon({ x: pt.x, y: squishY(pt.y) });
     }
   }
-  // The sun/moon silhouettes are the SAME artwork as icons/sun.svg /
-  // icons/moon.svg (Slamet Widodo, the Noun Project — the theme switch's
-  // knob uses those files via CSS mask), inlined here as Path2D because
-  // canvas fills can't read CSS variables or mask an <img> per frame —
-  // colors come from theme.gold / theme.moonBody, which already carry the
-  // light/dark adaptation. Both paths share the icons' 96×96 viewBox,
-  // artwork centered on (48,48); keep path data in sync with the SVG files.
-  // Path2D is browser-only — guard it so the Node vm verification harnesses
-  // (which run this whole script against a mocked DOM) don't die on load.
-  const CELESTIAL_VB = 96;
-  const SUN_PATH = typeof Path2D === "undefined" ? null : new Path2D("M49.755,13.787c0,0.969-0.786,1.754-1.755,1.754c-0.969,0-1.754-0.786-1.754-1.754V5.892c0-0.969,0.786-1.755,1.754-1.755c0.969,0,1.755,0.786,1.755,1.755V13.787L49.755,13.787z M48,21.17c7.409,0,14.116,3.003,18.971,7.858C71.827,33.884,74.83,40.591,74.83,48s-3.003,14.116-7.858,18.971C62.116,71.827,55.409,74.83,48,74.83c-7.409,0-14.116-3.003-18.971-7.858C24.173,62.116,21.17,55.409,21.17,48s3.003-14.116,7.858-18.971S40.591,21.17,48,21.17L48,21.17z M25.048,22.567l-5.582-5.582c-0.685-0.685-1.796-0.685-2.481,0c-0.685,0.685-0.685,1.796,0,2.481l5.582,5.582c0.685,0.685,1.796,0.685,2.481,0C25.733,24.363,25.733,23.252,25.048,22.567L25.048,22.567z M13.787,46.245c0.969,0,1.754,0.786,1.754,1.755s-0.786,1.755-1.754,1.755H5.892c-0.969,0-1.755-0.786-1.755-1.755s0.786-1.755,1.755-1.755H13.787L13.787,46.245z M22.567,70.952l-5.582,5.582c-0.685,0.685-0.685,1.796,0,2.481c0.685,0.685,1.796,0.685,2.481,0l5.582-5.582c0.685-0.685,0.685-1.796,0-2.481C24.363,70.267,23.252,70.267,22.567,70.952L22.567,70.952z M46.246,82.213c0-0.969,0.786-1.754,1.754-1.754c0.969,0,1.755,0.786,1.755,1.754v7.895c0,0.969-0.786,1.755-1.755,1.755c-0.969,0-1.754-0.786-1.754-1.755V82.213L46.246,82.213z M70.952,73.433l5.582,5.582c0.685,0.685,1.796,0.685,2.481,0c0.685-0.685,0.685-1.796,0-2.481l-5.582-5.582c-0.685-0.685-1.796-0.685-2.481,0C70.267,71.637,70.267,72.748,70.952,73.433L70.952,73.433z M82.213,49.755c-0.969,0-1.754-0.786-1.754-1.755s0.786-1.755,1.754-1.755h7.895c0.969,0,1.755,0.786,1.755,1.755s-0.786,1.755-1.755,1.755H82.213L82.213,49.755z M73.433,25.048l5.582-5.582c0.685-0.685,0.685-1.796,0-2.481c-0.685-0.685-1.796-0.685-2.481,0l-5.582,5.582c-0.685,0.685-0.685,1.796,0,2.481C71.637,25.733,72.748,25.733,73.433,25.048z");
-  const MOON_PATH = typeof Path2D === "undefined" ? null : new Path2D("M89.351,71.981c-4.164,6.108-9.78,11.15-16.353,14.628c-6.337,3.353-13.556,5.251-21.214,5.251c-12.547,0-23.907-5.086-32.13-13.309c-8.223-8.223-13.309-19.583-13.309-32.13c0-9.402,2.858-18.139,7.754-25.389C19.137,13.568,26.341,7.68,34.812,4.266c0.897-0.36,1.916,0.076,2.275,0.973c0.225,0.562,0.138,1.172-0.179,1.638l0.001,0c-2.331,3.42-4.169,7.199-5.412,11.236c-1.198,3.893-1.843,8.04-1.843,12.35c0,11.579,4.693,22.062,12.281,29.649c7.588,7.588,18.07,12.281,29.649,12.281c2.745,0,5.419-0.261,7.997-0.76c2.658-0.514,5.224-1.277,7.673-2.264c0.897-0.36,1.916,0.076,2.275,0.973C89.754,70.905,89.667,71.515,89.351,71.981L89.351,71.981z");
-  // sizePx is the drawn size of the full 96-unit viewBox, centered on pt —
-  // the artwork itself spans ~88 of those 96 units, so visible extent is a
-  // touch under sizePx. The mini (gauge) sizes must keep their max visible
-  // radius ≤ 5.6px or elevGaugeGeometry()'s 13px ring buffer no longer
-  // provably clears the main ring (see round 53).
-  function drawCelestialGlyph(path, pt, sizePx, color) {
-    if (!path) return;
-    ctx.save(); ctx.translate(pt.x, pt.y);
-    const k = sizePx / CELESTIAL_VB;
-    ctx.scale(k, k); ctx.translate(-48, -48);
-    ctx.fillStyle = color;
-    ctx.fill(path, "evenodd");
+  // ---------- sun and moon, drawn as the real things ----------
+  // The old symbol glyphs (a spiky sun, a bitten-disc moon, both vendored
+  // from the Noun Project) are gone. A sun in the sky is not a symbol with
+  // rays — it is a small blinding core inside a soft halo, and it reddens as
+  // it drops toward the horizon. A daytime moon is barely a shade lighter
+  // than the sky around it. Both are now drawn from the same solar elevation
+  // that already drives the sky clock, so they agree with the sky by
+  // construction instead of being two colours tuned to match it.
+  //
+  // Everything here is plain screen space (outside the tilt scale), so a
+  // radial gradient can never smear into an ellipse when the map is tilted.
+
+  const rgbStr = c => `${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])}`;
+
+  // coreR / haloR let the elevation gauge's miniatures be the same drawing at
+  // a smaller size rather than a second, differently-shaped glyph. The gauge's
+  // max visible radius must stay ≤ 5.6px or elevGaugeGeometry()'s 13px ring
+  // buffer no longer provably clears the main ring (see round 53) — the halo
+  // is transparent at its rim, so coreR is what that budget applies to.
+  function drawSunDisc(pt, coreR, haloR) {
+    const el = sunPos ? sunPos.alt : 45;
+    // k: 0 with the sun high, 1 with it on the horizon. Below ~12° the light
+    // reddens fast, which is the whole reason a low sun looks like a low sun.
+    const k = Math.min(1, Math.max(0, (12 - el) / 14));
+    const core = [255, 253 - 20 * k, 242 - 96 * k];
+    const halo = [255, 243 - 44 * k, 212 - 104 * k];
+    const g = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, haloR);
+    g.addColorStop(0,    `rgba(${rgbStr(halo)},0.88)`);
+    g.addColorStop(0.16, `rgba(${rgbStr(halo)},0.44)`);
+    g.addColorStop(0.45, `rgba(${rgbStr(halo)},0.14)`);
+    g.addColorStop(1,    `rgba(${rgbStr(halo)},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(pt.x, pt.y, haloR, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgb(${rgbStr(core)})`;
+    ctx.beginPath(); ctx.arc(pt.x, pt.y, coreR, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // The moon's face is the sky colour lifted by a fraction that depends on
+  // how far down the sun is: +0.14 in full daylight (the reference photo —
+  // you have to look for it) rising to +0.92 once the sun is well set. That
+  // faintness is deliberate and is the honest rendering; the moon stays
+  // findable because it is always exactly on the outer ring.
+  //
+  // The terminator is real. moonIllum is the illuminated fraction computed
+  // from the sun–moon elongation in updateCelestial(), and the lit limb is
+  // turned to face the sun's own position on the ring — so the crescent
+  // always points at the sun, the way it does overhead.
+  function drawMoonDisc(pt, r) {
+    const el = sunPos ? sunPos.alt : -20;
+    const night = Math.min(1, Math.max(0, (2 - el) / 14));
+    const face = shade(skyAt(el), 0.14 + 0.78 * night);
+    let tilt = -Math.PI / 2; // lit side up, if we have no sun to point at
+    if (sunPos) {
+      const sp = edgePoint(sunPos.az);
+      tilt = Math.atan2(squishY(sp.y) - pt.y, sp.x - pt.x);
+    }
+    // signed semi-axis of the terminator ellipse: >0 crescent, <0 gibbous
+    const a = r * (1 - 2 * Math.min(1, Math.max(0, moonIllum)));
+    ctx.save();
+    ctx.translate(pt.x, pt.y);
+    ctx.rotate(tilt); // +x now points at the sun, i.e. at the lit limb
+    ctx.beginPath();
+    ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);                      // the lit outer limb
+    ctx.ellipse(0, 0, Math.abs(a), r, 0, Math.PI / 2, -Math.PI / 2, a > 0);  // the terminator
+    ctx.closePath();
+    ctx.fillStyle = `rgb(${rgbStr(face)})`;
+    ctx.fill();
     ctx.restore();
   }
+
   function drawSunIcon(pt) {
-    drawCelestialGlyph(SUN_PATH, pt, 20, theme.gold); // ray tips ≈ 9.1px out, same as the old hand-drawn glyph
-    ctx.fillStyle = theme.gold; ctx.font = "9px ui-monospace, monospace";
-    ctx.fillText(t("sun"), pt.x + 11, pt.y + 3);
+    drawSunDisc(pt, 4.6, 26);
+    if (!UI.celestialLabels) return;
+    ctx.fillStyle = theme.gold; ctx.font = "9px 'Hanken Grotesk', sans-serif";
+    ctx.fillText(t("sun"), pt.x + 15, pt.y + 3);
   }
   function drawMoonIcon(pt) {
-    drawCelestialGlyph(MOON_PATH, pt, 14, theme.moonBody); // ≈ 6px visible radius, same as before
-    ctx.fillStyle = theme.moonBody; ctx.font = "9px ui-monospace, monospace";
-    ctx.fillText(t("moon"), pt.x + 11, pt.y + 3);
+    drawMoonDisc(pt, 7);
+    if (!UI.celestialLabels) return;
+    ctx.fillStyle = theme.moonBody; ctx.font = "9px 'Hanken Grotesk', sans-serif";
+    ctx.fillText(t("moon"), pt.x + 12, pt.y + 3);
   }
 
   // ---------- elevation gauge (bottom-left corner, only while a plane is
@@ -2242,6 +2570,10 @@
   // aircraft drawn over the gauge still wins: hitTest runs before this
   // zone is consulted (round 52).
   function inElevGaugeZone(px, py) {
+    // round 3: the strip is a control, not an inert overlay — a tap that
+    // hit no aircraft cycles its shape (hitTest still runs first)
+    if (inGaugeZone(px, py)) { cycleGauge(); return true; }
+    return false;
     if (!selected) return false;
     const g = elevGaugeGeometry();
     return px >= 0 && px <= g.gx + g.gr + 40 && py >= g.gy - g.gr - 14 && py <= cssSize;
@@ -2277,7 +2609,7 @@
       ctx.lineTo(g.gx + (g.gr + 3) * ca, g.gy - (g.gr + 3) * sa);
       ctx.stroke();
     }
-    ctx.font = "8px ui-monospace, monospace";
+    ctx.font = "8px 'Hanken Grotesk', sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillStyle = theme.rangeLabel;
     ctx.fillText("90°", g.gx, g.gy - g.gr + 12);
@@ -2305,7 +2637,7 @@
     // canvas (cssSize 180, gr ~12.7px) the ring's bottom chord passes only
     // ~21px right of the arc end at this height, so a wider offset would
     // put the glyph inside the ring there (caught by the round-52 harness).
-    ctx.fillStyle = theme.rangeLabel; ctx.font = "11px ui-monospace, monospace";
+    ctx.fillStyle = theme.rangeLabel; ctx.font = "11px 'Hanken Grotesk', sans-serif";
     ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
     ctx.fillText(GROUND_ICON, g.gx + g.gr + 12, g.gy - 1);
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -2342,7 +2674,7 @@
     // and weight as the gauge's other figures, NOT red — only the marker
     // triangle is red (explicit ask, round 53).
     const fs = Math.min(26, Math.max(14, Math.round(g.gr * 0.26)));
-    ctx.fillStyle = theme.rangeLabel; ctx.font = fs + "px ui-monospace, monospace";
+    ctx.fillStyle = theme.rangeLabel; ctx.font = fs + "px 'Hanken Grotesk', sans-serif";
     ctx.fillText(Math.round(planeDeg) + "°", g.gx + g.gr * 0.30, g.gy - g.gr * 0.30);
     ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
   }
@@ -2350,8 +2682,10 @@
   // the elevation gauge's arc markers. Max visible radius at these sizes:
   // sun 43.9/96×12 ≈ 5.49px, moon 41.4/96×9 ≈ 3.88px — both within the
   // 5.6px extent the gauge's ring-clearance buffer reserves (round 53).
-  function drawMiniSun(pt) { drawCelestialGlyph(SUN_PATH, pt, 12, theme.gold); }
-  function drawMiniMoon(pt) { drawCelestialGlyph(MOON_PATH, pt, 9, theme.moonBody); }
+  // the same two drawings at gauge size — see the ring-clearance note on
+  // drawSunDisc for why the cores stay this small
+  function drawMiniSun(pt) { drawSunDisc(pt, 2.8, 13); }
+  function drawMiniMoon(pt) { drawMoonDisc(pt, 4.4); }
 
   // One of 4 distinct pictograms instead of a generic triangle, picked from
   // the friendly type bucket. Rare categories (drone/airship/glider/unknown)
@@ -2482,38 +2816,61 @@
   // not a new hardcoded color, so it still adapts to the light theme): a
   // soft halo behind it plus its own silhouette redrawn in green on top,
   // both fading out together.
+  const sstep = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+
+  // The reveal: a small cumulus puffs in over the aircraft's true position,
+  // hangs, then dissipates and drifts off, leaving the aircraft behind it.
+  // Replaces the old sweep-green halo, which belonged to the radar-scope
+  // world. Drawn in plain screen space (NOT inside the icon's rotate/scale
+  // block) for the same reason the old halo was: canvas gradients and blurs
+  // don't scale predictably under ctx.scale.
+  function drawRevealCloud(x, y, age, icao) {
+    const grow = sstep(age / 0.24);
+    const fade = 1 - sstep((age - 0.44) / 0.56);
+    if (fade <= 0.002) return;
+    const r = 16 * (0.34 + grow * 0.66) * (1 + (1 - fade) * 0.80);
+    const drift = (1 - fade) * 20;
+    const bx = x + drift, by = y - drift * 0.30;
+    // deterministic per aircraft, so a puff doesn't reshuffle every frame
+    let seed = (parseInt(icao, 16) || 1) >>> 0;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    ctx.save();
+    ctx.globalAlpha = fade;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + rnd() * 0.8;
+      const lr = r * (0.44 + rnd() * 0.28);
+      const lx = bx + Math.cos(a) * r * 0.46;
+      const ly = by + Math.sin(a) * r * 0.30;
+      const g = ctx.createRadialGradient(lx, ly, lr * 0.15, lx, ly, lr);
+      g.addColorStop(0, "rgba(255,255,255,0.98)");
+      g.addColorStop(0.62, "rgba(247,251,255,0.88)");
+      g.addColorStop(1, "rgba(228,241,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(lx, ly, lr, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function drawPlane(x, y, heading, sel, p, lateralDistKm, glowAge) {
     const scale = slantScale(p.alt, lateralDistKm);
-    ctx.save(); ctx.translate(x, y); ctx.rotate(toRad(heading)); ctx.scale(scale, scale);
+    // The aircraft comes out from BEHIND the reveal cloud, so its opacity is
+    // driven by the same clock as the puff rather than fading in on its own.
+    const emerge = glowAge == null ? 1 : sstep((glowAge - 0.34) / 0.30);
+    ctx.save();
+    ctx.globalAlpha = emerge;
+    ctx.translate(x, y); ctx.rotate(toRad(heading)); ctx.scale(scale, scale);
     ctx.fillStyle = sel ? theme.hotHex : theme.inkHex;
     ctx.strokeStyle = sel ? theme.hotHex : theme.inkHex;
     drawIconPath(iconForType(typeKey(p)));
     ctx.restore();
-    if (glowAge != null) {
-      const fade = 1 - glowAge;
-      // halo drawn in plain screen space (NOT inside a rotate/scale block)
-      // so its radius stays predictable regardless of the icon's own
-      // heading/size — canvas shadowBlur doesn't scale consistently under
-      // ctx.scale across browsers, a radial gradient sidesteps that entirely
-      ctx.save();
-      const glow = ctx.createRadialGradient(x, y, 0, x, y, 18);
-      glow.addColorStop(0, `rgba(${theme.sweepRgb},${0.55 * fade})`);
-      glow.addColorStop(1, `rgba(${theme.sweepRgb},0)`);
-      ctx.fillStyle = glow;
-      ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-
-      ctx.save();
-      ctx.globalAlpha = fade;
-      ctx.translate(x, y); ctx.rotate(toRad(heading)); ctx.scale(scale, scale);
-      ctx.fillStyle = theme.sweepHex;
-      ctx.strokeStyle = theme.sweepHex;
-      drawIconPath(iconForType(typeKey(p)));
-      ctx.restore();
-    }
+    if (glowAge != null) drawRevealCloud(x, y, glowAge, p.icao);
     if (sel) { ctx.strokeStyle = theme.hotHex; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.stroke(); }
+    // UI.planeLabels: "all" paints every callsign, "selected" only the tapped
+    // one. The selected aircraft is never left unnamed — dropping ITS label
+    // costs information and buys no quiet, since there is only ever one.
+    if (sel || UI.planeLabels !== "all") return; // round 3: the direction names it
     ctx.fillStyle = sel ? theme.hotHex : `rgba(${theme.inkSoftRgb},0.65)`;
-    ctx.font = (sel ? "bold " : "") + "9px ui-monospace, monospace";
+    ctx.font = (sel ? "bold " : "") + "9px 'Hanken Grotesk', sans-serif";
     ctx.fillText(p.call === "—" ? "" : p.call, x + 9, y + 3);
   }
 
@@ -2725,7 +3082,7 @@
     sheet.classList.add("open");
     // offsetHeight is valid even though the sheet animates via transform;
     // measured after renderSheet so the height reflects the current content
-    stageEl.style.paddingBottom = sheet.offsetHeight + "px";
+    /* round 3: the expanded row is the detail; nothing docks over the map */
     resize();
   }
   function closeSheet() {
@@ -2830,6 +3187,7 @@
   });
   updateUnitsBtn();
   document.getElementById("app-version").textContent = APP_VERSION;
+  document.getElementById("gate-version").textContent = APP_VERSION;
 
   // ---------- share: PNG "spotting card" for user acquisition ----------
   // Tapping the icon renders a portrait card (radar snapshot + read-out +
@@ -2842,12 +3200,12 @@
   const shareBtn = document.getElementById("d-share");
   const shareToast = document.getElementById("sheet-toast");
   const SHARE_W = 1080, SHARE_H = 1350, SHARE_PAD = 64;
-  const SHARE_FONT = 'ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace';
+  const SHARE_FONT = '"Hanken Grotesk", ui-sans-serif, system-ui, sans-serif';
   const SHARE_RADAR_Y = 168, SHARE_RADAR_SIZE = 780;
   const SHARE_BOTTOM_Y = SHARE_RADAR_Y + SHARE_RADAR_SIZE + 42; // 990 — gap below the radar snapshot
   const SHARE_SIL_W = 250, SHARE_SIL_H = 280; // bottom-right silhouette box
 
-  const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  // (cssVar lives up with the canvas palette — see readThemeFromCss.)
   // fmtAlt/fmtSpd/fmtDist/fmtVr return HTML (a <small> unit suffix) for the
   // sheet's own innerHTML use — fine there, not for canvas fillText. They
   // only ever wrap a plain unit string in <small> with no entities, so a
@@ -3145,10 +3503,10 @@
     btn.classList.add("on"); rangeKm = +btn.dataset.km;
     // no fetch here — every poll already covers RANGE_KM_MAX, so switching
     // range just re-filters what's stored (an extra request per tap used to
-    // trip airplanes.live's rate limiter). The count updates immediately;
+    // trip airplanes.live's rate limiter). The header count follows on the
+    // next frame (draw() recomputes it against the new rangeKm);
     // displayRangeKm (used by project()) eases toward the new range over
     // subsequent frames so rings and aircraft animate rather than snap.
-    updateCountDisplay();
   });
 
   // (a leftover key from the short-lived sky view, removed 2026-07-07 — tidy
@@ -3238,6 +3596,7 @@
   // elevation gauge uses on the opposite (bottom-left) corner. Called from
   // resize(), which openSheet()/closeSheet() already call.
   function positionCompass() {
+    return; // round 3: every direction places the compass in CSS
     if (!sheet.classList.contains("open")) {
       headingBtn.style.right = "";
       headingBtn.style.bottom = "";
@@ -3279,8 +3638,13 @@
   const themeBtn = document.getElementById("theme-btn");
   const themeColorMeta = document.querySelector('meta[name="theme-color"]');
   function applyTheme(name) {
-    theme = THEMES[name] || THEMES.dark;
+    if (name !== "light") name = "dark";
+    // ORDER MATTERS: the attribute drives which :root block wins, and
+    // readThemeFromCss() reads the resolved values — so the attribute has to
+    // land first. getPropertyValue forces a synchronous style recalc, so the
+    // read on the next line already sees the new theme.
     document.documentElement.setAttribute("data-theme", name);
+    theme = readThemeFromCss();
     // the knob's sun/moon icon flips in pure CSS off data-theme (it shows the
     // CURRENT mode — the pill position is the state indicator); the title
     // still says what a tap switches TO
@@ -3312,7 +3676,7 @@
     const elapsed = Date.now() - lastFetch;
     if (elapsed >= POLL_MS) poll();
     else {
-      setStatus("live", `${t("live")} · ${countVisible()}`);
+      setLiveStatus();
       pollTimer = setTimeout(poll, POLL_MS - elapsed);
     }
   }
@@ -3327,8 +3691,7 @@
     me = { lat, lon }; placeName = name || ""; placeIsAddress = !!isAddress;
     document.getElementById("gate").classList.add("hidden");
     const here = document.getElementById("here");
-    here.innerHTML = (placeName ? placeName + " · " : "") + `<button id="change-loc">${t("change")}</button>`;
-    document.getElementById("change-loc")?.addEventListener("click", reopenGate);
+    here.textContent = placeName || t("myLocation");
     resize(); setStatus("live", t("connecting")); startPolling();
     if (!drawLoopStarted) { drawLoopStarted = true; requestAnimationFrame(draw); }
     updateCelestial(); celestialTimer = setInterval(updateCelestial, 60000);
@@ -3341,12 +3704,12 @@
     // sweep-reveal state is session-scoped too — a fresh location deserves a
     // fresh sweep (a plane that was already revealed at the OLD location has
     // no meaning at the new one).
-    revealedIcaos.clear(); activeBlips.clear(); prevSweepAngRaw = null;
+    revealedIcaos.clear(); activeBlips.clear(); nextRevealAt = 0;
     clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
     clearInterval(cloudTimer); cloudTimer = null;
     cloudCeilM = null; cloudCeilMslM = null; cloudFetchedAt = 0; groundElevM = null;
     lowPlaneOnScreen = false; updateCeilingDisplay();
-    document.getElementById("count-n").textContent = "0";
+    updateCountDisplay(0);
     document.getElementById("gate").classList.remove("hidden");
     setStatus("paused", t("standby"));
   }
@@ -3361,6 +3724,7 @@
   // math on the device clock + the user's lat/lon; no network call.
   let celestialTimer = null;
   let sunPos = null, moonPos = null; // { alt, az } in degrees, recomputed every 60s
+  let moonIllum = 0.5;               // illuminated fraction, 0 = new, 1 = full — drives the drawn phase
 
   function daysSinceJ2000(date) {
     return (date.getTime() - Date.UTC(2000, 0, 1, 12, 0, 0)) / 86400000;
@@ -3409,7 +3773,134 @@
     const sun = sunEquatorial(d), moon = moonEquatorial(d);
     sunPos = toHorizontal(sun.raDeg, sun.decDeg, me.lat, lst);
     moonPos = toHorizontal(moon.raDeg, moon.decDeg, me.lat, lst);
+    // Phase, so the drawn moon is the moon that is actually up tonight.
+    // Elongation between sun and moon by the spherical law of cosines; the
+    // phase angle is 180° − elongation to well within this series' own
+    // precision (it ignores the Earth–Moon/Earth–Sun distance ratio, worth
+    // under a percent of illuminated fraction and invisible at 14px).
+    const decS = toRad(sun.decDeg), decM = toRad(moon.decDeg);
+    const cosEl = Math.sin(decS) * Math.sin(decM) +
+      Math.cos(decS) * Math.cos(decM) * Math.cos(toRad(moon.raDeg - sun.raDeg));
+    moonIllum = (1 - Math.max(-1, Math.min(1, cosEl))) / 2;
+    applySkyClock(sunPos.alt);
   }
+
+  // The gate is shown BEFORE any location is known, so the real solar
+  // elevation isn't computable yet — and the CSS defaults are the noon blue,
+  // which is how the landing page came to be permanently midday no matter what
+  // time it was opened. This runs the same astronomy against a stand-in
+  // position: longitude from the device's own UTC offset (15° per hour, which
+  // is what a timezone IS), latitude pinned at 45°. Hour angle is what decides
+  // day from night, and that comes out of the offset exactly; the latitude
+  // guess only shifts how HIGH noon gets, so the worst case is a sky an hour
+  // or so off around the equinox — never the wrong half of the day.
+  // updateCelestial() overwrites this with the truth the moment begin() runs.
+  // (It is CALLED at the end of the sky-clock section below, not here: SKY_KEYS
+  // is a const declared down there, and a top-level call that runs before it
+  // initializes throws a TDZ ReferenceError that kills the rest of the script.)
+  function provisionalSunAlt() {
+    const now = new Date();
+    const d = daysSinceJ2000(now);
+    // STANDARD offset, not the current one: daylight saving shifts the clock a
+    // full hour off solar time, and reading it straight would put the guessed
+    // longitude 15° out all summer — enough to paint sunset colours while it
+    // is still plainly afternoon. getTimezoneOffset() counts minutes BEHIND
+    // UTC, so DST makes it smaller and the larger of a midwinter and a
+    // midsummer sample is the zone's standard offset in either hemisphere.
+    const y = now.getFullYear();
+    const stdOffMin = Math.max(
+      new Date(y, 0, 1).getTimezoneOffset(),
+      new Date(y, 6, 1).getTimezoneOffset()
+    );
+    const lon = -stdOffMin / 4; // minutes → degrees (60 min = 15°)
+    const lst = (gmstDeg(d) + lon + 360) % 360;
+    const s = sunEquatorial(d);
+    return toHorizontal(s.raDeg, s.decDeg, 45, lst).alt;
+  }
+
+  // ---------- sky clock ----------
+  // The sky is not a theme the user picks, it is the time of day where they
+  // are standing — so it comes from the same solar elevation that already
+  // places the sun glyph on the outer ring. One colour drives the palette:
+  // everything else is a fixed mix away from it, which is what keeps the
+  // text-contrast ratios constant no matter what hour it is.
+  // The old ramp ran night-navy → noon-blue along a single blue hue, and every
+  // key above +5° was within a few points of the last one — so for the entire
+  // usable day (the sun clears 5° within half an hour of sunrise and stays
+  // there until half an hour before sunset) the app was one flat midday blue.
+  // The hours the sky is actually WORTH looking at were the ones it couldn't
+  // show. The ramp now bends through warm hues either side of the horizon —
+  // indigo, violet, plum, burnt orange — and only settles into blue once the
+  // sun is genuinely up, with most of the keys packed into the -10°..+16° band
+  // where real sky colour moves fastest.
+  //
+  // CONSTRAINT, and the reason the warm keys are as dark as they are: every
+  // key must hold at least the 6.2:1 white-on-sky and 3.19:1 hot-on-sky that
+  // the old noon blue set, because that noon blue is the app's worst case and
+  // nothing here may make a sunlit screen harder to read than it already is.
+  // Check any new key against both before adding it.
+  const SKY_KEYS = [
+    { el: -18, sky: [7, 12, 34] },     // night
+    { el: -10, sky: [14, 20, 58] },    // astronomical twilight
+    { el:  -6, sky: [30, 30, 84] },    // nautical twilight — indigo
+    { el:  -3, sky: [62, 38, 96] },    // civil twilight — violet
+    { el:   0, sky: [104, 44, 84] },   // sun on the horizon — plum
+    { el:   3, sky: [124, 58, 60] },   // sunrise / sunset — burnt orange
+    { el:   8, sky: [88, 74, 128] },   // golden hour turning over to blue
+    { el:  16, sky: [40, 84, 180] },   // morning / late afternoon
+    { el:  32, sky: [22, 90, 196] },   // full day
+    { el:  55, sky: [15, 92, 200] }    // solar noon — the pinned high-noon blue
+  ];
+  const hex2 = n => Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, "0");
+  const toHex = c => "#" + hex2(c[0]) + hex2(c[1]) + hex2(c[2]);
+  // t toward white when positive, toward black when negative
+  const shade = (c, t) => t >= 0
+    ? c.map(v => v + (255 - v) * t)
+    : c.map(v => v * (1 + t));
+
+  function skyAt(elevDeg) {
+    let i = 0;
+    while (i < SKY_KEYS.length - 2 && elevDeg > SKY_KEYS[i + 1].el) i++;
+    const a = SKY_KEYS[i], b = SKY_KEYS[i + 1];
+    const u = Math.max(0, Math.min(1, (elevDeg - a.el) / (b.el - a.el)));
+    return a.sky.map((v, k) => v + (b.sky[k] - v) * u);
+  }
+
+  function applySkyClock(elevDeg) {
+    if (elevDeg == null) return;
+    const sky = skyAt(elevDeg);
+    const set = (n, v) => document.documentElement.style.setProperty(n, v);
+    set("--void", toHex(sky));
+    set("--panel", toHex(shade(sky, -0.42)));
+    set("--grid-line", toHex(shade(sky, 0.18)));
+    set("--ring", toHex(shade(sky, 0.42)));
+    set("--ring-minor", toHex(shade(sky, 0.30)));
+    set("--crosshair", toHex(shade(sky, 0.085)));
+    set("--trail-shadow", toHex(shade(sky, -0.30)));
+    set("--range-label", toHex(shade(sky, 0.80)));
+    set("--ink-soft", toHex(shade(sky, 0.86)));
+    set("--ink-faint", toHex(shade(sky, 0.82)));
+    // rich coral against a night sky, lifted to amber-orange under a
+    // bright one, where a saturated coral is 2.2:1 and simply not there
+    // full amber the moment the sun clears the horizon, not at
+    // some arbitrary elevation: a ramp that only reaches 1 at solar
+    // noon leaves the accent short of 3:1 for most of the day
+    const day = Math.max(0, Math.min(1, (elevDeg + 6) / 6));
+    const HOT_NIGHT = [255, 107, 74], HOT_DAY = [255, 166, 69];
+    set("--hot", toHex(HOT_NIGHT.map((v, k) => v + (HOT_DAY[k] - v) * day)));
+    set("--on-hot", toHex(shade(sky, -0.42)));
+    // Canvas colours are read from CSS, so the palette has to be re-read
+    // after the vars move or the radar keeps painting the previous hour.
+    theme = readThemeFromCss();
+    themeColorMeta?.setAttribute("content", toHex(sky));
+  }
+
+  // Paint the gate at the right hour immediately (see provisionalSunAlt), and
+  // keep following it — the gate can sit open a long time while someone reads
+  // it or types an address, and a page left open across sunset should move
+  // with the sky exactly like the radar does.
+  applySkyClock(provisionalSunAlt());
+  setInterval(() => { if (!me) applySkyClock(provisionalSunAlt()); }, 60000);
 
   // ---------- location gate ----------
   // The address entry is always visible as a first-class alternative (not
@@ -3448,8 +3939,14 @@
       addrResults.innerHTML = "";
       for (const r of list) {
         const li = document.createElement("li");
-        li.textContent = r.display_name;
-        li.addEventListener("click", () => { armCompass(); primeDetectSound(); begin(+r.lat, +r.lon, r.display_name.split(",")[0], true); });
+        // a real button, not a click-handled <li> — the address path is the
+        // only way in for anyone who declines geolocation, so it has to be
+        // reachable by keyboard and announced as actionable
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = r.display_name;
+        btn.addEventListener("click", () => { armCompass(); primeDetectSound(); begin(+r.lat, +r.lon, r.display_name.split(",")[0], true); });
+        li.appendChild(btn);
         addrResults.appendChild(li);
       }
     } catch { gateErr.textContent = t("lookupFailed"); }
@@ -3488,12 +3985,14 @@
     document.getElementById("gate-credit").innerHTML = t("credit"); // contains the attribution link
     addrInput.placeholder = t("addrPlaceholder");
     document.getElementById("ceiling-box").title = t("conditionsTip");
-    document.getElementById("brand").title = t("homeTip");
+    document.getElementById("rail-mark").title = t("homeTip");
     headingBtn.title = t("compassTip");
     unitsBtn.title = t("unitsTip");
     shareBtn.title = t("shareTip");
     shareBtn.setAttribute("aria-label", t("shareTip"));
     themeBtn.title = document.documentElement.getAttribute("data-theme") === "light" ? t("themeToDark") : t("themeToLight");
+    try { applyLangList(); } catch (e) {}
+    if (typeof applyLangExtra === "function") { try { applyLangExtra(); } catch (e) {} }
     updateUnitsBtn();
     updateCeilingDisplay(); // number formatting follows the language
     if (!me) setStatus("paused", t("standby"));
@@ -3509,9 +4008,602 @@
   applyLang();
 
   // ---------- register service worker ----------
-  if ("serviceWorker" in navigator) {
+  // Service worker deliberately NOT registered in the prototypes: three
+  // variation files share one scope, and a cached shell makes comparing them
+  // unreliable. The shipping app still registers it.
+  if (false) {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
   }
+
+  // ---------- G4: the immersive map, sharpened ----------
+  const MAP_R_SCALE = 1.16;   // the ring runs as wide as the map box allows
+  const MAP_CY_FRAC = 0.5;
+  const GAUGE_FONT = '900 10px "Field", sans-serif';
+  const GAUGE_DEG_FONT = '900 16px "Field", sans-serif';
+
+  // ============================================================
+  //  THE ELEVATION LADDER
+  // ============================================================
+  // One shape now, not three. It answers the one question a top-down map
+  // structurally cannot: how far up do I tilt my head. It lives in RESERVED
+  // space (see gaugeReserve, consumed by resize before the map is fitted), so
+  // it can never be drawn over the radar.
+  const GAUGE_LADDER_W = 56;
+  function gaugeReserve() { return { left: GAUGE_LADDER_W, bottom: 0 }; }
+  function gaugeRect() {
+    return { x: 15, y: 34, w: GAUGE_LADDER_W - 30, h: Math.max(70, cssH - 76) };
+  }
+  function inGaugeZone(px, py) { return px <= GAUGE_LADDER_W; }
+  function cycleGauge() { /* one shape now — the strip is inert */ }
+
+  // LOG SCALE. Linear degrees put nearly every aircraft in the bottom fifth
+  // of the rail: a jet at 10 km and 10 km up is only 45° away, and most of
+  // what you actually look at sits under 20°. With a knee of 8°, 0–20° takes
+  // half the rail and 45–90° takes the top quarter — the crowd spreads out
+  // and straight up is still the top.
+  const LADDER_KNEE_DEG = 8;
+  const LADDER_NORM = Math.log(1 + 90 / LADDER_KNEE_DEG);
+  function ladderFrac(e) {
+    const d = Math.max(0, Math.min(90, e));
+    return Math.log(1 + d / LADDER_KNEE_DEG) / LADDER_NORM;
+  }
+
+  function gaugeElev(p, now) {
+    const altM = estimatedAltitude(p, now);
+    const pos = estimatedPosition(p, now);
+    const h = (altM ?? (groundElevM ?? 0)) - (groundElevM ?? 0);
+    return elevationDeg(h, haversineKm(me, pos));
+  }
+
+  function gaugeLabel(txt, x, y, align, alpha) {
+    ctx.font = GAUGE_FONT;
+    ctx.fillStyle = `rgba(${theme.inkSoftRgb},${alpha == null ? 0.55 : alpha})`;
+    ctx.textAlign = align || "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(txt, x, y);
+    ctx.textAlign = "start";
+  }
+
+  function drawFlatGauge(now, list) {
+    ctx.save();
+    ctx.textBaseline = "alphabetic";
+    const g = gaugeRect();
+    const x = g.x + g.w / 2, yb = g.y + g.h;
+    const py = e => yb - ladderFrac(e) * g.h;
+
+    // every alpha on this rail was between 0.28 and 0.5 — under 3:1 on the
+    // noon sky, i.e. a scale you cannot read in the daylight it is used in
+    ctx.strokeStyle = `rgba(${theme.inkSoftRgb},0.5)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + 0.5, py(90)); ctx.lineTo(x + 0.5, yb); ctx.stroke();
+    // 0 and 90 are the ends and are labelled; 10, 20 and 45 are the graduation
+    // that shows the scale is not linear
+    for (const e of [10, 20, 45]) {
+      const y = py(e);
+      ctx.strokeStyle = `rgba(${theme.inkSoftRgb},0.55)`;
+      ctx.beginPath(); ctx.moveTo(x - 3.5, y + 0.5); ctx.lineTo(x + 3.5, y + 0.5); ctx.stroke();
+    }
+    for (const e of [0, 90]) {
+      const y = py(e);
+      ctx.strokeStyle = `rgba(${theme.inkSoftRgb},0.85)`;
+      ctx.beginPath(); ctx.moveTo(x - 5, y + 0.5); ctx.lineTo(x + 5, y + 0.5); ctx.stroke();
+    }
+    gaugeLabel("90°", x, py(90) - 8, "center", 0.9);
+    gaugeLabel("45", x + 8, py(45) + 3.5, "left", 0.7);
+    gaugeLabel("0°", x, yb + 14, "center", 0.9);
+
+    // moon first, sun second: when they converge the sun must layer above
+    if (moonPos && moonPos.alt > -0.3) drawMoonDisc({ x, y: py(moonPos.alt) }, 5);
+    if (sunPos && sunPos.alt > -0.83) drawSunDisc({ x, y: py(sunPos.alt) }, 3.4, 15);
+
+    for (const { p } of list) {
+      try {
+        const e = gaugeElev(p, now);
+        const y = py(e), sel = p.icao === selected;
+        // the same number the row and the map icon carry: which bead is
+        // which was otherwise unanswerable, and the ladder is the one place
+        // that tells you how far up to tilt your head
+        const n = planeIdx.get(p.icao);
+        if (n) {
+          ctx.font = GAUGE_FONT;
+          ctx.textAlign = "right";
+          ctx.fillStyle = sel ? theme.hotHex : `rgba(${theme.inkSoftRgb},0.8)`;
+          ctx.fillText(String(n), x - 9, y + 3.5);
+          ctx.textAlign = "start";
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, sel ? 5.5 : 3.2, 0, Math.PI * 2);
+        ctx.fillStyle = sel ? theme.hotHex : `rgba(${theme.inkSoftRgb},0.8)`;
+        ctx.fill();
+        if (sel) {
+          ctx.beginPath();
+          ctx.arc(x, y, 9.5, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(${theme.hotRgb},0.45)`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.font = GAUGE_DEG_FONT;
+          ctx.fillStyle = theme.hotHex;
+          ctx.textAlign = "left";
+          ctx.fillText(Math.round(e) + "°", x + 13, y + 5);
+          ctx.textAlign = "start";
+        }
+      } catch (err) { /* one bad record must not take the gauge down */ }
+    }
+    ctx.restore();
+  }
+
+  // ============================================================
+  //  THE LIST — one row per aircraft, the row IS the detail panel
+  // ============================================================
+  // Selecting an aircraft, from the list or from the map, expands its row in
+  // place into the full record. The split with the map is FIXED, so the map
+  // does not move: the list scrolls the opened row into view instead.
+  // `var`, deliberately: applyLang() runs at the END of the engine's own
+  // script, which is BEFORE this appended block executes. A `let` read from
+  // there would throw a TDZ ReferenceError on load — the exact silent
+  // dead-on-load failure this project has been bitten by before.
+  var listReady = false;
+  const listEl = document.getElementById("entry-list");
+  let lastVisible = [];
+  let listTickAt = 0, listSig = "";
+  const rowFor = new Map();
+  // icao → the row number this aircraft is showing, so the map icon, the
+  // ladder bead and the list row can all say the same thing. Written once per
+  // list tick from the SAME nearest-first ordering the rows are built from.
+  const planeIdx = new Map();
+  const DETAIL_KEYS = { alt: "altitude", spd: "speed", dist: "distance",
+                        hdg: "heading", vr: "climb" };
+
+  function silhouetteFor(p) {
+    const bucket = SHAPE_BUCKET[typeKey(p)] || "Unidentified";
+    const raw = (p.typeCode || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const code = SHAPE_CODE_ALIAS[raw] || raw;
+    const img = document.createElement("img");
+    img.alt = ""; img.draggable = false;
+    // same fallback ladder as the engine's own setShape(), driven purely off
+    // the <img> error event so no filename manifest has to be embedded
+    img.onerror = () => {
+      const st = img.dataset.stage;
+      if (st === "exact") { img.dataset.stage = "bucket"; img.src = `shapes/${bucket}.svg`; }
+      else if (st === "bucket") { img.dataset.stage = "generic"; img.src = "shapes/Unidentified.svg"; }
+      else { img.onerror = null; img.style.visibility = "hidden"; }
+    };
+    if (code) { img.dataset.stage = "exact"; img.src = `shapes/${code}.svg`; }
+    else { img.dataset.stage = "bucket"; img.src = `shapes/${bucket}.svg`; }
+    return img;
+  }
+
+  function el(tag, cls, parent) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+
+  function listRows(now) {
+    return lastVisible
+      .map(v => ({ p: v.p, altM: v.altM, d: haversineKm(me, estimatedPosition(v.p, now)) }))
+      .sort((a, b) => a.d - b.d);
+  }
+
+  // AN EMPTY LIST MEANS THREE DIFFERENT THINGS and they used to look
+  // identical: "0 aircraft" on a blue screen, whether the app was still
+  // pacing its reveals in, whether the sky was genuinely clear, or whether
+  // the feed was unreachable. The middle case is also the only place the
+  // naked-eye filter — the reason this app shows three aircraft where a
+  // flight tracker shows forty — ever gets to explain itself.
+  function listState() {
+    if (document.getElementById("status").classList.contains("error")) return "trouble";
+    if (!feedSeen || revealPending > 0) return "working";
+    return "empty";
+  }
+
+  function emptyNote() {
+    const st = listState();
+    const n = el("div", "entries-note " + (st === "empty" ? "clear" : st), listEl);
+    if (st === "trouble") {
+      el("span", "hd", n).textContent = t("listOffline");
+    } else if (st === "working") {
+      el("span", "hd", n).textContent = t("listLoading");
+    } else {
+      el("span", "hd", n).textContent = t("entriesEmpty");
+      el("span", "bd", n).textContent = t("nakedEyeNote");
+    }
+  }
+
+  function buildList(rows) {
+    listEl.textContent = "";
+    rowFor.clear();
+    planeIdx.clear();
+    if (!rows.length) { emptyNote(); return; }
+    rows.forEach((r, i) => {
+      const p = r.p, on = p.icao === selected;
+      planeIdx.set(p.icao, i + 1);
+      const root = el("div", "entry" + (on ? " on" : ""), listEl);
+
+      const line = el("button", "line", root);
+      line.type = "button";
+      line.setAttribute("aria-expanded", on ? "true" : "false");
+      el("span", "idx", line).textContent = String(i + 1);
+      el("span", "sil", line).appendChild(silhouetteFor(p));
+      const nm = el("span", "nm", line);
+      el("span", "call", nm).textContent = p.call;
+      // the aircraft's own type, which the engine already translates
+      el("span", "phase", nm).textContent = typeLabel(p);
+      const figs = el("span", "figs", line);
+      const up = el("b", "up", figs);
+      const sub = el("span", "sub", figs);
+      line.addEventListener("click", () => toggleRow(p.icao));
+
+      // the expansion: built once per row, filled from the engine's own
+      // already-formatted, already-translated detail nodes
+      const det = el("div", "detail", root);
+      const dwrap = el("div", "detail-in", det);
+      // the padding lives on this inner row, not on .detail-in: a collapsed
+      // 0fr grid row still renders its own padding, which leaked a few px
+      const drow = el("div", null, dwrap);
+      el("div", "d-sil", drow).appendChild(silhouetteFor(p));
+      const info = el("div", "d-info", drow);
+      const dtype = el("div", "d-t", info);
+      const droute = el("div", "d-r", info);
+      const grid = el("div", "d-grid", info);
+      const cells = {};
+      for (const k of Object.keys(DETAIL_KEYS)) {
+        const c = el("div", "d-cell", grid);
+        el("span", "k", c).textContent = t(DETAIL_KEYS[k]);
+        cells[k] = el("span", "v", c);
+      }
+      rowFor.set(p.icao, { root, up, sub, dtype, droute, cells });
+    });
+  }
+
+  const readHtml = id => document.getElementById(id).innerHTML;
+
+  function refreshList(rows, now) {
+    for (const r of rows) {
+      const ref = rowFor.get(r.p.icao);
+      if (!ref) continue;
+      // fmtAlt/fmtDist return markup (the unit is wrapped in <small>), so
+      // these are innerHTML — textContent would print the tags on screen
+      ref.up.innerHTML = isOnGround(r.p, now) ? t("onGround") : fmtAlt(r.altM);
+      ref.sub.innerHTML = fmtDist(r.d) + " · " + cardinalName(displayTrack(r.p, now));
+      if (r.p.icao === selected) {
+        ref.dtype.innerHTML = readHtml("d-type");
+        ref.droute.innerHTML = readHtml("d-route");
+        ref.cells.alt.innerHTML = readHtml("d-alt");
+        ref.cells.spd.innerHTML = readHtml("d-spd");
+        ref.cells.dist.innerHTML = readHtml("d-dist");
+        ref.cells.hdg.innerHTML = readHtml("d-hdg");
+        ref.cells.vr.innerHTML = readHtml("d-vr");
+      }
+    }
+  }
+
+  function renderList(force) {
+    const now = Date.now();
+    const rows = listRows(now);
+    // the state rides in the signature: with no rows the icao list is empty,
+    // so "still arriving" → "genuinely clear" would otherwise never repaint
+    const sig = rows.map(r => r.p.icao).join(",") + "|" + (selected || "") +
+                (rows.length ? "" : "|" + listState());
+    if (force || sig !== listSig) {
+      const changedSelection = listSig.split("|")[1] !== (selected || "");
+      listSig = sig;
+      buildList(rows);
+      // the list keeps its share of the screen wherever that share can hold a
+      // whole record; see the .entries / body.row-open rule for the one case
+      // it cannot
+      document.body.classList.toggle("row-open", !!selected && rowFor.has(selected));
+      if (changedSelection && selected && rowFor.has(selected)) {
+        // Selecting from the MAP has to bring the row into view, or the
+        // expansion happens somewhere you cannot see. "start", not
+        // "nearest": nearest scrolls the minimum that puts SOME of the row in
+        // view, which for a just-opened record means the last stat cells stay
+        // under the fold. Pinning the row to the top of the list makes the
+        // whole record visible by construction, given the height floor above.
+        try { rowFor.get(selected).root.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (e) {}
+      }
+    }
+    refreshList(rows, now);
+  }
+
+  function toggleRow(icao) {
+    closeBreakdown();
+    if (selected === icao) closeSheet();      // deselect: closeSheet nulls it
+    else { selected = icao; openSheet(); }    // openSheet fills the detail nodes + fetches the route
+    renderList(true);
+  }
+
+  // Language change: the row labels are baked into the row DOM, so the list
+  // has to be rebuilt rather than merely refreshed.
+  function applyLangList() {
+    if (!listReady) return;
+    listSig = "";
+    try { renderList(true); } catch (e) {}
+  }
+  listReady = true;
+
+  // ============================================================
+  //  SMOKE
+  // ============================================================
+  // A phrase is rendered ONCE into an offscreen canvas, then composited every
+  // frame — re-blurring per frame would be far too expensive. Smoke reads as
+  // smoke from a soft EDGE, not from fattened strokes, so the blur is small
+  // and the stroke lighter still; at these sizes anything heavier closes up
+  // the counters and the word stops being a word.
+  const puffCache = new Map();
+  const PUFF_MAX = 24;
+  const PUFF_BLUR = 0.021;   // × type size
+  const PUFF_STROKE = 0.05;  // × type size
+
+  function trackedWidth(c2, text, tr) {
+    let w = 0;
+    for (const ch of text) w += c2.measureText(ch).width + tr;
+    return w - tr;
+  }
+
+  function puffWord(text, size, weight, trackEm) {
+    const key = size + "|" + weight + "|" + trackEm + "|" + text;
+    let c = puffCache.get(key);
+    if (c) return c;
+    const tr = size * (trackEm || 0);
+    const font = `${weight} ${size}px "Field", sans-serif`;
+    const pad = Math.ceil(size * 0.65);
+    const meas = document.createElement("canvas").getContext("2d");
+    meas.font = font;
+    const w = Math.ceil(trackedWidth(meas, text, tr)) + pad * 2;
+    const h = Math.ceil(size * 1.5) + pad * 2;
+    const off = document.createElement("canvas");
+    off.width = w; off.height = h;
+    const c2 = off.getContext("2d");
+    c2.font = font;
+    c2.textBaseline = "middle";
+    c2.fillStyle = "#fff"; c2.strokeStyle = "#fff"; c2.lineJoin = "round";
+    if (typeof c2.filter === "string") c2.filter = `blur(${Math.max(0.4, size * PUFF_BLUR)}px)`;
+    c2.lineWidth = size * PUFF_STROKE;
+    // drawn letter by letter: canvas letter-spacing is too new to rely on,
+    // and this wordmark is tracked wide
+    let px = pad;
+    for (const ch of text) {
+      c2.strokeText(ch, px, h / 2);
+      c2.fillText(ch, px, h / 2);
+      px += c2.measureText(ch).width + tr;
+    }
+    if (typeof c2.filter === "string") c2.filter = "none";
+    c = { canvas: off, w, h, pad };
+    puffCache.set(key, c);
+    if (puffCache.size > PUFF_MAX) puffCache.delete(puffCache.keys().next().value);
+    return c;
+  }
+
+  // The chip behind the followed aircraft's ID. Not a rectangle with soft
+  // corners — a lump of smoke: three overlapping ellipses under a body, then
+  // blurred, so its outline never repeats itself twice the same way.
+  const chipCache = new Map();
+  function puffChip(w, h) {
+    const key = Math.round(w) + "x" + Math.round(h);
+    let c = chipCache.get(key);
+    if (c) return c;
+    const pad = Math.ceil(h * 0.9);
+    const off = document.createElement("canvas");
+    off.width = Math.ceil(w) + pad * 2; off.height = Math.ceil(h) + pad * 2;
+    const c2 = off.getContext("2d");
+    c2.fillStyle = "#fff";
+    if (typeof c2.filter === "string") c2.filter = `blur(${h * 0.19}px)`;
+    const cy0 = pad + h / 2, r = h * 0.52;
+    c2.beginPath();
+    c2.rect(pad + r * 0.5, pad + h * 0.06, w - r, h * 0.88);
+    c2.fill();
+    // the lumps: deterministic, so the chip does not shimmer frame to frame
+    const lumps = [[0.06, 0.42], [0.3, 0.56], [0.56, 0.44], [0.82, 0.55], [0.97, 0.4]];
+    for (const [fx, fr] of lumps) {
+      c2.beginPath();
+      c2.ellipse(pad + w * fx, cy0, r * fr * 1.6, r * fr * 1.75, 0, 0, Math.PI * 2);
+      c2.fill();
+    }
+    // a second pass over the same shape: the blur thins the core, and the ID
+    // is knocked out of this, so the middle has to stay opaque
+    c2.beginPath();
+    c2.rect(pad + r * 0.4, pad + h * 0.12, w - r * 0.8, h * 0.76);
+    c2.fill();
+    if (typeof c2.filter === "string") c2.filter = "none";
+    c = { canvas: off, pad };
+    chipCache.set(key, c);
+    if (chipCache.size > 24) chipCache.delete(chipCache.keys().next().value);
+    return c;
+  }
+
+  // ============================================================
+  //  THE LABEL THAT RIDES THE AIRCRAFT
+  // ============================================================
+  // One aircraft is named on the map: the one you picked. Its ID is knocked
+  // out of a puff of smoke, and under it the two figures a map cannot show —
+  // how high, and how fast it is going and climbing. Distance and heading are
+  // in the row, where there is room to read them.
+  const readTxt = id => (document.getElementById(id).textContent || "").trim();
+
+  function drawFollowLabel(now) {
+    if (!selected) return;
+    const p = planes.get(selected);
+    if (!p) return;
+    const proj = project(estimatedPosition(p, now));
+    const x = proj.x, y = squishY(proj.y) - altitudeLiftPx(estimatedAltitude(p, now));
+
+    const call = readTxt("d-call");
+    if (!call) return;
+    const l1 = readTxt("d-alt");
+    const spd = readTxt("d-spd"), vr = readTxt("d-vr");
+    const l2 = [spd, vr].filter(s => s && s !== "—").join("   ");
+
+    ctx.save();
+    ctx.textBaseline = "alphabetic";
+    ctx.font = '900 15px "Field", sans-serif';
+    const chipW = ctx.measureText(call).width + 18, chipH = 22;
+    ctx.font = '600 12px "Field", sans-serif';
+    const w = Math.max(chipW, ctx.measureText(l2).width);
+
+    // lean away from the edge it is nearest, so the block always has room
+    const res = gaugeReserve();
+    const dir = x < cx ? 1 : -1;
+    let bx = dir > 0 ? x + 28 : x - 28 - w;
+    bx = Math.max(res.left + 8, Math.min(bx, cssW - w - 8));
+    // the block hangs ABOVE the aircraft: its last line clears the icon by a
+    // clear margin, so the figures never sit across the silhouette they name
+    let by = y - (chipH + 50);                        // chip's top edge
+    by = Math.max(10, Math.min(by, cssH - 84));
+
+    ctx.strokeStyle = `rgba(${theme.sweepRgb},0.6)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + dir * 7, y - 6);
+    ctx.lineTo(dir > 0 ? bx : bx + w, by + chipH / 2);
+    ctx.stroke();
+
+    const chip = puffChip(chipW, chipH);
+    ctx.drawImage(chip.canvas, bx - chip.pad, by - chip.pad);
+    ctx.fillStyle = theme.voidHex;
+    ctx.font = '900 15px "Field", sans-serif';
+    ctx.fillText(call, bx + 9, by + 16);
+
+    ctx.fillStyle = theme.inkHex;
+    ctx.font = '900 15px "Field", sans-serif';
+    ctx.fillText(l1, bx, by + chipH + 18);
+    if (l2) {
+      ctx.font = '600 12px "Field", sans-serif';
+      ctx.fillStyle = `rgba(${theme.inkSoftRgb},0.85)`;
+      ctx.fillText(l2, bx, by + chipH + 34);
+    }
+    ctx.restore();
+  }
+
+  // ============================================================
+  //  THE TALLY, ON THE MAP
+  // ============================================================
+  // The list is sorted nearest-first; the map is not sorted at all. With one
+  // aircraft named and nothing shared between a row and an icon, finding out
+  // which dot a row describes meant tapping every dot in turn. The row, the
+  // icon and the ladder bead now all carry the same number — the cheapest
+  // possible token, and it costs the sky one 17px disc per aircraft.
+  const IDX_FONT = '900 10px "Field", sans-serif';
+  let idxPal = null, idxPalFor = null;
+  function idxPalette() {
+    // getComputedStyle is too expensive per frame; the palette only moves
+    // when the sky clock replaces `theme`, so key the cache on that object
+    if (idxPalFor !== theme) {
+      idxPalFor = theme;
+      idxPal = { voidRgb: rgbTriple(theme.voidHex) || "10,60,140", onHot: cssVar("--on-hot") };
+    }
+    return idxPal;
+  }
+
+  function drawIndexBadges(now) {
+    if (!planeIdx.size) return;
+    const pal = idxPalette();
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = IDX_FONT;
+    for (const v of lastVisible) {
+      try {
+        const p = v.p, n = planeIdx.get(p.icao);
+        if (!n) continue;
+        const proj = project(estimatedPosition(p, now));
+        const y = squishY(proj.y) - altitudeLiftPx(estimatedAltitude(p, now));
+        const bx = proj.x + 15, by = y - 14, sel = p.icao === selected;
+        ctx.beginPath();
+        ctx.arc(bx, by, 8.5, 0, Math.PI * 2);
+        // a disc of shaded sky, so the digit reads over a contrail or a wing
+        ctx.fillStyle = sel ? theme.hotHex : `rgba(${pal.voidRgb},0.62)`;
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = sel ? theme.hotHex : `rgba(${theme.inkSoftRgb},0.8)`;
+        ctx.stroke();
+        ctx.fillStyle = sel ? pal.onHot : theme.inkHex;
+        ctx.fillText(String(n), bx, by + 0.5);
+      } catch (e) { /* one bad record must not take the tally down */ }
+    }
+    ctx.restore();
+  }
+
+  // ---- the gate, and the rail, write the app's name ----
+  function paintMark(canvas, size, track, u, s, baseline) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return;
+    const g = canvas.getContext("2d");
+    if (canvas.width !== Math.round(w * dpr)) {
+      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const px = Math.min(size, (w - 6) / (8 * (0.62 + track)));
+    const p = puffWord("OVERHEAD", px, 900, track);
+    g.save();
+    g.globalAlpha = (0.6 + 0.38 * s) * (baseline || 1);
+    g.beginPath(); g.rect(0, 0, p.w * Math.min(1, u), h); g.clip();
+    const k = 1 + (1 - s) * 0.05;
+    g.translate(p.w / 2 - p.pad + 1, h / 2);
+    g.scale(k, k);
+    g.drawImage(p.canvas, -p.w / 2, -p.h / 2);
+    g.restore();
+  }
+
+  (function marks() {
+    const gateC = document.getElementById("gate-sky");
+    const railC = document.getElementById("rail-mark");
+    const gateEl = document.getElementById("gate");
+    let t0 = 0, railT0 = 0, railDone = false, gateDone = false;
+    function frame(ts) {
+      try {
+        if (!gateEl.classList.contains("hidden")) {
+          if (!t0) t0 = ts;
+          const dt = ts - t0;
+          // the rail's copy has always had this guard; the gate's — the very
+          // first thing anyone sees — did not, and a single long frame during
+          // load left OVERHEAD permanently half-written. Whatever the frame
+          // rate, the LAST paint is the settled one.
+          // a layout or DPR change reallocates (and so blanks) the canvas
+          const gdpr = Math.min(window.devicePixelRatio || 1, 2.5);
+          if (gateC.width !== Math.round(gateC.clientWidth * gdpr)) gateDone = false;
+          if (dt >= 1600) {
+            if (!gateDone) { gateDone = true; paintMark(gateC, 44, 0.14, 1, 1); }
+          } else {
+            gateDone = false;
+            paintMark(gateC, 44, 0.14, Math.min(1, dt / 1150),
+                      Math.min(1, Math.max(0, (dt - 1150) / 450)));
+          }
+        } else {
+          // the rail's own copy writes itself once, the first time the radar
+          // is on screen, then holds
+          // a layout or DPR change blanks the canvas, so it rewrites itself
+          const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+          if (!railT0 || railC.width !== Math.round(railC.clientWidth * dpr)) {
+            railT0 = ts; railDone = false;
+          }
+          if (!railDone) {
+            const dt = ts - railT0;
+            // whatever the frame rate, the LAST paint is the settled one: a
+            // single long frame must never leave the wordmark half-written
+            if (dt >= 1300) { railDone = true; paintMark(railC, 11, 0.3, 1, 1, 0.8); }
+            else paintMark(railC, 11, 0.3, Math.min(1, dt / 900),
+                           Math.min(1, Math.max(0, (dt - 900) / 400)), 0.8);
+          }
+        }
+      } catch (e) {}
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+
+  // the wordmark is the way home, the same as the place name beside it
+  document.getElementById("rail-mark").addEventListener("click", () => { if (me) reopenGate(); });
+  document.getElementById("here").addEventListener("click", () => { if (me) reopenGate(); });
+
+  function applyLangExtra() {
+    if (!listReady) return;
+    if (me) document.getElementById("here").textContent = placeName || t("myLocation");
+  }
+
 })();
 </script>
 </body>

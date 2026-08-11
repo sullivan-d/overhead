@@ -3,7 +3,7 @@
 // It deliberately never caches OpenSky / hexdb / Nominatim responses —
 // live data must always be fetched fresh, and nothing runs in the background.
 
-const CACHE = "overhead-v84";
+const CACHE = "overhead-v87";
 const SHELL = [
   "./",
   "./index.html",
@@ -19,6 +19,12 @@ const SHELL = [
   "./icons/moon.svg",
   "./icons/pin.svg",
   "./icons/globe.svg",
+  "./icons/ground.svg",
+  // the UI typeface. A @font-face that 404s or times out falls back to
+  // system-ui mid-render, which reflows every figure on the page — it belongs
+  // in the shell for the same reason the mask glyphs do.
+  "./fonts/barlow-600.woff",
+  "./fonts/barlow-900.woff",
   // new-contact detection "bip" — part of the static app shell, not live data
   "./sounds/seatbelt-1.wav"
 ];

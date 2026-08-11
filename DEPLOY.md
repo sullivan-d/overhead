@@ -49,11 +49,19 @@ Share the URL with anyone — they install it the same way.
 
 ## Updating later
 Edit a file and commit (or re-upload). Pages redeploys in ~1 minute.
-The service worker cache is versioned (`overhead-v3` in `sw.js`); if you make
-big changes and want to force everyone to refresh, bump it to `overhead-v2`.
+
+**On every user-visible change, bump the version in two places:**
+- `const CACHE = "overhead-vN"` in `sw.js` — forces existing installs to pick up
+  the new files instead of serving the cached shell.
+- `const APP_VERSION = "vN"` in `index.html` — shown in the detail-sheet footer.
+
+Nothing keeps these two in sync automatically, so bump both by hand, to the same
+number. (Currently `v87`.)
 
 ## Reminders
 - Live aircraft data always comes from airplanes.live over the internet — that part
   can't be offline. The app *shell* works offline once loaded (service worker).
-- airplanes.live is rate-limited to ~1 request/second; we poll every 30s
-  and pauses when the tab is hidden.
+- airplanes.live's real rate limit is about **one request per ~36 seconds per IP**
+  (not the "1 per second" often quoted), and going over starts a ~60s penalty.
+  The app polls every 45s, one request per tick, and pauses when the tab is
+  hidden. Don't shorten the poll or add extra fetches — see CLAUDE.md.
