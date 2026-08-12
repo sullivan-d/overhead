@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0f5cc8">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png" type="image/png">
@@ -77,22 +77,35 @@ body {
 }
 button, input { font: inherit; color: inherit; }
 .hidden { display: none !important; }
+/* One rule, everywhere: a keyboard/switch-access user needs to see focus move.
+   :focus-visible so a mouse/touch tap never shows the ring, only real
+   keyboard traversal does. --hot reads clearly against every sky-clock hour
+   because it's already tuned to clear ~3:1 at every hour (see DESIGN.md). */
+:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; border-radius: 4px; }
 
 /* the map takes whatever the fixed list leaves, and keeps it */
 .stage { position: relative; overflow: hidden; flex: 1 1 0; min-height: 160px; }
 canvas#radar { display: block; position: absolute; left: 0; top: 0; touch-action: none; }
 header, .hint, #sheet { display: none; }
 #ceiling-box {
-  /* right, not left: the left edge belongs to the elevation ladder */
+  /* right, not left: the left edge belongs to the elevation ladder.
+     It's a <button> (not a div) so what the ☁/⏚ glyphs mean is reachable by
+     a tap, not just a hover title — title alone never surfaces on touch,
+     which is this app's actual platform. */
   position: absolute; right: 14px; top: calc(12px + env(safe-area-inset-top, 0px)); z-index: 30;
+  background: none; border: 0; padding: 6px 4px; margin: -6px -4px;
+  font: inherit; color: inherit; cursor: pointer;
   font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85;
 }
 #ceiling-box .gi { width: 12px; height: 12px; vertical-align: -0.16em; }
 
-/* the compass rides the map's own bottom-right corner */
+/* the compass rides the map's own bottom-right corner. 44x44 is the real hit
+   target (WCAG/iOS/Android minimum); the 42px svg inside is centered by the
+   flex box, so the visual size is untouched. */
 .compass-btn {
   position: absolute; right: 12px; bottom: 12px; z-index: 36;
-  width: 42px; height: 42px; border: 0; background: none; padding: 0;
+  width: 44px; height: 44px; border: 0; background: none; padding: 0;
+  display: flex; align-items: center; justify-content: center;
   cursor: pointer; opacity: 0.34; transition: opacity 0.25s;
 }
 .compass-btn.on { opacity: 0.95; }
@@ -217,17 +230,26 @@ body.row-open { --list-h: max(30vh, 236px); }
 .rng-label { display: none; }
 .rng-btns { display: flex; align-items: center; gap: 12px; }
 .rng-btns .rng-label { display: none; }
+/* The real tap target is the 44px button; the visual size-cue (a smaller
+   circle for a smaller range) lives on the nested .rng-circle so shrinking
+   the glyph never shrinks the hit area — the two used to be the same
+   element, and transform: scale() shrank both together. */
 #rng button {
-  background: none; padding: 0; cursor: pointer;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+#rng button .rng-circle {
+  display: flex; align-items: center; justify-content: center;
   width: 38px; height: 38px; border-radius: 50%;
   border: 1.5px solid rgba(255,255,255,0.72); color: rgba(255,255,255,0.92);
   font-size: 13px; font-weight: 900; letter-spacing: -0.02em;
   transition: opacity 0.2s, transform 0.2s, background 0.2s, color 0.2s, border-color 0.2s;
 }
-#rng button[data-km="5"] { transform: scale(0.7); }
-#rng button[data-km="10"] { transform: scale(0.85); }
-#rng button.on { background: #fff; border-color: #fff; color: var(--void); }
-#rng button:active { filter: brightness(0.9); }
+#rng button[data-km="5"] .rng-circle { transform: scale(0.7); }
+#rng button[data-km="10"] .rng-circle { transform: scale(0.85); }
+#rng button.on .rng-circle { background: #fff; border-color: #fff; color: var(--void); }
+#rng button:active .rng-circle { filter: brightness(0.9); }
 
 /* the count is the live one: what is on the map right now */
 .count {
@@ -257,6 +279,10 @@ body.row-open { --list-h: max(30vh, 236px); }
 .bd-num { font-size: 15px; font-weight: 900; text-align: right; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.18); }
 .sheet-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 100px; z-index: 70; background: #fff; color: var(--void); padding: 5px 11px; border-radius: 999px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .sheet-toast.show { opacity: 1; }
+/* A share confirmation is a short pill; the ceiling/ground explainer is a full
+   sentence — same mechanism, a wider wrapped bubble instead of forcing a
+   sentence into a pill shape. */
+.sheet-toast.tip { max-width: 78vw; border-radius: 12px; padding: 10px 14px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; text-transform: none; line-height: 1.4; text-align: left; }
 .sheet-links { display: none; }
 
 /* ---- THE GATE: the app writes its own name in smoke ---- */
@@ -278,7 +304,8 @@ body.row-open { --list-h: max(30vh, 236px); }
    genuinely quieter 0.62 and still clear 5:1. --panel follows the sky clock,
    so the field stays a step below whatever hour it is. */
 .addr-row { display: flex; align-items: center; gap: 8px; background: var(--panel); border-radius: 16px; padding: 4px 4px 4px 16px; }
-.addr-row input { flex: 1; min-width: 0; background: none; border: 0; padding: 14px 0; font-size: 16px; outline: none; }
+.addr-row input { flex: 1; min-width: 0; background: none; border: 0; padding: 14px 0; font-size: 16px; }
+.addr-row input:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; border-radius: 4px; }
 .addr-row input::placeholder { color: rgba(255,255,255,0.62); }
 .addr-row .go { background: none; border: 1.5px solid rgba(255,255,255,0.55); border-radius: 12px; padding: 11px 15px; cursor: pointer; font-size: 13px; font-weight: 900; }
 .addr-results { list-style: none; margin: 8px 0 0; padding: 0; max-height: 176px; overflow-y: auto; }
@@ -326,7 +353,7 @@ body.row-open { --list-h: max(30vh, 236px); }
 <body>
 <div class="stage">
   <canvas id="radar"></canvas>
-  <div class="hidden" id="ceiling-box"><span id="ceiling-val">—</span></div>
+  <button type="button" class="hidden" id="ceiling-box"><span id="ceiling-val">—</span></button>
   <button class="compass-btn on" id="heading-btn" title="Compass">
     <svg viewBox="0 0 24 24" width="42" height="42" aria-hidden="true">
       <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" stroke-width="0.8" opacity="0.5"/>
@@ -352,9 +379,9 @@ body.row-open { --list-h: max(30vh, 236px); }
   <div class="rng-group" id="rng-group">
     <span class="rng-label" id="rng-label">range</span>
     <div class="rng-btns" id="rng">
-      <button data-km="5">5</button>
-      <button data-km="10" class="on">10</button>
-      <button data-km="20">20</button>
+      <button data-km="5"><span class="rng-circle">5</span></button>
+      <button data-km="10" class="on"><span class="rng-circle">10</span></button>
+      <button data-km="20"><span class="rng-circle">20</span></button>
     </div>
   </div>
   <button class="count" id="count-btn">
@@ -858,7 +885,7 @@ body.row-open { --list-h: max(30vh, 236px); }
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v87";
+  const APP_VERSION = "v88";
   const NM_PER_KM = 0.539957;
 
   // ---------- variation switch ----------
@@ -1050,9 +1077,6 @@ body.row-open { --list-h: max(30vh, 236px); }
   function resize() {
     const stage = cv.parentElement;
     // Fit the radar into the stage's CONTENT box (client size minus padding).
-    // The detail sheet, when open, adds bottom padding to the stage (see
-    // openSheet) so the radar shrinks and re-centers into the space above the
-    // sheet instead of being half-hidden behind it.
     // Round 3: the canvas is the whole stage rather than a square, and the
     // elevation gauge is given RESERVED space out of it before the map is
     // fitted — so the gauge can never be drawn over the radar, whichever
@@ -2435,11 +2459,9 @@ body.row-open { --list-h: max(30vh, 236px); }
 
   const rgbStr = c => `${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])}`;
 
-  // coreR / haloR let the elevation gauge's miniatures be the same drawing at
-  // a smaller size rather than a second, differently-shaped glyph. The gauge's
-  // max visible radius must stay ≤ 5.6px or elevGaugeGeometry()'s 13px ring
-  // buffer no longer provably clears the main ring (see round 53) — the halo
-  // is transparent at its rim, so coreR is what that budget applies to.
+  // coreR / haloR let the elevation ladder's mini sun/moon (drawFlatGauge,
+  // called at small coreR/haloR) be the same drawing at a smaller size rather
+  // than a second, differently-shaped glyph.
   function drawSunDisc(pt, coreR, haloR) {
     const el = sunPos ? sunPos.alt : 45;
     // k: 0 with the sun high, 1 with it on the horizon. Below ~12° the light
@@ -2504,21 +2526,18 @@ body.row-open { --list-h: max(30vh, 236px); }
     ctx.fillText(t("moon"), pt.x + 12, pt.y + 3);
   }
 
-  // ---------- elevation gauge (bottom-left corner, only while a plane is
-  // selected / the sheet is open) ----------
+  // ---------- elevation ladder (left edge, always drawn) ----------
   // "Which way do I turn" is already solved by the map + heading-up mode —
   // the icon's on-screen position IS its bearing relative to where you're
   // facing. The one thing the top-down map can't show is "how far up do I
-  // tilt my head", which is what this gauge is purely for: a quarter circle
-  // pivoting at the canvas's own bottom-left corner, a screen region the
-  // main ring circle never reaches at any tilt (R is only 6px short of half
-  // the canvas — see resize() — so the circle is inscribed in the square
-  // and its four corners are always clear). 0° (the horizontal spoke) is
-  // the horizon; 90° (the vertical spoke) is straight overhead. This is
-  // REAL sky elevation as seen from the user, independent of the radar's
-  // own on-screen 3D tilt — that tilt is a stylistic view of the MAP, so
-  // the gauge is drawn billboarded (outside the ctx.scale squish block,
-  // alongside the plane icons/labels) and never itself squishes.
+  // tilt my head", which is what this rail is purely for. This used to be a
+  // bottom-left protractor arc (drawElevationGauge/elevGaugeGeometry); the
+  // sky redesign replaced it with the log-scaled vertical rail defined below
+  // (drawFlatGauge, gaugeRect) — see DESIGN.md's Signature Component
+  // "Elevation Ladder". `ELEV_GAUGE_MARGIN` and `elevationDeg()` are the only
+  // pieces of the old gauge still live: the former still sizes the compass
+  // button's inset (positionCompass()), the latter still computes real
+  // elevation angle for the ladder (gaugeElev()).
   //
   // Deliberately static this round: a live "where the phone itself is
   // pointing" arrow (reusing the same deviceorientation listener that
@@ -2529,34 +2548,6 @@ body.row-open { --list-h: max(30vh, 236px); }
   // device-tilt math without his phone. If it's picked up later, beta/gamma
   // are already available on the same onOrientation(e) event.
   const ELEV_GAUGE_MARGIN = 16; // inset from the true canvas corner, CSS px
-  function elevGaugeGeometry() {
-    // gy is level with the radar RING's own bottom edge (cy+R), the same
-    // horizontal line the compass button's bottom edge now rests on
-    // (round 56) — Sullivan asked for the gauge to match it explicitly.
-    // gx keeps its own separate corner inset (ELEV_GAUGE_MARGIN); only the
-    // vertical line was asked to align.
-    const gx = ELEV_GAUGE_MARGIN, gy = cy + R;
-    const toCenter = Math.hypot(cx - gx, cy - gy);
-    // Stays clear of the main ring circle (radius R) at any screen size.
-    // The 13px buffer reserves room for the sun/moon mini glyphs, which ride
-    // just OUTSIDE the arc (centers at gr+7, glyph extent ~5.6px — worst
-    // case along the pivot→center diagonal leaves 13-7-5.6 ≈ 0.4px, still
-    // provably clear; round 53). The lower floor is deliberately small (8px,
-    // just a guard against a degenerate zero/negative radius) rather than a
-    // "legible minimum" — with gy pinned to the ring's own edge the natural
-    // gr no longer comes as close to this floor as the old formula did, but
-    // the guard is kept regardless (verified by the harness at every size).
-    const gr = Math.max(8, Math.min(toCenter - R - 13, 110));
-    return { gx, gy, gr };
-  }
-  // Point on the gauge's arc for elevation e (0..90°). e=0 sits on the
-  // horizontal spoke (the horizon), e=90 on the vertical spoke (zenith) —
-  // the elevation degree IS the canvas angle from the pivot, no separate
-  // mapping needed.
-  function elevGaugePoint(e, g) {
-    const a = toRad(Math.max(0, Math.min(90, e)));
-    return { x: g.gx + g.gr * Math.cos(a), y: g.gy - g.gr * Math.sin(a) };
-  }
   // Real-world elevation angle of a point heightM above the USER (not sea
   // level — same groundElevM convention as aboveGroundM/altitudeLiftPx), at
   // ground distance distKm. atan2 so straight overhead (distance 0) reads a
@@ -2565,127 +2556,13 @@ body.row-open { --list-h: max(30vh, 236px); }
     return Math.atan2(Math.max(0, heightM), Math.max(0, distKm) * 1000) * 180 / Math.PI;
   }
   // Read-only overlay, not a drag surface — a touch landing here that hits
-  // no aircraft must do nothing at all (see the pointerdown guard below),
-  // not spin/tilt the radar the way the rest of empty canvas does. An
-  // aircraft drawn over the gauge still wins: hitTest runs before this
-  // zone is consulted (round 52).
+  // no aircraft must do nothing at all, not spin/tilt the radar the way the
+  // rest of empty canvas does. An aircraft drawn over the ladder still wins:
+  // hitTest runs before this zone is consulted.
   function inElevGaugeZone(px, py) {
-    // round 3: the strip is a control, not an inert overlay — a tap that
-    // hit no aircraft cycles its shape (hitTest still runs first)
     if (inGaugeZone(px, py)) { cycleGauge(); return true; }
     return false;
-    if (!selected) return false;
-    const g = elevGaugeGeometry();
-    return px >= 0 && px <= g.gx + g.gr + 40 && py >= g.gy - g.gr - 14 && py <= cssSize;
   }
-  function drawElevationGauge(altM, distKm) {
-    const g = elevGaugeGeometry();
-    const heightM = (altM ?? (groundElevM ?? 0)) - (groundElevM ?? 0);
-    const planeDeg = elevationDeg(heightM, distKm);
-
-    // Protractor-style, per Sullivan's sketch (round 52): the arc IS the
-    // instrument — no pivot spokes, no radial needle. Graduated ticks,
-    // diamond finials at both ends, and the readout sits in the free space
-    // inside the arc.
-    ctx.strokeStyle = theme.ringMajor; ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let e = 0; e <= 90; e += 3) {
-      const pt = elevGaugePoint(e, g);
-      if (e === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
-    }
-    ctx.stroke();
-
-    // Graduation, decluttered further round 55: the round-54 30°/60°
-    // ticks+labels are gone, replaced by a single unlabeled midpoint tick
-    // at 45° (a plain reference mark, not a called-out number — explicit
-    // ask: no "45°" text anywhere on the gauge). The zenith end keeps its
-    // "90°" label (no tick needed there — the finial IS the mark); the ⏚
-    // ground symbol still anchors 0° with no separate label.
-    ctx.strokeStyle = theme.rangeLabel; ctx.lineWidth = 1;
-    {
-      const a = toRad(45), ca = Math.cos(a), sa = Math.sin(a);
-      ctx.beginPath();
-      ctx.moveTo(g.gx + (g.gr - 3) * ca, g.gy - (g.gr - 3) * sa);
-      ctx.lineTo(g.gx + (g.gr + 3) * ca, g.gy - (g.gr + 3) * sa);
-      ctx.stroke();
-    }
-    ctx.font = "8px 'Hanken Grotesk', sans-serif";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = theme.rangeLabel;
-    ctx.fillText("90°", g.gx, g.gy - g.gr + 12);
-
-    // diamond finials on both ends of the arc, elongated radially, each
-    // with a short stem through it (the sketch's compass-needle-like ends)
-    ctx.fillStyle = theme.ringMajor;
-    for (const e of [0, 90]) {
-      const a = toRad(e), ca = Math.cos(a), sa = Math.sin(a);
-      ctx.beginPath();
-      ctx.moveTo(g.gx + (g.gr - 8) * ca, g.gy - (g.gr - 8) * sa);
-      ctx.lineTo(g.gx + (g.gr + 8) * ca, g.gy - (g.gr + 8) * sa);
-      ctx.stroke();
-      ctx.save();
-      ctx.translate(g.gx + g.gr * ca, g.gy - g.gr * sa); ctx.rotate(-a);
-      ctx.beginPath();
-      ctx.moveTo(4.5, 0); ctx.lineTo(0, 2.8); ctx.lineTo(-4.5, 0); ctx.lineTo(0, -2.8);
-      ctx.closePath(); ctx.fill();
-      ctx.restore();
-    }
-
-    // ground reference, just outside the 0° end on the horizon line — the
-    // same ⏚ glyph used everywhere else for "the user's own ground level".
-    // Offset is tight (12px past the arc): at resize()'s smallest possible
-    // canvas (cssSize 180, gr ~12.7px) the ring's bottom chord passes only
-    // ~21px right of the arc end at this height, so a wider offset would
-    // put the glyph inside the ring there (caught by the round-52 harness).
-    ctx.fillStyle = theme.rangeLabel; ctx.font = "11px 'Hanken Grotesk', sans-serif";
-    ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
-    ctx.fillText(GROUND_ICON, g.gx + g.gr + 12, g.gy - 1);
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-
-    // sun / moon at their true elevation — same visibility thresholds as
-    // drawCelestial() above, as miniature versions of the main radar's
-    // glyphs (no label: no room, the glyph itself tells them apart),
-    // floated slightly OUTSIDE the arc like the ⏚ ground symbol (round 53;
-    // the +7px center offset is what elevGaugeGeometry()'s 13px ring buffer
-    // reserves room for — don't widen it without widening the buffer). Moon
-    // FIRST, sun second — the sun must layer above the moon when they sit
-    // close together (explicit ask, round 52).
-    const celestialPt = (alt) => {
-      const ca = toRad(Math.max(0, Math.min(90, alt)));
-      return { x: g.gx + (g.gr + 7) * Math.cos(ca), y: g.gy - (g.gr + 7) * Math.sin(ca) };
-    };
-    if (moonPos && moonPos.alt > -0.3) drawMiniMoon(celestialPt(moonPos.alt));
-    if (sunPos && sunPos.alt > -0.83) drawMiniSun(celestialPt(sunPos.alt));
-
-    // the selected aircraft: a solid triangle riding the inside of the arc,
-    // tip on the arc pointing radially outward (the sketch's red marker) —
-    // drawn after the sun/moon so it can never hide under them
-    const pt = elevGaugePoint(planeDeg, g);
-    const a = toRad(Math.max(0, Math.min(90, planeDeg)));
-    ctx.save(); ctx.translate(pt.x, pt.y); ctx.rotate(-a);
-    ctx.fillStyle = theme.hotHex;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-11, -6); ctx.lineTo(-11, 6); ctx.closePath(); ctx.fill();
-    ctx.restore();
-
-    // numeric readout, large, in the free space inside the arc (the
-    // sketch's big "36°") — fixed position rather than tracking the marker
-    // around the curve, so it stays put and legible at 2° or 88°; font
-    // scales with the arc so it fills a big desktop gauge too. Same color
-    // and weight as the gauge's other figures, NOT red — only the marker
-    // triangle is red (explicit ask, round 53).
-    const fs = Math.min(26, Math.max(14, Math.round(g.gr * 0.26)));
-    ctx.fillStyle = theme.rangeLabel; ctx.font = fs + "px 'Hanken Grotesk', sans-serif";
-    ctx.fillText(Math.round(planeDeg) + "°", g.gx + g.gr * 0.30, g.gy - g.gr * 0.30);
-    ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
-  }
-  // Miniatures of drawSunIcon/drawMoonIcon (~60% scale, no text label) for
-  // the elevation gauge's arc markers. Max visible radius at these sizes:
-  // sun 43.9/96×12 ≈ 5.49px, moon 41.4/96×9 ≈ 3.88px — both within the
-  // 5.6px extent the gauge's ring-clearance buffer reserves (round 53).
-  // the same two drawings at gauge size — see the ring-clearance note on
-  // drawSunDisc for why the cores stay this small
-  function drawMiniSun(pt) { drawSunDisc(pt, 2.8, 13); }
-  function drawMiniMoon(pt) { drawMoonDisc(pt, 4.4); }
 
   // One of 4 distinct pictograms instead of a generic triangle, picked from
   // the friendly type bucket. Rare categories (drone/airship/glider/unknown)
@@ -2966,7 +2843,10 @@ body.row-open { --list-h: max(30vh, 236px); }
       // a tap on empty space (no drag) dismisses whichever panel is open —
       // same "tap outside to close" convention as their own X buttons
       if (!orbit.moved) {
-        if (sheet.classList.contains("open")) closeSheet();
+        // was `sheet.classList.contains("open")` — the class was only ever
+        // toggled for a sheet that's permanently display:none (see the
+        // dead-code note near openSheet()); `selected` is the actual state.
+        if (selected != null) closeSheet();
         else if (breakdownEl.classList.contains("open")) closeBreakdown();
       }
       orbit = null;
@@ -2979,7 +2859,6 @@ body.row-open { --list-h: max(30vh, 236px); }
   cv.addEventListener("pointerup", endPointer);
   cv.addEventListener("pointercancel", endPointer);
 
-  const sheet = document.getElementById("sheet");
   const breakdownEl = document.getElementById("breakdown-sheet");
   function updateBreakdownDisplay() {
     const now = Date.now();
@@ -3072,23 +2951,18 @@ body.row-open { --list-h: max(30vh, 236px); }
     return null;
   }
 
-  // Opening the sheet reserves room for it by padding the stage's bottom with
-  // the sheet's own height, then re-fitting the radar (resize reads that
-  // padding) so the whole radar sits centered in the space ABOVE the sheet
-  // instead of being half-covered by it. Closing restores the full stage.
-  const stageEl = cv.parentElement;
+  // #sheet itself never becomes visible (see the dead-code note above) — the
+  // list's expand-in-place row is the real detail surface (round 3), and it
+  // reads its formatted values out of these hidden nodes after renderSheet()
+  // fills them. openSheet()/closeSheet() still exist purely as that fill/
+  // clear step plus the `selected` state change; the old stage-padding logic
+  // that used to reserve room for a visibly docked sheet is gone with it.
   function openSheet() {
     renderSheet();
-    sheet.classList.add("open");
-    // offsetHeight is valid even though the sheet animates via transform;
-    // measured after renderSheet so the height reflects the current content
-    /* round 3: the expanded row is the detail; nothing docks over the map */
     resize();
   }
   function closeSheet() {
-    sheet.classList.remove("open");
     selected = null;
-    stageEl.style.paddingBottom = "";
     resize();
   }
   // Top-down silhouette of the aircraft's exact type, from the vendored
@@ -3381,11 +3255,12 @@ body.row-open { --list-h: max(30vh, 236px); }
     return { blob, caption, filename };
   }
 
-  function showShareToast(msg) {
+  function showShareToast(msg, { long = false, ms = 3200 } = {}) {
     shareToast.textContent = msg;
+    shareToast.classList.toggle("tip", long);
     shareToast.classList.add("show");
     clearTimeout(showShareToast._hideAt);
-    showShareToast._hideAt = setTimeout(() => shareToast.classList.remove("show"), 3200);
+    showShareToast._hideAt = setTimeout(() => shareToast.classList.remove("show"), ms);
   }
   function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
@@ -3450,52 +3325,16 @@ body.row-open { --list-h: max(30vh, 236px); }
   }
   shareBtn.addEventListener("click", shareCard);
 
-  // ---------- sheet: swipe down to dismiss ----------
-  // Dragging the sheet downward follows the finger 1:1; releasing past the
-  // threshold closes it, releasing short of it springs it back. The drag only
-  // engages after a few px of downward travel so ordinary taps on the sheet's
-  // buttons/links still land; once engaged, the release must NOT also fire a
-  // click on whatever button the drag happened to start on — a one-shot
-  // capture-phase click suppressor swallows exactly that click.
-  const SHEET_DISMISS_PX = 70;  // release below this springs back, past it closes
-  const SHEET_ENGAGE_PX = 12;   // downward travel before the sheet starts following
-  let sheetDrag = null;         // {id, y0, dy, engaged}
-  let suppressSheetClick = false;
-  sheet.addEventListener("pointerdown", (e) => {
-    if (sheetDrag) return; // one drag at a time; a second finger is ignored
-    sheetDrag = { id: e.pointerId, y0: e.clientY, dy: 0, engaged: false };
-  });
-  sheet.addEventListener("pointermove", (e) => {
-    if (!sheetDrag || e.pointerId !== sheetDrag.id) return;
-    sheetDrag.dy = Math.max(0, e.clientY - sheetDrag.y0); // only downward drags count
-    if (!sheetDrag.engaged && sheetDrag.dy > SHEET_ENGAGE_PX) {
-      sheetDrag.engaged = true;
-      try { sheet.setPointerCapture(e.pointerId); } catch { /* synthetic events can't be captured */ }
-      sheet.style.transition = "none"; // follow the finger directly, no easing lag
-    }
-    if (sheetDrag.engaged) sheet.style.transform = `translateY(${sheetDrag.dy}px)`;
-  });
-  function endSheetDrag(e) {
-    if (!sheetDrag || e.pointerId !== sheetDrag.id) return;
-    const { engaged, dy } = sheetDrag;
-    sheetDrag = null;
-    if (!engaged) return;
-    if (e.type === "pointerup") {
-      suppressSheetClick = true;
-      setTimeout(() => { suppressSheetClick = false; }, 400); // safety: never eat a later, unrelated tap
-    }
-    // restore the CSS transition, then let the class drive the transform again:
-    // the animation runs from wherever the finger left the sheet, so both the
-    // spring-back and the dismissal continue smoothly from that exact spot
-    sheet.style.transition = "";
-    sheet.style.transform = "";
-    if (dy > SHEET_DISMISS_PX) closeSheet();
-  }
-  sheet.addEventListener("pointerup", endSheetDrag);
-  sheet.addEventListener("pointercancel", endSheetDrag);
-  sheet.addEventListener("click", (e) => {
-    if (suppressSheetClick) { e.stopPropagation(); e.preventDefault(); suppressSheetClick = false; }
-  }, true);
+  // The old "swipe the sheet down to dismiss" drag handlers (pointerdown/
+  // pointermove/pointerup on #sheet, SHEET_ENGAGE_PX/SHEET_DISMISS_PX) were
+  // removed here — #sheet is permanently `display:none` as of the sky
+  // redesign (the list's expand-in-place row is the real detail surface, see
+  // below), and a display:none element never receives pointer events in any
+  // browser, so that whole block was confirmed-unreachable dead code. #sheet
+  // itself (and renderSheet()/openSheet()) stay: they're still the one place
+  // stat values get formatted, and the list below reads their innerHTML
+  // straight out of these hidden nodes rather than duplicating the
+  // formatting logic — see the `readHtml("d-...")` calls further down.
 
   document.getElementById("rng").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-km]"); if (!btn) return;
@@ -3586,41 +3425,15 @@ body.row-open { --list-h: max(30vh, 236px); }
     }
   });
 
-  // The compass button normally sits at the stage's own bottom-right corner
-  // (bottom:12px/right:16px in CSS) — but that corner is behind the sheet
-  // once it's open (see openSheet()'s comment: the sheet pads the STAGE's
-  // bottom, the button's CSS offsets are relative to the stage too, so they
-  // don't track the radar shrinking above it). While a plane is selected and
-  // the sheet is open, re-anchor the button to the canvas's own bottom-right
-  // corner instead, horizontally inset by the same ELEV_GAUGE_MARGIN the
-  // elevation gauge uses on the opposite (bottom-left) corner. Called from
-  // resize(), which openSheet()/closeSheet() already call.
-  function positionCompass() {
-    return; // round 3: every direction places the compass in CSS
-    if (!sheet.classList.contains("open")) {
-      headingBtn.style.right = "";
-      headingBtn.style.bottom = "";
-      return;
-    }
-    const right = (stageEl.clientWidth - (cv.offsetLeft + cv.offsetWidth)) + ELEV_GAUGE_MARGIN;
-    // Vertical reference is the RADAR RING's own bottom edge (cy+R,
-    // canvas-local — R is 6px short of half the canvas, see resize()),
-    // per Sullivan's explicit direction ("same horizontal line as the
-    // gauge AND the radar map") and a follow-up AskUserQuestion confirming
-    // the map's ring — not the gauge's own pivot/tick geometry — is the
-    // intended anchor, and that the button's BOTTOM edge should rest ON
-    // that line rather than being centered on it (so the whole 44px
-    // circle stays inside the canvas, just above where the ring ends,
-    // instead of straddling it). Uses the FLAT (untilted) ring position
-    // regardless of the current tilt drag, matching the elevation gauge's
-    // own documented tilt-independence — otherwise the button would slide
-    // up and down as the map is tilted, which isn't what "the radar map
-    // when flat" was asking for.
-    const ringBottomY = cy + R; // canvas-local, flat/untilted
-    const bottom = (stageEl.clientHeight - (cv.offsetTop + cv.offsetHeight)) + (cssSize - ringBottomY);
-    headingBtn.style.right = right + "px";
-    headingBtn.style.bottom = bottom + "px";
-  }
+  // The compass button used to re-anchor itself to the canvas's own corner
+  // while a visibly-docked sheet was open (back when opening a detail sheet
+  // shrank the stage above it — see the CLAUDE.md history). Since round 3,
+  // every direction places the compass with plain CSS (bottom:12px/right:16px
+  // in the .compass-btn rule) and this function is a confirmed no-op, kept
+  // only because resize() still calls it — left as an explicit stub rather
+  // than threading a conditional call through resize() for a function with
+  // nothing left to do.
+  function positionCompass() {}
 
   // Heading-up is on by default, but the orientation listener can only be
   // armed from a user gesture (iOS's DeviceOrientationEvent.requestPermission)
@@ -3985,6 +3798,7 @@ body.row-open { --list-h: max(30vh, 236px); }
     document.getElementById("gate-credit").innerHTML = t("credit"); // contains the attribution link
     addrInput.placeholder = t("addrPlaceholder");
     document.getElementById("ceiling-box").title = t("conditionsTip");
+    document.getElementById("ceiling-box").setAttribute("aria-label", t("conditionsTip"));
     document.getElementById("rail-mark").title = t("homeTip");
     headingBtn.title = t("compassTip");
     unitsBtn.title = t("unitsTip");
@@ -4598,6 +4412,10 @@ body.row-open { --list-h: max(30vh, 236px); }
   // the wordmark is the way home, the same as the place name beside it
   document.getElementById("rail-mark").addEventListener("click", () => { if (me) reopenGate(); });
   document.getElementById("here").addEventListener("click", () => { if (me) reopenGate(); });
+  // title= (set in applyLang) covers desktop hover; this covers the actual
+  // platform — a tap surfaces the same explainer via the existing share-toast,
+  // since title never appears on touch at all.
+  document.getElementById("ceiling-box").addEventListener("click", () => showShareToast(t("conditionsTip"), { long: true, ms: 5000 }));
 
   function applyLangExtra() {
     if (!listReady) return;
