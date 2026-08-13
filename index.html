@@ -289,7 +289,26 @@ body.row-open { --list-h: max(30vh, 236px); }
 .gate { position: fixed; inset: 0; z-index: 90; background: var(--void); display: flex; flex-direction: column; padding: 30px 22px calc(26px + env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
 .gate.hidden { display: none; }
 .gate-inner { width: 100%; max-width: 460px; margin: 0 auto; display: flex; flex-direction: column; flex: 1; }
-#gate-sky { display: block; width: 100%; height: 74px; flex: none; }
+/* the name is set in the gate's own type, not painted into a canvas: it grows
+   with the column (cqi) so it fills the measure edge to edge instead of
+   floating as a small mark above a lot of empty sky. The fattened stroke plus
+   the hair of blur is the same cloud-lettering the rail's canvas copy draws. */
+.gate-mark { display: block; flex: none; container-type: inline-size; padding: 2px 0 12px; }
+.gate-mark span {
+  display: block; font-weight: 900; font-size: min(64px, 15.6cqi);
+  line-height: 0.98; letter-spacing: 0.128em; color: var(--ink);
+  -webkit-text-stroke: 0.044em var(--ink); filter: blur(0.024em);
+  transform-origin: left center;
+  animation: gate-mark-in 1.6s cubic-bezier(.22,.9,.25,1) both;
+}
+/* the word writes itself on, left to right, then settles — the canvas
+   version's timing, kept */
+@keyframes gate-mark-in {
+  0%   { clip-path: inset(0 100% 0 0); opacity: 0.6; transform: scale(1.05); }
+  72%  { clip-path: inset(0 0 0 0);    opacity: 0.6; transform: scale(1.05); }
+  100% { clip-path: inset(0 0 0 0);    opacity: 1;   transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .gate-mark span { animation: none; } }
 .gate-headline { font-size: clamp(30px, 9.4vw, 46px); font-weight: 900; line-height: 1.0; letter-spacing: -0.04em; margin: auto 0 0; }
 .gate-intro { font-size: 15px; font-weight: 600; line-height: 1.42; opacity: 0.85; margin: 16px 0 0; max-width: 34ch; }
 .gate-action { margin-top: 26px; }
@@ -436,7 +455,7 @@ body.row-open { --list-h: max(30vh, 236px); }
 
 <div class="gate" id="gate">
   <div class="gate-inner">
-    <canvas id="gate-sky" aria-label="Overhead"></canvas>
+    <div class="gate-mark"><span>OVERHEAD</span></div>
     <p class="gate-headline" id="gate-headline">There's traffic overhead. See it live.</p>
     <p class="gate-intro" id="gate-intro">Real-time radar of every aircraft in your sky — callsigns, altitudes, headings. No sign-up, no app, just planes.</p>
     <div class="gate-action">
@@ -590,6 +609,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       live: "live",
       reconnecting: "reconnecting…",
       offline: "offline · retrying",
+      srcDown: "source unavailable",
       pausedHidden: "paused · tab hidden",
       myLocation: "my location",
       change: "change",
@@ -647,6 +667,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       live: "en direct",
       reconnecting: "reconnexion…",
       offline: "hors ligne · nouvel essai",
+      srcDown: "source indisponible",
       pausedHidden: "en pause · onglet masqué",
       myLocation: "ma position",
       change: "changer",
@@ -704,6 +725,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       live: "em direto",
       reconnecting: "a religar…",
       offline: "offline · a tentar de novo",
+      srcDown: "fonte indisponível",
       pausedHidden: "em pausa · separador oculto",
       myLocation: "a minha localização",
       change: "mudar",
@@ -761,6 +783,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       live: "live",
       reconnecting: "Neuverbindung…",
       offline: "offline · neuer Versuch",
+      srcDown: "Quelle nicht verfügbar",
       pausedHidden: "pausiert · Tab verborgen",
       myLocation: "mein Standort",
       change: "ändern",
@@ -818,6 +841,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       live: "实时",
       reconnecting: "重新连接…",
       offline: "离线 · 重试中",
+      srcDown: "数据源不可用",
       pausedHidden: "已暂停 · 标签页隐藏",
       myLocation: "我的位置",
       change: "更改",
@@ -885,7 +909,7 @@ body.row-open { --list-h: max(30vh, 236px); }
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v88";
+  const APP_VERSION = "v89";
   const NM_PER_KM = 0.539957;
 
   // ---------- variation switch ----------
@@ -1567,6 +1591,32 @@ body.row-open { --list-h: max(30vh, 236px); }
   // re-filter locally), self-schedule from the END of each attempt so
   // timers can't stack, and back off on repeated failure — a fast second
   // retry would land inside a penalty window and extend it.
+  // A CORS-header-less rejection from the aircraft feed and a genuinely dead
+  // radio are THE SAME EVENT to browser JS — fetch rejects before any status
+  // code is readable (the 429 story above, and again on 2026-08-13 when
+  // airplanes.live began 403ing every request not referred from its own site).
+  // That ambiguity is expensive: it sends you hunting for a connectivity fault
+  // that isn't there. So on a SUSTAINED failure, ask a DIFFERENT keyless
+  // CORS-* host whether the network is up. If adsbdb answers, the phone is
+  // fine and the aircraft source is the thing that's down — say that instead
+  // of claiming to be offline. Any answer counts, 404 included: reaching the
+  // 404 proves both the network and the CORS path. Throttled hard, and only
+  // ever runs while the feed is already failing, so it adds no load in normal
+  // operation.
+  const REACH_PROBE_MS = 5 * 60 * 1000;
+  let lastProbeAt = 0, netUp = false;
+  async function probeNet() {
+    if (Date.now() - lastProbeAt < REACH_PROBE_MS) return;
+    lastProbeAt = Date.now();
+    try {
+      await fetch(`${ROUTE_API}OVERHEADPROBE`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined
+      });
+      netUp = true;
+    } catch { netUp = false; }
+  }
+
   async function poll() {
     if (!me || document.hidden || pollInFlight) return;
     pollInFlight = true;
@@ -1595,7 +1645,14 @@ body.row-open { --list-h: max(30vh, 236px); }
       // 429s, so they wait the full interval (retrying faster would extend
       // a rate-limit penalty rather than recover from it).
       nextMs = failStreak === 1 ? RETRY_QUICK_MS : POLL_MS;
-      setStatus("error", failStreak === 1 ? t("reconnecting") : t("offline"));
+      if (failStreak === 1) {
+        setStatus("error", t("reconnecting"));
+      } else {
+        // awaited so the very first sustained failure already reads correctly;
+        // the throttle makes this a no-op on all but one poll in five minutes
+        await probeNet();
+        setStatus("error", netUp ? t("srcDown") : t("offline"));
+      }
     } finally {
       pollInFlight = false;
       if (me && !document.hidden) pollTimer = setTimeout(poll, nextMs);
@@ -4363,30 +4420,14 @@ body.row-open { --list-h: max(30vh, 236px); }
   }
 
   (function marks() {
-    const gateC = document.getElementById("gate-sky");
+    // The gate writes its own name in CSS now (`.gate-mark`) — only the rail's
+    // copy is still painted, because it has to sit inside a 14px status bar.
     const railC = document.getElementById("rail-mark");
     const gateEl = document.getElementById("gate");
-    let t0 = 0, railT0 = 0, railDone = false, gateDone = false;
+    let railT0 = 0, railDone = false;
     function frame(ts) {
       try {
-        if (!gateEl.classList.contains("hidden")) {
-          if (!t0) t0 = ts;
-          const dt = ts - t0;
-          // the rail's copy has always had this guard; the gate's — the very
-          // first thing anyone sees — did not, and a single long frame during
-          // load left OVERHEAD permanently half-written. Whatever the frame
-          // rate, the LAST paint is the settled one.
-          // a layout or DPR change reallocates (and so blanks) the canvas
-          const gdpr = Math.min(window.devicePixelRatio || 1, 2.5);
-          if (gateC.width !== Math.round(gateC.clientWidth * gdpr)) gateDone = false;
-          if (dt >= 1600) {
-            if (!gateDone) { gateDone = true; paintMark(gateC, 44, 0.14, 1, 1); }
-          } else {
-            gateDone = false;
-            paintMark(gateC, 44, 0.14, Math.min(1, dt / 1150),
-                      Math.min(1, Math.max(0, (dt - 1150) / 450)));
-          }
-        } else {
+        if (gateEl.classList.contains("hidden")) {
           // the rail's own copy writes itself once, the first time the radar
           // is on screen, then holds
           // a layout or DPR change blanks the canvas, so it rewrites itself

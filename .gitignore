@@ -1,0 +1,4 @@
+# live-preview session state injected by the `impeccable` tooling — never ship
+# it: the script tag it writes into index.html points at http://localhost and
+# carries a session token
+.impeccable/
