@@ -51,8 +51,34 @@ Then visit `http://<pi-ip>:8080` from your phone on the same WiFi.
   radar stays north-up.
 
 ## Rate limits & battery
-- Polls airplanes.live every **30 s** (their limit is ~1 request/second, so we are well under),
-  The status bar shows a live `req` counter.
+- Polls airplanes.live every **45 s**, one request per tick. Their published
+  limit is 1 request/second, but the *measured* limit is nearer one request per
+  ~36 s per IP, and going over starts a ~60 s penalty — so 45 s is the deliberate
+  margin, not a guess. Changing the range re-filters locally and fires no extra
+  request. The status bar shows the connection state (`live`, `reconnecting…`,
+  `offline · retrying`, `source unavailable`, `paused`), not a request counter.
 - Polling **stops the instant the app is hidden** (tab switch, lock, minimize) via the
   Page Visibility API, and resumes when visible. Nothing runs in the background.
 - The service worker explicitly does **not** cache airplanes.live/Nominatim — live data is always fresh.
+
+## License
+
+Overhead is free software, licensed under the **GNU General Public License
+v3.0** — see [`LICENSE`](LICENSE) for the full text. You may use, study, share
+and modify it; if you distribute it, modified or not, the recipients get the
+same freedoms and the source must come with it.
+
+Third-party material bundled here:
+
+- **`shapes/*.svg`** — 182 top-down aircraft silhouettes from
+  [AircraftShapesSVG](https://github.com/RexKramer1/AircraftShapesSVG) by
+  RexKramer1, GPL-3.0. Modified for this app (viewBox re-fit, intrinsic size
+  and stroke-widths rescaled) — see [`shapes/CREDITS.md`](shapes/CREDITS.md).
+- **`icons/sun.svg`, `icons/moon.svg`** — by Slamet Widodo, via the Noun
+  Project, licensed **CC BY**. Modified here (embedded credit text layer
+  removed; attribution retained in this file and in each SVG's source).
+  The other glyphs in `icons/` are original to this project.
+
+Live aircraft, route, weather and geocoding data come from the third-party
+services listed under **Data sources** above, each under its own terms; they
+are not covered by this license.

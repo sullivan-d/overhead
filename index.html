@@ -1,4 +1,20 @@
 <!DOCTYPE html>
+<!--
+  Overhead — live plane radar PWA
+  Copyright (C) 2026 Sullivan Descarpentry
+
+  This program is free software: you can redistribute it and/or modify it
+  under the terms of the GNU General Public License as published by the Free
+  Software Foundation, either version 3 of the License, or (at your option)
+  any later version. It is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+  Public License for more details: <https://www.gnu.org/licenses/>.
+
+  Source, full license text and third-party credits (the GPL-3.0 aircraft
+  silhouettes in shapes/, the CC BY sun/moon glyphs in icons/):
+  https://github.com/sullivan-d/overhead
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -343,6 +359,9 @@ body.row-open { --list-h: max(30vh, 236px); }
    at — and in sentence case, because 42 characters of tracked caps is not */
 .gate-credit { margin: 10px 0 0; font-size: 11.5px; letter-spacing: 0.01em; opacity: 0.82; }
 .gate-credit a { color: inherit; text-underline-offset: 2px; }
+/* the licence notice is a legal footnote, not a feature: same family as the
+   data credit above it, one step quieter, tucked right above the build number */
+.gate-license { margin-top: 4px; font-size: 10.5px; opacity: 0.6; }
 /* The build number. It used to ride in the detail sheet's footer, but this
    redesign hides that whole row (.sheet-links), which took the version with
    it — and the version is the one thing you need to read out loud when
@@ -484,6 +503,15 @@ body.row-open { --list-h: max(30vh, 236px); }
       </div>
       <div class="gate-why"><b id="why-t">Why location?</b><span id="why-b"></span></div>
       <p class="gate-credit" id="gate-credit">Data from the open <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a> network.</p>
+      <!-- GPL-3.0 asks an interactive program to tell the user it is free
+           software and where the source is. The gate is the one surface every
+           user actually sees (the sheet footer that used to carry the version
+           is permanently display:none), so the notice lives here, quiet, on
+           the same line as the build number. -->
+      <p class="gate-credit gate-license">
+        <span id="gate-license-t"></span>
+        <a href="https://github.com/sullivan-d/overhead" target="_blank" rel="noopener" id="gate-license-l">GPL-3.0 · source</a>
+      </p>
       <!-- not translated content: a build number is the same string in every
            language, so it is set directly, never through t() -->
       <div class="gate-version" id="gate-version"></div>
@@ -610,6 +638,8 @@ body.row-open { --list-h: max(30vh, 236px); }
       reconnecting: "reconnecting…",
       offline: "offline · retrying",
       srcDown: "source unavailable",
+      licenseNote: "Free software.",
+      licenseLink: "GPL-3.0 · source code",
       pausedHidden: "paused · tab hidden",
       myLocation: "my location",
       change: "change",
@@ -668,6 +698,8 @@ body.row-open { --list-h: max(30vh, 236px); }
       reconnecting: "reconnexion…",
       offline: "hors ligne · nouvel essai",
       srcDown: "source indisponible",
+      licenseNote: "Logiciel libre.",
+      licenseLink: "GPL-3.0 · code source",
       pausedHidden: "en pause · onglet masqué",
       myLocation: "ma position",
       change: "changer",
@@ -726,6 +758,8 @@ body.row-open { --list-h: max(30vh, 236px); }
       reconnecting: "a religar…",
       offline: "offline · a tentar de novo",
       srcDown: "fonte indisponível",
+      licenseNote: "Software livre.",
+      licenseLink: "GPL-3.0 · código-fonte",
       pausedHidden: "em pausa · separador oculto",
       myLocation: "a minha localização",
       change: "mudar",
@@ -784,6 +818,8 @@ body.row-open { --list-h: max(30vh, 236px); }
       reconnecting: "Neuverbindung…",
       offline: "offline · neuer Versuch",
       srcDown: "Quelle nicht verfügbar",
+      licenseNote: "Freie Software.",
+      licenseLink: "GPL-3.0 · Quellcode",
       pausedHidden: "pausiert · Tab verborgen",
       myLocation: "mein Standort",
       change: "ändern",
@@ -842,6 +878,8 @@ body.row-open { --list-h: max(30vh, 236px); }
       reconnecting: "重新连接…",
       offline: "离线 · 重试中",
       srcDown: "数据源不可用",
+      licenseNote: "自由软件。",
+      licenseLink: "GPL-3.0 · 源代码",
       pausedHidden: "已暂停 · 标签页隐藏",
       myLocation: "我的位置",
       change: "更改",
@@ -3853,6 +3891,7 @@ body.row-open { --list-h: max(30vh, 236px); }
     set("gate-headline", "headline");
     set("gate-intro", "intro");
     document.getElementById("gate-credit").innerHTML = t("credit"); // contains the attribution link
+    set("gate-license-t", "licenseNote"); set("gate-license-l", "licenseLink");
     addrInput.placeholder = t("addrPlaceholder");
     document.getElementById("ceiling-box").title = t("conditionsTip");
     document.getElementById("ceiling-box").setAttribute("aria-label", t("conditionsTip"));
