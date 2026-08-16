@@ -67,15 +67,20 @@
 @font-face { font-family: "Field"; src: url("fonts/barlow-900.woff") format("woff"); font-weight: 900; font-display: swap; }
 
 :root {
+  /* EVERY VALUE BELOW IS FINAL. A "sky clock" used to rewrite this whole
+     block every minute from the real solar elevation, which is what turned
+     the panels maroon around sunset; it was removed 2026-08-16 and these are
+     now the only values the app ever has. See the long note at the palette
+     section in the script before considering anything time-of-day again. */
   --void:#0f5cc8; --panel:#093574; --sweep:#ffffff; --sweep-dim:#ffffff2e;
   --ring:#74a0df; --ink:#ffffff; --ink-soft:#dde8f7; --ink-faint:#d4e2f5;
   /* --hot is the one thing on screen that means "this is the aircraft you
      picked", and it was the LEAST readable colour in the app: #ff6b4a is
      2.2:1 on the noon sky and 6.9:1 at midnight — exactly backwards for a
-     product used outdoors in daylight. It is now driven by the sky clock
-     (see the --hot patch on applySkyClock): rich coral at night, lifted to
-     this amber-orange under a bright sky, where it clears 3:1 against the
-     noon blue for the 19px/900 figures and the beads that carry it.
+     product used outdoors in daylight. It is pinned to this amber-orange,
+     which clears 3:1 against the background blue for the 19px/900 figures
+     and the beads that carry it. (It used to ramp coral→amber with the sky
+     clock; coral was the night half of that ramp and went with it.)
      --on-hot is the ink that sits ON a hot fill. */
   --hot:#ffa645; --on-hot:#093574; --gold:#ffdb59; --moon:#e6eefb; --grid-line:#3a79d2;
   --on-sweep:#0a3f8f; --ring-minor:#578dd8; --crosshair:#24699e;
@@ -1049,7 +1054,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v91";
+  const APP_VERSION = "v92";
   const NM_PER_KM = 0.539957;
 
   // ---------- variation switch ----------
@@ -3002,7 +3007,9 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     ctx.beginPath(); ctx.arc(pt.x, pt.y, coreR, 0, Math.PI * 2); ctx.fill();
   }
 
-  // The moon's face is the sky colour lifted by a fraction that depends on
+  // The moon's face is the app's own background blue (SKY_BASE — it used to
+  // be the sky clock's colour for the current instant, and the sky clock is
+  // gone) lifted by a fraction that depends on
   // how far down the sun is: +0.14 in full daylight (the reference photo —
   // you have to look for it) rising to +0.92 once the sun is well set. That
   // faintness is deliberate and is the honest rendering; the moon stays
@@ -3015,7 +3022,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   function drawMoonDisc(pt, r) {
     const el = sunPos ? sunPos.alt : -20;
     const night = Math.min(1, Math.max(0, (2 - el) / 14));
-    const face = shade(skyAt(el), 0.14 + 0.78 * night);
+    const face = shade(SKY_BASE, 0.14 + 0.78 * night);
     // FIXED ORIENTATION. The lit limb used to be turned to face the sun's own
     // position on the ring, which is astronomically correct and visually
     // wrong here: the sun's screen position moves with the map's rotation and
@@ -4142,126 +4149,39 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     const cosEl = Math.sin(decS) * Math.sin(decM) +
       Math.cos(decS) * Math.cos(decM) * Math.cos(toRad(moon.raDeg - sun.raDeg));
     moonIllum = (1 - Math.max(-1, Math.min(1, cosEl))) / 2;
-    applySkyClock(sunPos.alt);
   }
 
-  // The gate is shown BEFORE any location is known, so the real solar
-  // elevation isn't computable yet — and the CSS defaults are the noon blue,
-  // which is how the landing page came to be permanently midday no matter what
-  // time it was opened. This runs the same astronomy against a stand-in
-  // position: longitude from the device's own UTC offset (15° per hour, which
-  // is what a timezone IS), latitude pinned at 45°. Hour angle is what decides
-  // day from night, and that comes out of the offset exactly; the latitude
-  // guess only shifts how HIGH noon gets, so the worst case is a sky an hour
-  // or so off around the equinox — never the wrong half of the day.
-  // updateCelestial() overwrites this with the truth the moment begin() runs.
-  // (It is CALLED at the end of the sky-clock section below, not here: SKY_KEYS
-  // is a const declared down there, and a top-level call that runs before it
-  // initializes throws a TDZ ReferenceError that kills the rest of the script.)
-  function provisionalSunAlt() {
-    const now = new Date();
-    const d = daysSinceJ2000(now);
-    // STANDARD offset, not the current one: daylight saving shifts the clock a
-    // full hour off solar time, and reading it straight would put the guessed
-    // longitude 15° out all summer — enough to paint sunset colours while it
-    // is still plainly afternoon. getTimezoneOffset() counts minutes BEHIND
-    // UTC, so DST makes it smaller and the larger of a midwinter and a
-    // midsummer sample is the zone's standard offset in either hemisphere.
-    const y = now.getFullYear();
-    const stdOffMin = Math.max(
-      new Date(y, 0, 1).getTimezoneOffset(),
-      new Date(y, 6, 1).getTimezoneOffset()
-    );
-    const lon = -stdOffMin / 4; // minutes → degrees (60 min = 15°)
-    const lst = (gmstDeg(d) + lon + 360) % 360;
-    const s = sunEquatorial(d);
-    return toHorizontal(s.raDeg, s.decDeg, 45, lst).alt;
-  }
-
-  // ---------- sky clock ----------
-  // The sky is not a theme the user picks, it is the time of day where they
-  // are standing — so it comes from the same solar elevation that already
-  // places the sun glyph on the outer ring. One colour drives the palette:
-  // everything else is a fixed mix away from it, which is what keeps the
-  // text-contrast ratios constant no matter what hour it is.
-  // The old ramp ran night-navy → noon-blue along a single blue hue, and every
-  // key above +5° was within a few points of the last one — so for the entire
-  // usable day (the sun clears 5° within half an hour of sunrise and stays
-  // there until half an hour before sunset) the app was one flat midday blue.
-  // The hours the sky is actually WORTH looking at were the ones it couldn't
-  // show. The ramp now bends through warm hues either side of the horizon —
-  // indigo, violet, plum, burnt orange — and only settles into blue once the
-  // sun is genuinely up, with most of the keys packed into the -10°..+16° band
-  // where real sky colour moves fastest.
+  // ---------- the palette is FIXED, not a time-of-day clock ----------
+  // There used to be a "sky clock" here: a 10-stop table (SKY_KEYS) keyed to
+  // real solar elevation, piecewise-lerped and written onto :root every
+  // minute, so every surface in the app — background, panels, rings, ink,
+  // the accent — was a mix of whatever colour the sky was at that instant.
+  // It is GONE, removed at Sullivan's request 2026-08-16. Do not rebuild it.
   //
-  // CONSTRAINT, and the reason the warm keys are as dark as they are: every
-  // key must hold at least the 6.2:1 white-on-sky and 3.19:1 hot-on-sky that
-  // the old noon blue set, because that noon blue is the app's worst case and
-  // nothing here may make a sunlit screen harder to read than it already is.
-  // Check any new key against both before adding it.
-  const SKY_KEYS = [
-    { el: -18, sky: [7, 12, 34] },     // night
-    { el: -10, sky: [14, 20, 58] },    // astronomical twilight
-    { el:  -6, sky: [30, 30, 84] },    // nautical twilight — indigo
-    { el:  -3, sky: [62, 38, 96] },    // civil twilight — violet
-    { el:   0, sky: [104, 44, 84] },   // sun on the horizon — plum
-    { el:   3, sky: [124, 58, 60] },   // sunrise / sunset — burnt orange
-    { el:   8, sky: [88, 74, 128] },   // golden hour turning over to blue
-    { el:  16, sky: [40, 84, 180] },   // morning / late afternoon
-    { el:  32, sky: [22, 90, 196] },   // full day
-    { el:  55, sky: [15, 92, 200] }    // solar noon — the pinned high-noon blue
-  ];
-  const hex2 = n => Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, "0");
-  const toHex = c => "#" + hex2(c[0]) + hex2(c[1]) + hex2(c[2]);
+  // Two reasons it had to go. The visible one: the ramp bent through warm
+  // hues either side of the horizon, so around sunset --panel (sky shaded
+  // -0.42) came out a dark maroon, and the app spent every evening looking
+  // like a different, muddier product. The structural one: the background
+  // stopped being sky-clock-driven when it became the static --sky-grad
+  // ramp, so the clock was tinting panels and rings to match a sky the page
+  // no longer painted — two colour systems disagreeing by construction.
+  //
+  // Every one of those custom properties now has exactly one value, set
+  // statically in :root, in the same blue family as --grad-a/--grad-b.
+  // `theme` is read from CSS once at parse time and never needs re-reading,
+  // because nothing moves the properties any more.
+  //
+  // The sun and the moon still change: drawSunDisc() reddens the sun as it
+  // drops (off sunPos.alt directly, not off any palette) and drawMoonDisc()
+  // lifts the moon's face out of the background blue by how far down the sun
+  // is. That is those two objects looking like themselves at that hour —
+  // it is not the app recolouring itself, and it is what "the moon is barely
+  // there in daylight" depends on.
+  const SKY_BASE = [15, 92, 200]; // = --void, the blue the moon's face is lifted out of
   // t toward white when positive, toward black when negative
   const shade = (c, t) => t >= 0
     ? c.map(v => v + (255 - v) * t)
     : c.map(v => v * (1 + t));
-
-  function skyAt(elevDeg) {
-    let i = 0;
-    while (i < SKY_KEYS.length - 2 && elevDeg > SKY_KEYS[i + 1].el) i++;
-    const a = SKY_KEYS[i], b = SKY_KEYS[i + 1];
-    const u = Math.max(0, Math.min(1, (elevDeg - a.el) / (b.el - a.el)));
-    return a.sky.map((v, k) => v + (b.sky[k] - v) * u);
-  }
-
-  function applySkyClock(elevDeg) {
-    if (elevDeg == null) return;
-    const sky = skyAt(elevDeg);
-    const set = (n, v) => document.documentElement.style.setProperty(n, v);
-    set("--void", toHex(sky));
-    set("--panel", toHex(shade(sky, -0.42)));
-    set("--grid-line", toHex(shade(sky, 0.18)));
-    set("--ring", toHex(shade(sky, 0.42)));
-    set("--ring-minor", toHex(shade(sky, 0.30)));
-    set("--crosshair", toHex(shade(sky, 0.085)));
-    set("--trail-shadow", toHex(shade(sky, -0.30)));
-    set("--range-label", toHex(shade(sky, 0.80)));
-    set("--ink-soft", toHex(shade(sky, 0.86)));
-    set("--ink-faint", toHex(shade(sky, 0.82)));
-    // rich coral against a night sky, lifted to amber-orange under a
-    // bright one, where a saturated coral is 2.2:1 and simply not there
-    // full amber the moment the sun clears the horizon, not at
-    // some arbitrary elevation: a ramp that only reaches 1 at solar
-    // noon leaves the accent short of 3:1 for most of the day
-    const day = Math.max(0, Math.min(1, (elevDeg + 6) / 6));
-    const HOT_NIGHT = [255, 107, 74], HOT_DAY = [255, 166, 69];
-    set("--hot", toHex(HOT_NIGHT.map((v, k) => v + (HOT_DAY[k] - v) * day)));
-    set("--on-hot", toHex(shade(sky, -0.42)));
-    // Canvas colours are read from CSS, so the palette has to be re-read
-    // after the vars move or the radar keeps painting the previous hour.
-    theme = readThemeFromCss();
-    // (theme-color stays on --grad-a — see the meta tag in <head>. The sky
-    // clock drives the canvas palette, not the page background.)
-  }
-
-  // Paint the gate at the right hour immediately (see provisionalSunAlt), and
-  // keep following it — the gate can sit open a long time while someone reads
-  // it or types an address, and a page left open across sunset should move
-  // with the sky exactly like the radar does.
-  applySkyClock(provisionalSunAlt());
-  setInterval(() => { if (!me) applySkyClock(provisionalSunAlt()); }, 60000);
 
   // ---------- location gate ----------
   // The address entry is always visible as a first-class alternative (not
