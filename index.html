@@ -201,8 +201,19 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   font-size: 10.5px; font-weight: 900; letter-spacing: 0; line-height: 1;
 }
 .entry.on .idx { background: var(--hot); border-color: var(--hot); color: var(--on-hot); }
-.entry .sil { width: 34px; height: 30px; display: flex; align-items: center; justify-content: center; }
-.entry .sil img { max-width: 100%; max-height: 100%; filter: invert(1); opacity: 0.95; }
+/* Same rule as .d-sil below, at thumbnail scale: max-width/max-height:100%
+   shrank every shape to the same 34x30 box and flattened the size ranking on
+   the collapsed line too. --sil-k is 34/160 here. The box is unchanged, so
+   row height and the fixed split are untouched. */
+.entry .sil {
+  width: 34px; height: 30px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  --sil-k: 0.1875;
+}
+.entry .sil img {
+  width: auto; height: auto; max-width: none; max-height: none; flex: none;
+  transform: scale(var(--sil-k)); filter: invert(1); opacity: 0.95;
+}
 .entry .nm { min-width: 0; }
 .entry .call { display: block; font-weight: 900; font-size: 19px; letter-spacing: -0.02em; line-height: 1.05; }
 /* 11px at 0.82 clears 4.5:1 on the noon sky; 9px at 0.5 was 2.7:1 and this
@@ -232,14 +243,29 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
 .entry:not(.on) .detail-in { visibility: hidden; }
 /* indented past the tally only, so the record gets the silhouette's width back */
 .entry .detail-in > div { display: flex; gap: 14px; align-items: flex-start; padding: 0 0 14px 29px; }
-/* The silhouette is the one thing in the record you read at a glance from
-   arm's length, and at 64px it was a thumbnail. The box is FIXED (not just a
-   width) and the image is object-fit: contain inside it, so every type keeps
-   its own true proportions — the vendored shapes are individually sized, so a
-   plain width would give each aircraft a different height and break the
-   constant-record-height rule above. */
-.entry .d-sil { width: 116px; height: 118px; flex: none; }
-.entry .d-sil img { width: 100%; height: 100%; object-fit: contain; display: block; filter: invert(1); opacity: 0.95; }
+/* THE SILHOUETTE IS SIZED BY THE REAL AIRCRAFT, NOT BY THE BOX.
+   Every vendored shape already carries an intrinsic width/height that
+   shapes/refit-shapes.js log-scaled by that type's true size — an A380 is
+   160px wide in its own file, an EC-145 is 84, an R44 is 39. That ranking is
+   the whole point of the silhouette, and `width:100%; height:100%;
+   object-fit: contain` threw ALL of it away: it fits every shape to the same
+   box, so a helicopter drew as large as an airliner (field-reported twice).
+   The image now renders at its OWN size, uniformly scaled by --sil-k so that
+   the largest shape in the set (160x160) exactly fits the box. Uniform means
+   the ranking survives. The box stays FIXED so the record's height is still
+   constant per the rule above — the transform doesn't affect layout, and
+   overflow:hidden guards the one-pixel rounding case.
+   If a shape is ever re-vendored larger than 160px, lower --sil-k to match. */
+.entry .d-sil {
+  width: 116px; height: 118px; flex: none; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  --sil-k: 0.72;   /* 116/160 */
+}
+.entry .d-sil img {
+  width: auto; height: auto; max-width: none; max-height: none; flex: none;
+  transform: scale(var(--sil-k)); display: block;
+  filter: invert(1); opacity: 0.95;
+}
 .entry .d-left { flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 /* Share sits under the silhouette: the record's own left column already has
    the width, and the action belongs with the picture of the thing you'd share
@@ -1058,7 +1084,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v93";
+  const APP_VERSION = "v94";
   const NM_PER_KM = 0.539957;
 
   // ---------- variation switch ----------
