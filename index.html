@@ -1037,6 +1037,10 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   // probably cannot see it", so it now sits close to the floor of what stays
   // legible at all.
   const CLOUD_DIM_ALPHA = 0.2;
+  // The tally badge recedes with its aircraft but not all the way to 0.2 — it
+  // is the only link between a dot in the sky and the row describing it, and a
+  // hidden aircraft still has a row.
+  const BADGE_DIM_ALPHA = 0.5;
   // "Low" / "on the ground" checks measure against the USER's own ground
   // elevation (groundElevM below, free with every cloud-ceiling fetch) — NOT
   // per-aircraft terrain. A per-aircraft Open-Meteo elevation lookup existed
@@ -1054,7 +1058,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v92";
+  const APP_VERSION = "v93";
   const NM_PER_KM = 0.539957;
 
   // ---------- variation switch ----------
@@ -2544,8 +2548,13 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     // the feed) go first — they're the oldest thing in the sky.
     try { drawGhostTrails(now); } catch (e) { console.warn("ghost trails", e); }
     for (const { p, proj, altM } of visible) {
+      // the trail dims with its aircraft: cloud between you and the aeroplane
+      // is cloud between you and the line it drew, and a full-brightness white
+      // contrail behind a ghosted icon reads as a rendering fault
+      ctx.globalAlpha = isAboveClouds(p) ? CLOUD_DIM_ALPHA : 1;
       try { drawContrail(p, proj, altM, now); } catch (e) { console.warn("skipped contrail", p.icao, e); }
     }
+    ctx.globalAlpha = 1;
 
     for (const { p, proj, altM, trackDeg } of visible) {
       try {
@@ -2683,7 +2692,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   // with a stack of progressively wider, fainter strokes — a real canvas
   // filter costs far too much to run per segment per frame, and this reads
   // the same at these widths.
-  const CONTRAIL_PEAK_A = 0.52;  // opacity of a young segment
+  const CONTRAIL_PEAK_A = 0.80;  // opacity of a young segment
   // THE TAPER IS BUILT FROM NESTED FULL-LENGTH STROKES, NOT FROM A CHAIN OF
   // SHORT ONES. Drawing the trail as hundreds of little strokes — however
   // finely resampled — means hundreds of round caps, and every cap overlaps
@@ -2701,10 +2710,10 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   // the aircraft without any single stroke having to change width.
   //   [width px, opacity multiple, fraction of the trail covered, from the head]
   const CONTRAIL_LAYERS = [
-    [7.0, 0.13, 1.00],  // outer wash — the whole path, cirrus-wide
-    [4.0, 0.20, 0.80],
-    [2.2, 0.34, 0.52],
-    [1.0, 0.62, 0.26],  // crisp hairline right behind the aircraft
+    [7.0, 0.16, 1.00],  // outer wash — the whole path, cirrus-wide
+    [4.0, 0.26, 0.80],
+    [2.2, 0.44, 0.52],
+    [1.0, 0.80, 0.26],  // crisp hairline right behind the aircraft
   ];
   // A stroke can never be drawn wider than the path it is stroking is long.
   // Without this, the log radial scale bites: out near the rim a whole trail
@@ -3214,11 +3223,31 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   // Range is intentionally mild: a wide range (previously 1.6x-0.55x on
   // altitude alone) made high-cruising widebody jets — usually the biggest
   // real aircraft — shrink to the smallest icons on screen.
+  //
+  // THE TYPE'S REAL SIZE OUTRANKS DISTANCE, DELIBERATELY. Distance alone let a
+  // helicopter 1.7km away draw visibly LARGER than an airliner 5.5km away
+  // (field-reported 2026-08-16), which inverts the one thing the icon sizes are
+  // for: telling at a glance which of two contacts is the big aircraft. So the
+  // distance term is now a narrow trim (SLANT_NEAR..SLANT_FAR, a 1.44x spread)
+  // multiplied by a wingspan term with a much wider spread — the two ranges are
+  // chosen so that the SMALLEST an aircraft of one class can draw still exceeds
+  // the LARGEST an aircraft of the class below it can draw, at any distance.
+  // Widen SLANT_NEAR/SLANT_FAR and that guarantee breaks; check the arithmetic
+  // against wingspanM()'s buckets (60 / 34 / 18 / 14 / 11 / 2 m) before doing it.
+  const SLANT_NEAR = 1.18, SLANT_FAR = 0.82;
+  const ICON_REF_SPAN_M = 34;   // an A320 — the span drawIconPath is drawn at
+  const ICON_SPAN_EXP = 0.75;   // <1: real spans span 30x, the icons must not
+  const ICON_SPAN_MIN = 0.30;   // a 2m drone would otherwise vanish entirely
+  const ICON_BASE = 1.15;       // overall trim, so the small end stays legible
+  function spanScale(p) {
+    const s = wingspanM(p) / ICON_REF_SPAN_M;
+    return Math.max(ICON_SPAN_MIN, Math.pow(s, ICON_SPAN_EXP));
+  }
   function slantScale(altM, lateralDistKm) {
     const altKm = (altM || 0) / 1000;
     const slantKm = Math.hypot(lateralDistKm, altKm);
     const t = Math.max(0, Math.min(1, slantKm / (displayRangeKm * RANGE_MARGIN)));
-    return 1.4 - t * (1.4 - 0.7);
+    return SLANT_NEAR - t * (SLANT_NEAR - SLANT_FAR);
   }
 
   // glowAge: null when this aircraft has no active new-contact blip, else a
@@ -3247,7 +3276,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     let seed = (parseInt(icao, 16) || 1) >>> 0;
     const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
     ctx.save();
-    ctx.globalAlpha = fade;
+    ctx.globalAlpha *= fade;   // multiply: the caller may already be dimming
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2 + rnd() * 0.8;
       const lr = r * (0.44 + rnd() * 0.28);
@@ -3264,12 +3293,17 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   }
 
   function drawPlane(x, y, heading, sel, p, lateralDistKm, glowAge) {
-    const scale = slantScale(p.alt, lateralDistKm);
+    const scale = ICON_BASE * spanScale(p) * slantScale(p.alt, lateralDistKm);
     // The aircraft comes out from BEHIND the reveal cloud, so its opacity is
     // driven by the same clock as the puff rather than fading in on its own.
     const emerge = glowAge == null ? 1 : sstep((glowAge - 0.34) / 0.30);
+    // MULTIPLY, never assign. draw() sets globalAlpha to CLOUD_DIM_ALPHA for an
+    // aircraft above the cloud ceiling before calling this; assigning here blew
+    // that away and repainted the icon at full white — which is exactly why the
+    // dimming looked dead for the icon while the stem and shadow still faded.
+    const baseAlpha = ctx.globalAlpha;
     ctx.save();
-    ctx.globalAlpha = emerge;
+    ctx.globalAlpha = baseAlpha * emerge;
     ctx.translate(x, y); ctx.rotate(toRad(heading)); ctx.scale(scale, scale);
     ctx.fillStyle = sel ? theme.hotHex : theme.inkHex;
     ctx.strokeStyle = sel ? theme.hotHex : theme.inkHex;
@@ -4788,7 +4822,10 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     // when the sky clock replaces `theme`, so key the cache on that object
     if (idxPalFor !== theme) {
       idxPalFor = theme;
-      idxPal = { voidRgb: rgbTriple(theme.voidHex) || "10,60,140", onHot: cssVar("--on-hot") };
+      // --grad-a: the DARKEST blue of the background ramp, the one at the top
+      // of the page. --void (a mid blue) left the discs reading as a separate,
+      // lighter blue floating over the sky instead of a hole punched in it.
+      idxPal = { voidRgb: rgbTriple(theme.gradAHex) || "10,42,107", onHot: cssVar("--on-hot") };
     }
     return idxPal;
   }
@@ -4807,16 +4844,22 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
         const proj = project(estimatedPosition(p, now));
         const y = squishY(proj.y) - altitudeLiftPx(estimatedAltitude(p, now));
         const bx = proj.x + 15, by = y - 14, sel = p.icao === selected;
+        // an above-the-ceiling aircraft is dimmed; its badge recedes with it,
+        // but only part way — the number is the row cross-reference and has to
+        // stay legible even for an aircraft you can't currently see
+        ctx.globalAlpha = !sel && isAboveClouds(p) ? BADGE_DIM_ALPHA : 1;
         ctx.beginPath();
         ctx.arc(bx, by, 8.5, 0, Math.PI * 2);
-        // a disc of shaded sky, so the digit reads over a contrail or a wing
-        ctx.fillStyle = sel ? theme.hotHex : `rgba(${pal.voidRgb},0.62)`;
+        // a disc of the sky's own darkest blue, so the digit reads over a
+        // contrail or a wing as a hole in the sky rather than a sticker on it
+        ctx.fillStyle = sel ? theme.hotHex : `rgba(${pal.voidRgb},0.92)`;
         ctx.fill();
         ctx.lineWidth = 1;
         ctx.strokeStyle = sel ? theme.hotHex : `rgba(${theme.inkSoftRgb},0.8)`;
         ctx.stroke();
         ctx.fillStyle = sel ? pal.onHot : theme.inkHex;
         ctx.fillText(String(n), bx, by + 0.5);
+        ctx.globalAlpha = 1;
       } catch (e) { /* one bad record must not take the tally down */ }
     }
     ctx.restore();
