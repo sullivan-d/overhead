@@ -1084,7 +1084,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v94";
+  const APP_VERSION = "v95";
   const NM_PER_KM = 0.539957;
 
   // ---------- variation switch ----------
@@ -2718,7 +2718,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   // with a stack of progressively wider, fainter strokes — a real canvas
   // filter costs far too much to run per segment per frame, and this reads
   // the same at these widths.
-  const CONTRAIL_PEAK_A = 0.80;  // opacity of a young segment
+  const CONTRAIL_PEAK_A = 0.95;  // opacity of a young segment
   // THE TAPER IS BUILT FROM NESTED FULL-LENGTH STROKES, NOT FROM A CHAIN OF
   // SHORT ONES. Drawing the trail as hundreds of little strokes — however
   // finely resampled — means hundreds of round caps, and every cap overlaps
@@ -2739,7 +2739,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     [7.0, 0.16, 1.00],  // outer wash — the whole path, cirrus-wide
     [4.0, 0.26, 0.80],
     [2.2, 0.44, 0.52],
-    [1.0, 0.80, 0.26],  // crisp hairline right behind the aircraft
+    [1.0, 1.00, 0.26],  // crisp hairline right behind the aircraft — solid white
   ];
   // A stroke can never be drawn wider than the path it is stroking is long.
   // Without this, the log radial scale bites: out near the rim a whole trail
@@ -2767,11 +2767,23 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   const TRAIL_MORPH_MS = 30000;
   // Contrails are a high-altitude phenomenon — the air has to be cold enough
   // for the exhaust moisture to freeze, which in practice means cruise. A
-  // Cessna at 400m leaves nothing. Rather than cut low aircraft off entirely
-  // (their path is the one you most want to follow), the trail thins and fades
-  // toward the ground until it is a bare thread.
-  const CONTRAIL_ALT_FULL_M = 7000; // AGL at which a trail is at full strength
-  const CONTRAIL_ALT_FLOOR = 0.18;  // what is left of it down on the deck
+  // Cessna at 400m leaves nothing. So the trail does still thin toward the
+  // ground, BUT ONLY SLIGHTLY.
+  //
+  // THIS PAIR, NOT THE LAYER OPACITIES, IS WHY A TRAIL LOOKS GREY. It scales
+  // every layer, and at the old 7000m/0.18 an aircraft at 900m — i.e. most of
+  // what you actually watch, on approach into a nearby airport — drew its
+  // whole trail at 0.29 of nominal. Raising CONTRAIL_PEAK_A does almost
+  // nothing against that; check here first. Twice reported as "the trail is
+  // barely white behind the aircraft" (2026-08-16), the second time after
+  // CONTRAIL_PEAK_A had already been raised and made no visible difference.
+  //
+  // The trail is a where-has-it-been instrument first and a weather model
+  // second, and the low, close aircraft is the one whose path you most want to
+  // follow — so the altitude term is now a gentle tint (0.68 on the deck,
+  // full by 3km) rather than the near-erasure it was.
+  const CONTRAIL_ALT_FULL_M = 3000; // AGL at which a trail is at full strength
+  const CONTRAIL_ALT_FLOOR = 0.68;  // what is left of it down on the deck
   // A fix, as it should be drawn RIGHT NOW: normally its own recorded
   // position, but for the first TRAIL_MORPH_MS after it was recorded it eases
   // there from wherever the aircraft was actually drawn at that moment (see
@@ -2904,7 +2916,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
       const s0 = samples[n - 1 - back];
       const ux = (b0.x - s0.x), uy = (b0.y - s0.y), ul = Math.hypot(ux, uy) || 1;
       const nx = (-uy / ul) * 1.25, ny = (ux / ul) * 1.25;
-      ctx.strokeStyle = `rgba(255,255,255,${0.6 * contrailStrength(headAltM)})`;
+      ctx.strokeStyle = `rgba(255,255,255,${0.85 * contrailStrength(headAltM)})`;
       ctx.lineWidth = 0.9;
       for (const s of [-1, 1]) {
         ctx.beginPath();
