@@ -118,13 +118,18 @@
      themselves are a constant --page-h, and the rail under them (dots left,
      share right) is the fixed cost the old under-silhouette share button
      used to pay inside the left column. */
-  --record-h: 262px;
+  --record-h: 240px;
   /* Both pages are exactly this tall. Page 1 is sized by its silhouette
      (118px — its figures column is only 109), page 2 by its clamped
      description, and page 2 is the taller of the two, so this number is
-     really "five lines of prose plus a title". A carousel whose two slides
-     differ in height jumps the whole list on every swipe. */
-  --page-h: 142px;
+     really "four lines of prose plus a title". A carousel whose two slides
+     differ in height jumps the whole list on every swipe.
+
+     It is sized so BOTH pages very nearly fill it — page 1's silhouette is
+     118 of it and page 2's prose the rest. Any slack here reads as a band of
+     dead space between the record and the rail under it, which is exactly
+     what was reported (twice) as the detail feeling too thick. */
+  --page-h: 122px;
 }
 :root[data-theme="light"] { color-scheme: light; }
 
@@ -340,7 +345,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
    readable measure instead of a 20-character gutter. 160 × 0.475 = 76, so
    the largest shape in the set still exactly fills the box (same rule as
    .d-sil — never fit the image to the box, scale it uniformly). */
-.entry .d-sil.sm { width: 76px; height: 76px; --sil-k: 0.475; }
+.entry .d-sil.sm { width: 66px; height: 66px; --sil-k: 0.4125; }
 .entry .d-lore { flex: 1; min-width: 0; }
 /* the official type name, quiet, above the name people actually use */
 .entry .d-lore .k {
@@ -354,12 +359,16 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
 }
 /* Clamped, not free-flowing: the longest description in the set would run
    past the page and the carousel's constant height is what stops the whole
-   list moving under your thumb. Five lines, not six — the sixth was costing
-   16px of record height for a line only the longest few entries in French
-   and Portuguese ever reached. */
+   list moving under your thumb. FOUR lines, and the number comes from
+   measuring the set rather than from taste: across all 110 entries × 5
+   languages, 83% of descriptions want three lines or fewer and every one of
+   them fits in four. Each line past that cost ~16px on the height of every
+   record in the app, for a line almost nothing reached — six lines, then
+   five, then this. The body type came 11.5 → 11px in the same pass, which is
+   what pulls the last few long French and Portuguese entries inside four. */
 .entry .d-lore .bd {
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden;
-  font-size: 11.5px; font-weight: 600; line-height: 1.42; opacity: 0.9; margin-top: 6px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;
+  font-size: 11px; font-weight: 600; line-height: 1.42; opacity: 0.9; margin-top: 6px;
 }
 /* Measured across all 110 entries × 5 languages: at 360px and wider every
    description clears six lines with room to spare. At 320 (an SE, the
@@ -373,8 +382,8 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
    that can be tested without emulating a device. 300cqi is the record width
    on a ~360px screen. */
 @container (max-width: 300px) {
-  .entry .d-sil.sm { width: 52px; height: 52px; --sil-k: 0.325; }
-  .entry .d-lore .bd { font-size: 10.5px; }
+  .entry .d-sil.sm { width: 44px; height: 44px; --sil-k: 0.275; }
+  .entry .d-lore .bd { font-size: 10px; }
 }
 
 /* ---- THE RAIL — three roles, three positions ----
@@ -383,7 +392,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
    the dots rather than space-between, so they sit optically centred in the
    room left over instead of being pushed about by how long the word
    "Legendary" happens to be in the current language. */
-.entry .d-rail { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.entry .d-rail { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .entry .d-dots { display: flex; align-items: center; gap: 7px; margin: 0 auto; }
 /* 8px of ink inside a 26px tap target — a 2-stop pager is small by nature
    and the dot must not be the hit area */
@@ -1234,7 +1243,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v98";
+  const APP_VERSION = "v99";
   const NM_PER_KM = 0.539957;
 
   // ---------- variation switch ----------
