@@ -19,7 +19,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#0f5cc8">
+<!-- Must equal --grad-a exactly. The browser paints the status bar / notch
+     area with this, and the page's own top third is flat --grad-a, so any
+     other value shows as a band across the top of the app. Nothing rewrites
+     it at runtime any more: it used to follow the sky clock, which is a
+     different colour from the background the app actually paints. -->
+<meta name="theme-color" content="#0a2a6b">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -89,8 +94,13 @@
      background than they did on flat navy. `--grad-b` is the single knob if
      that reads badly outdoors — darkening it lifts every bottom-of-screen
      figure at once without touching the shape of the ramp. */
+     The top third is FLAT --grad-a, not a ramp: the sky directly overhead is
+     one even colour, and holding it solid down to 33% also means the status
+     bar / notch area (painted from the theme-color meta, which is pinned to
+     --grad-a) meets the page on exactly the same value instead of on a
+     slightly different point of a ramp. The gradient runs from there. */
   --grad-a:#0a2a6b; --grad-b:#19a8d8;
-  --sky-grad: linear-gradient(180deg, var(--grad-a) 0%, var(--grad-b) 100%);
+  --sky-grad: linear-gradient(180deg, var(--grad-a) 0%, var(--grad-a) 33%, var(--grad-b) 100%);
   /* THE FIXED SPLIT: the list owns this much, the map owns the rest, and
      nothing either of them does changes it. */
   --list-h: 30vh;
@@ -638,7 +648,11 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
       hotHex: hot, hotRgb: rgbTriple(hot),
       gold: cssVar("--gold"),
       moonBody: cssVar("--moon"),
-      voidHex: cssVar("--void")
+      voidHex: cssVar("--void"),
+      // the darkest stop of the page background — the ID knocked out of the
+      // white chip uses this, so the label reads as cut out of the sky the
+      // app actually paints rather than out of the sky clock's current hour
+      gradAHex: cssVar("--grad-a")
     };
   }
   // Read once at parse time so `theme` is never undefined for an early
@@ -979,15 +993,36 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   const NOMINATIM = "https://nominatim.openstreetmap.org/search";
   // Cloud ceiling — Open-Meteo forecast API. Keyless and sends
   // Access-Control-Allow-Origin: * (verified with curl 2026-07-07, same drill
-  // as airplanes.live). Only these two models actually publish cloud_base —
-  // every other model (icon/gfs/meteofrance/ecmwf/knmi…) returns nulls with
-  // units "undefined". Both are regional in practice: ukmo_seamless fills it
-  // over the UK-ish domain, dmi_seamless over Europe. Outside coverage every
-  // value is null and the ceiling display simply stays hidden — which is
-  // deliberately also the fetch-failure mode (no error states for a
-  // nice-to-have overlay). Weather moves slowly; one request per 20min.
+  // as airplanes.live). Outside coverage every value is null and the ceiling
+  // display simply stays hidden — which is deliberately also the
+  // fetch-failure mode (no error states for a nice-to-have overlay). Weather
+  // moves slowly; one request per 20min.
+  //
+  // TWO INDEPENDENT WAYS OF FINDING THE BASE, because the direct one is both
+  // regional and coarse. `cloud_base` is published by ukmo_seamless and
+  // dmi_seamless ONLY (verified again 2026-08-16: icon/gfs/meteofrance/
+  // ecmwf/knmi/metno all accept the name and return nulls with units
+  // "undefined"), and even where it is published it reports a single number
+  // for the whole column — so a day with a solid deck at 2km under high
+  // cirrus can come back as the cirrus, which is what "it's overcast but the
+  // app says 9,760 m" was.
+  //
+  // The second way works anywhere: ask for cloud cover on PRESSURE LEVELS
+  // plus each level's geopotential height, and take the lowest level that
+  // actually has cloud in it. That is a real vertical profile, every model
+  // publishes it (best_match is in the list purely to have a global source
+  // where the two European models are null), and it cannot be fooled by high
+  // cloud sitting above a low deck. Whichever method yields the LOWEST base
+  // wins — aviation ceiling convention, and the safe side for "can I still
+  // see that plane?".
   const WEATHER_API = "https://api.open-meteo.com/v1/forecast";
-  const CLOUD_MODELS = ["ukmo_seamless", "dmi_seamless"];
+  const CLOUD_MODELS = ["ukmo_seamless", "dmi_seamless", "best_match"];
+  // coarse near the top where nobody cares, ~230m apart down where a ceiling
+  // usually is; 500hPa (~5.5km) is as high as a "ceiling" is worth reporting
+  const CLOUD_LEVELS_HPA = [1000, 950, 925, 900, 850, 800, 700, 600, 500];
+  // a level whose height is at or under the user's own ground is fog, not a
+  // ceiling — and geopotential height is MSL, so it has to clear the site
+  const CLOUD_MIN_AGL_M = 60;
   const CLOUD_POLL_MS = 20 * 60 * 1000;
   const CLOUD_MIN_COVER_PCT = 25; // a "ceiling" needs an actual layer, not one stray puff (ukmo reports base 0 on clear sky)
   // Aircraft above the ceiling draw at this opacity. 0.4 still read as a
@@ -1013,7 +1048,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v90";
+  const APP_VERSION = "v91";
   const NM_PER_KM = 0.539957;
 
   // ---------- variation switch ----------
@@ -1045,8 +1080,10 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   // recent flown path, aged. It belongs to the aircraft: when the aircraft
   // goes quiet and is pruned, its contrail goes with it, which is why the sky
   // fills up while you watch instead of arriving pre-populated.
-  const CONTRAIL_LIFE_MS = 12 * 60 * 1000; // a segment is fully dissolved by this age
-  const CONTRAIL_MAX_FIXES = 48;           // 12 min ÷ 45 s poll, with headroom for quick retries
+  // Halved from 12 min: at 12 the sky held every trail long enough that they
+  // stacked into a permanent web, and nothing ever visibly dissolved.
+  const CONTRAIL_LIFE_MS = 6 * 60 * 1000;  // a segment is fully dissolved by this age
+  const CONTRAIL_MAX_FIXES = 24;           // 6 min ÷ 45 s poll, with headroom for quick retries
   const TRAIL_LEN = CONTRAIL_MAX_FIXES;    // the ground shadow reuses the same array
   // Played every time the sweep line reveals an aircraft on screen (see the
   // reveal logic in draw()). A SINGLE shared Audio element can't overlap
@@ -1312,10 +1349,35 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   // At zero tilt this is a no-op — an unsquashed disc fills the box anyway.
   const DISC_BOTTOM_MARGIN = 12; // px between the disc's lowest point and the bottom of the map
   const LIFT_TOP_MARGIN = 28;    // px kept clear above the highest possible aircraft, for its tally badge
+  // The compass button's own box in canvas coordinates: 44px control inset
+  // 12px from the stage's bottom-right corner (see .compass-btn), and the
+  // canvas covers the whole stage — so its top-left corner is at
+  // (cssW - COMPASS_BOX_PX, cssH - COMPASS_BOX_PX).
+  const COMPASS_BOX_PX = 56;
   function discCenterY() {
     const half = R * currentSquish;
+    // FLAT VIEW IS CENTRED, TILTED VIEW RIDES THE BOTTOM. Bottom-anchoring at
+    // every tilt left the top-down view pinned to the floor with all the dead
+    // space above it, which read as broken rather than as headroom — there is
+    // no altitude stack to fill that space when nothing is lifted. So the
+    // anchor is interpolated by tiltFactor: at 0 the disc sits in the middle
+    // of the map area, and it slides down to the bottom margin as the view
+    // tilts and the altitude stack actually needs the room.
+    const centred = mapHPx * MAP_CY_FRAC;
+    const lowest = mapHPx - DISC_BOTTOM_MARGIN - half;
+    let y = Math.min(centred + (lowest - centred) * tiltFactor, lowest);
+    // ...and at no tilt may the ring run through the compass button in the
+    // bottom-right corner. Solve the ellipse for the y that puts its rim
+    // exactly on the button's nearest (top-left) corner, and never go below
+    // it. Only bites when the ring is actually wide enough to reach that x,
+    // which is why it is a clamp rather than a fixed reserved margin.
+    const kx = (cssW - COMPASS_BOX_PX - cx) / (R || 1);
+    if (Math.abs(kx) < 1) {
+      const clear = (cssH - COMPASS_BOX_PX) - half * Math.sqrt(1 - kx * kx) - 4;
+      y = Math.min(y, clear);
+    }
     // never push the disc's TOP off the canvas on a very short/wide viewport
-    return Math.max(half + 4, mapHPx - DISC_BOTTOM_MARGIN - half);
+    return Math.max(half + 4, y);
   }
   // Vertical room between the top of the disc and the top of the canvas —
   // the budget altitudeLiftPx() gets to spend.
@@ -1651,18 +1713,20 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   }
 
   // ---------- cloud ceiling (Open-Meteo) ----------
-  // Ask every model that carries cloud_base for the current hour, plus
-  // cloud_cover to tell "no data" and "clear sky" apart (ukmo encodes clear
-  // as base 0 / cover 0). A usable answer needs a real layer (cover >=
-  // CLOUD_MIN_COVER_PCT and base > 0); when several models qualify, take the
-  // LOWEST base — same convention as an aviation ceiling, and the safe side
-  // for "can I still see that plane?".
+  // Two candidate bases per model — the reported cloud_base, and the lowest
+  // pressure level that actually has cloud in it (see CLOUD_MODELS for why
+  // both). Either way a usable answer needs a real layer, not one stray puff
+  // (cover >= CLOUD_MIN_COVER_PCT; ukmo encodes clear sky as base 0/cover 0,
+  // which the base > 0 test rejects). Everything is reduced to MSL first so
+  // the two methods are comparable, and the LOWEST candidate anywhere wins.
   async function fetchCloudCeiling() {
     if (!me || document.hidden) return;
     const { lat, lon } = me; // re-checked after await: the user may have moved the pin mid-fetch
     try {
+      const vars = ["cloud_base", "cloud_cover"];
+      for (const L of CLOUD_LEVELS_HPA) vars.push(`cloud_cover_${L}hPa`, `geopotential_height_${L}hPa`);
       const url = `${WEATHER_API}?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}` +
-        `&hourly=cloud_base,cloud_cover&forecast_hours=1&models=${CLOUD_MODELS.join(",")}`;
+        `&hourly=${vars.join(",")}&forecast_hours=1&models=${CLOUD_MODELS.join(",")}`;
       const res = await fetch(url, {
         signal: AbortSignal.timeout ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined
       });
@@ -1670,17 +1734,31 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
       const data = await res.json();
       if (!me || me.lat !== lat || me.lon !== lon) return;
       const h = data.hourly || {};
+      const siteElev = data.elevation || 0;
       // single-model responses drop the _model suffix — accept either key
       const val = (name, m) => (h[`${name}_${m}`] ?? (CLOUD_MODELS.length === 1 ? h[name] : undefined))?.[0];
-      let best = null;
+      let bestMsl = null;
+      const consider = mslM => {
+        if (mslM == null || !isFinite(mslM)) return;
+        if (mslM - siteElev < CLOUD_MIN_AGL_M) return;
+        if (bestMsl == null || mslM < bestMsl) bestMsl = mslM;
+      };
       for (const m of CLOUD_MODELS) {
+        // (a) the model's own reported base — above ground, so lift to MSL
         const base = val("cloud_base", m), cover = val("cloud_cover", m);
         if (base != null && base > 0 && cover != null && cover >= CLOUD_MIN_COVER_PCT) {
-          if (best == null || base < best) best = base;
+          consider(base + siteElev);
+        }
+        // (b) the vertical profile: lowest level carrying real cloud. Levels
+        // are listed low-to-high, so the first hit is the base and we stop.
+        for (const L of CLOUD_LEVELS_HPA) {
+          const c = val(`cloud_cover_${L}hPa`, m), gh = val(`geopotential_height_${L}hPa`, m);
+          if (c == null || gh == null) continue;
+          if (c >= CLOUD_MIN_COVER_PCT) { consider(gh); break; } // geopotential height is already MSL
         }
       }
-      cloudCeilM = best;
-      cloudCeilMslM = best != null ? best + (data.elevation || 0) : null;
+      cloudCeilMslM = bestMsl;
+      cloudCeilM = bestMsl != null ? bestMsl - siteElev : null; // the readout is the height you'd crane at
       if (data.elevation != null) groundElevM = data.elevation; // independent of cloud model coverage
       cloudFetchedAt = Date.now();
     } catch {
@@ -2561,18 +2639,30 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-    for (let i = 1; i < pts.length; i++) {
-      const age = 1 - i / (pts.length); // older segments (lower i) fade more
-      const al = (p.icao === selected ? 0.30 : 0.15) * (1 - age * 0.85);
-      ctx.strokeStyle = p.icao === selected ? `rgba(${theme.hotRgb},${al})` : `rgba(${theme.trailShadowRgb},${al})`;
-      ctx.lineWidth = 1.2;
-      const from = i > 1 ? midpoint(pts[i - 2], pts[i - 1]) : pts[i - 1];
-      const to = i < pts.length - 1 ? midpoint(pts[i - 1], pts[i]) : pts[i];
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, to.x, to.y);
-      ctx.stroke();
+    // ONE path, ONE stroke — same reason as the contrail above it (see
+    // CONTRAIL_LAYERS): stroking a shadow segment by segment at partial alpha
+    // stacks a round cap on every joint and beads the line. The old-to-new
+    // fade rides a gradient down the path's chord instead.
+    const rgb = p.icao === selected ? theme.hotRgb : theme.trailShadowRgb;
+    const peak = p.icao === selected ? 0.30 : 0.15;
+    const tail = pts[0], head = pts[pts.length - 1];
+    const chord = Math.hypot(head.x - tail.x, head.y - tail.y);
+    if (chord >= 2) {
+      const g = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
+      g.addColorStop(0, `rgba(${rgb},${peak * 0.15})`);
+      g.addColorStop(1, `rgba(${rgb},${peak})`);
+      ctx.strokeStyle = g;
+    } else {
+      ctx.strokeStyle = `rgba(${rgb},${peak})`;
     }
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      const to = i < pts.length - 1 ? midpoint(pts[i], pts[i + 1]) : pts[i];
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, to.x, to.y);
+    }
+    ctx.stroke();
   }
 
   // ---------- contrails: the sky itself ----------
@@ -2587,16 +2677,35 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   // with a stack of progressively wider, fainter strokes — a real canvas
   // filter costs far too much to run per segment per frame, and this reads
   // the same at these widths.
-  const CONTRAIL_FRESH_W = 1.0;  // px, the hairline immediately behind the aircraft
-  const CONTRAIL_SPREAD_W = 7;   // px, how wide a segment has spread by the time it dissolves
   const CONTRAIL_PEAK_A = 0.52;  // opacity of a young segment
-  // core / halo / outer wash — [width multiple, opacity multiple]
-  const CONTRAIL_PASSES = [[2.4, 0.15], [1.6, 0.29], [1.0, 0.56]];
-  // A segment can never be drawn wider than it is long. Without this, the log
-  // radial scale bites: out near the rim one 45 s hop covers only a handful of
-  // pixels, and a spread-out segment painted 20px wide across an 8px span is a
+  // THE TAPER IS BUILT FROM NESTED FULL-LENGTH STROKES, NOT FROM A CHAIN OF
+  // SHORT ONES. Drawing the trail as hundreds of little strokes — however
+  // finely resampled — means hundreds of round caps, and every cap overlaps
+  // its neighbour's. Two half-transparent caps stacked on the same pixels
+  // composite to a brighter value than the line either side of them, which
+  // is exactly the "small dots between dashes" artifact: the dots were the
+  // joints. Nothing about width or subdivision fixes that; it is inherent to
+  // stroking a path in pieces at partial alpha.
+  //
+  // So each layer below is now stroked ONCE, as a single continuous polyline
+  // (interior vertices are joins, not caps — a join composites once). The
+  // taper comes from the layers covering different LENGTHS of the trail: the
+  // widest, faintest wash runs the whole way, and each crisper layer is
+  // confined to a fresher stretch, so the trail narrows and sharpens toward
+  // the aircraft without any single stroke having to change width.
+  //   [width px, opacity multiple, fraction of the trail covered, from the head]
+  const CONTRAIL_LAYERS = [
+    [7.0, 0.13, 1.00],  // outer wash — the whole path, cirrus-wide
+    [4.0, 0.20, 0.80],
+    [2.2, 0.34, 0.52],
+    [1.0, 0.62, 0.26],  // crisp hairline right behind the aircraft
+  ];
+  // A stroke can never be drawn wider than the path it is stroking is long.
+  // Without this, the log radial scale bites: out near the rim a whole trail
+  // covers only a handful of pixels, and a 7px wash across an 8px path is a
   // round white ball, not a trail. Observed immediately on the first frames.
-  const CONTRAIL_MAX_W_PER_LEN = 0.85;
+  const CONTRAIL_MAX_W_PER_LEN = 0.5;
+  const CONTRAIL_FADE_STOPS = 6; // gradient stops used to age a layer along its length
   // ONE CURVE, NOT A ROW OF DASHES. Every fix used to be joined to the next
   // by a straight line stroked at that segment's own width, with a round cap
   // on each end — so a 48-fix trail was 47 separate capped rods of slightly
@@ -2611,7 +2720,10 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   // position the head was DRAWN at when it was recorded and settles onto its
   // true position over this window — the trail drifts into place instead of
   // jumping, the way a real one is pushed around by wind.
-  const TRAIL_MORPH_MS = 1800;
+  // 30 s, deliberately long: at 1.8 s the correction was over before the eye
+  // could follow it and the tail read as a jump-cut every poll. Over half a
+  // poll interval it reads as drift.
+  const TRAIL_MORPH_MS = 30000;
   // Contrails are a high-altitude phenomenon — the air has to be cold enough
   // for the exhaust moisture to freeze, which in practice means cruise. A
   // Cessna at 400m leaves nothing. Rather than cut low aircraft off entirely
@@ -2654,54 +2766,76 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
       0.5 * ((2 * b) + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u2 + (-a + 3 * b - 3 * c + d) * u3);
     return { x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y) };
   }
-  // Stroke one trail as a single smooth, smoothly-tapering curve.
-  // pts/ages/strs are parallel arrays, oldest first.
+  // Stroke one trail as a set of nested, full-length, CONTINUOUS curves.
+  // pts/ages/strs are parallel arrays, oldest first. See CONTRAIL_LAYERS for
+  // why this is one stroke per layer rather than one stroke per step.
   function strokeContrail(pts, ages, strs) {
     if (pts.length < 2) return;
     const at = i => pts[Math.max(0, Math.min(pts.length - 1, i))];
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    // Resample first, so width and opacity can be interpolated per sample
-    // rather than held constant across a whole fix-to-fix leg — a constant
-    // width per leg is what made the joints read as beads.
+    // Resample through the spline first, so the drawn path is a curve through
+    // every real fix rather than a chain of chords.
     const samples = [];
     for (let i = 0; i < pts.length - 1; i++) {
-      const legLen = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
       for (let s = 0; s < CONTRAIL_SUBDIV; s++) {
         const u = s / CONTRAIL_SUBDIV;
         const pt = catmull(at(i - 1), pts[i], pts[i + 1], at(i + 2), u);
-        const age = ages[i] + (ages[i + 1] - ages[i]) * u;
-        const str = strs[i] + (strs[i + 1] - strs[i]) * u;
-        // The "never wider than it is long" clamp is measured on the REAL
-        // leg, not on the resampled step: out near the rim the steps are a
-        // pixel or two each, and clamping to those would erase the trail.
-        samples.push({ x: pt.x, y: pt.y, age, str, legLen });
+        samples.push({
+          x: pt.x, y: pt.y,
+          age: ages[i] + (ages[i + 1] - ages[i]) * u,
+          str: strs[i] + (strs[i + 1] - strs[i]) * u
+        });
       }
     }
     samples.push({
       x: pts[pts.length - 1].x, y: pts[pts.length - 1].y,
-      age: ages[ages.length - 1], str: strs[strs.length - 1],
-      legLen: Math.hypot(pts[pts.length - 1].x - pts[pts.length - 2].x,
-                         pts[pts.length - 1].y - pts[pts.length - 2].y)
+      age: ages[ages.length - 1], str: strs[strs.length - 1]
     });
-    // One pass per blur layer, each drawn as a chain of short overlapping
-    // strokes: consecutive widths differ by a fraction of a pixel now, so
-    // the round caps land inside their neighbours instead of reading as a
-    // string of dots.
-    for (const [wk, ak] of CONTRAIL_PASSES) {
-      for (let i = 1; i < samples.length; i++) {
-        const a0 = samples[i - 1], b0 = samples[i];
-        const age = (a0.age + b0.age) / 2, str = (a0.str + b0.str) / 2;
-        // squared falloff: a trail holds its brightness for the first minutes,
-        // then goes quickly — which is what makes the fresh end read as fresh
-        const a = CONTRAIL_PEAK_A * (1 - age) * (1 - age) * str;
-        if (a * ak <= 0.004) continue;
-        let w = CONTRAIL_FRESH_W + (CONTRAIL_SPREAD_W - CONTRAIL_FRESH_W) * Math.pow(age, 0.65) * str;
-        w = Math.min(w, Math.max(CONTRAIL_FRESH_W, b0.legLen * CONTRAIL_MAX_W_PER_LEN));
-        ctx.strokeStyle = `rgba(255,255,255,${a * ak})`;
-        ctx.lineWidth = w * wk;
-        ctx.beginPath(); ctx.moveTo(a0.x, a0.y); ctx.lineTo(b0.x, b0.y); ctx.stroke();
+    const n = samples.length;
+    // total drawn length, for the "never wider than it is long" clamp
+    let pathLen = 0;
+    for (let i = 1; i < n; i++) pathLen += Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y);
+
+    for (const [baseW, ak, cover] of CONTRAIL_LAYERS) {
+      // this layer runs from `first` to the head — a fresher stretch for the
+      // crisper layers, the whole trail for the outer wash
+      const first = Math.max(0, Math.min(n - 2, Math.floor(n - 1 - (n - 1) * cover)));
+      const w = Math.min(baseW, Math.max(0.7, pathLen * cover * CONTRAIL_MAX_W_PER_LEN));
+      // Opacity ages ALONG the stroke via a gradient down the layer's chord.
+      // Squared falloff: a trail holds its brightness for the first minutes
+      // and then goes quickly, which is what makes the fresh end read fresh.
+      const alphaAt = i => {
+        const s = samples[i];
+        return CONTRAIL_PEAK_A * ak * (1 - s.age) * (1 - s.age) * s.str;
+      };
+      const tail = samples[first], head = samples[n - 1];
+      const chord = Math.hypot(head.x - tail.x, head.y - tail.y);
+      let style;
+      if (chord < 2) {
+        // path doubles back on itself (or is a dot) — a gradient has no
+        // meaningful direction, so use the head's own value flat
+        const a = alphaAt(n - 1);
+        if (a <= 0.004) continue;
+        style = `rgba(255,255,255,${a})`;
+      } else {
+        const g = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
+        let anyInk = false;
+        for (let k = 0; k < CONTRAIL_FADE_STOPS; k++) {
+          const f = k / (CONTRAIL_FADE_STOPS - 1);
+          const a = alphaAt(Math.round(first + (n - 1 - first) * f));
+          if (a > 0.004) anyInk = true;
+          g.addColorStop(f, `rgba(255,255,255,${a})`);
+        }
+        if (!anyInk) continue;
+        style = g;
       }
+      ctx.strokeStyle = style;
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      ctx.moveTo(samples[first].x, samples[first].y);
+      for (let i = first + 1; i < n; i++) ctx.lineTo(samples[i].x, samples[i].y);
+      ctx.stroke();
     }
     return samples;
   }
@@ -3858,7 +3992,6 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   // ---------- light/dark theme ----------
   const THEME_KEY = "overhead-theme";
   const themeBtn = document.getElementById("theme-btn");
-  const themeColorMeta = document.querySelector('meta[name="theme-color"]');
   function applyTheme(name) {
     if (name !== "light") name = "dark";
     // ORDER MATTERS: the attribute drives which :root block wins, and
@@ -3872,7 +4005,8 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     // still says what a tap switches TO
     themeBtn.setAttribute("aria-checked", name === "light" ? "true" : "false");
     themeBtn.title = name === "light" ? t("themeToDark") : t("themeToLight");
-    themeColorMeta?.setAttribute("content", theme.voidHex);
+    // theme-color is deliberately NOT touched here: it is pinned to --grad-a
+    // in <head> so the status-bar strip matches the top of the background.
   }
   applyTheme(localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark");
   themeBtn.addEventListener("click", () => {
@@ -4117,7 +4251,8 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     // Canvas colours are read from CSS, so the palette has to be re-read
     // after the vars move or the radar keeps painting the previous hour.
     theme = readThemeFromCss();
-    themeColorMeta?.setAttribute("content", toHex(sky));
+    // (theme-color stays on --grad-a — see the meta tag in <head>. The sky
+    // clock drives the canvas palette, not the page background.)
   }
 
   // Paint the gate at the right hour immediately (see provisionalSunAlt), and
@@ -4702,7 +4837,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     ctx.stroke();
 
     drawChip(bx, by, chipW, chipH);
-    ctx.fillStyle = theme.voidHex;
+    ctx.fillStyle = theme.gradAHex; // the background's own darkest blue, not the sky-clock hour
     ctx.font = '900 15px "Field", sans-serif';
     ctx.fillText(call, bx + 9, by + 16);
 
