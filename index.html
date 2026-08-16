@@ -76,17 +76,38 @@
   --on-sweep:#0a3f8f; --ring-minor:#578dd8; --crosshair:#24699e;
   --trail-shadow:#0b4285; --range-label:#cfdef4; --cardinal:#ffffff;
   --hair: rgba(255,255,255,0.16);
+  /* THE BACKGROUND OF THE WHOLE APP — the gate and the radar both. Two
+     stops, nothing in between: deep navy at the top of the screen, softer
+     blue at the bottom. The horizon is the bottom edge of the screen, so the
+     ramp runs the full height and lands on its lightest value there — an
+     intermediate bright band read as a seam across the middle and is gone.
+     Deliberately NOT driven by the sky clock: this is the app's own colour
+     and looks like the same app at midnight and at noon.
+
+     Known cost, accepted deliberately: white 900 text on the bottom stop is
+     ~2.6:1, so the list figures and the status line sit lighter against their
+     background than they did on flat navy. `--grad-b` is the single knob if
+     that reads badly outdoors — darkening it lifts every bottom-of-screen
+     figure at once without touching the shape of the ramp. */
+  --grad-a:#0a2a6b; --grad-b:#19a8d8;
+  --sky-grad: linear-gradient(180deg, var(--grad-a) 0%, var(--grad-b) 100%);
   /* THE FIXED SPLIT: the list owns this much, the map owns the rest, and
      nothing either of them does changes it. */
   --list-h: 30vh;
   --gap: 14px;
+  /* One opened record, in px. Every aircraft's record is exactly this tall
+     (see .d-t / .d-r / .d-sil), which is what lets body.row-open promise
+     that opening one moves nothing on a screen that already fits it. */
+  --record-h: 230px;
 }
 :root[data-theme="light"] { color-scheme: light; }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; margin: 0; }
 body {
-  background: var(--void); color: var(--ink);
+  /* the gradient IS the background — fixed to the viewport so the ramp is
+     measured against the screen, not against any scrolling content */
+  background: var(--sky-grad) fixed; color: var(--ink);
   font-family: "Field", "Barlow", system-ui, sans-serif; font-weight: 600;
   overflow: hidden; display: flex; flex-direction: column;
   -webkit-font-smoothing: antialiased;
@@ -125,6 +146,13 @@ header, .hint, #sheet { display: none; }
   cursor: pointer; opacity: 0.34; transition: opacity 0.25s;
 }
 .compass-btn.on { opacity: 0.95; }
+/* The needle counter-rotates every frame (draw() writes rotate(-heading) on
+   it). An SVG element's CSS transform-origin defaults to the USER-SPACE
+   origin — 0 0, the top-left of the viewBox, not the dial's centre — so the
+   needle was orbiting the corner and swinging clean outside the ring. Pinning
+   the box to the element's own view box and the origin to the dial centre
+   keeps it turning on the spot, inside the circle, where a needle belongs. */
+#compass-needle { transform-box: view-box; transform-origin: 12px 12px; }
 
 /* ---- THE LIST — fixed height, its own scroll ---- */
 .entries {
@@ -139,7 +167,7 @@ header, .hint, #sheet { display: none; }
    Only where the fixed share is SHORTER than one record does the list take
    the difference, because the alternative is burying half the figures below
    a fold inside a scroll box. */
-body.row-open { --list-h: max(30vh, 236px); }
+body.row-open { --list-h: max(30vh, var(--record-h)); }
 .entry + .entry { border-top: 1px solid var(--hair); }
 .entry .line {
   display: grid; grid-template-columns: 19px 34px 1fr auto;
@@ -180,10 +208,36 @@ body.row-open { --list-h: max(30vh, 236px); }
 .entry .detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s ease; }
 .entry.on .detail { grid-template-rows: 1fr; }
 .entry .detail-in { overflow: hidden; min-height: 0; }
+/* A collapsed record is 0fr tall but its contents are still in the document —
+   and it now contains a real <button>. visibility:hidden takes the whole
+   closed record out of the tab order and off the accessibility tree, so
+   tabbing through the list cannot land on a share button for a record nobody
+   can see. It flips back the instant .on lands, i.e. as the row opens. */
+.entry:not(.on) .detail-in { visibility: hidden; }
 /* indented past the tally only, so the record gets the silhouette's width back */
-.entry .detail-in > div { display: flex; gap: 12px; align-items: flex-start; padding: 0 0 14px 29px; }
-.entry .d-sil { width: 64px; flex: none; }
-.entry .d-sil img { width: 100%; display: block; filter: invert(1); opacity: 0.95; }
+.entry .detail-in > div { display: flex; gap: 14px; align-items: flex-start; padding: 0 0 14px 29px; }
+/* The silhouette is the one thing in the record you read at a glance from
+   arm's length, and at 64px it was a thumbnail. The box is FIXED (not just a
+   width) and the image is object-fit: contain inside it, so every type keeps
+   its own true proportions — the vendored shapes are individually sized, so a
+   plain width would give each aircraft a different height and break the
+   constant-record-height rule above. */
+.entry .d-sil { width: 116px; height: 118px; flex: none; }
+.entry .d-sil img { width: 100%; height: 100%; object-fit: contain; display: block; filter: invert(1); opacity: 0.95; }
+.entry .d-left { flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+/* Share sits under the silhouette: the record's own left column already has
+   the width, and the action belongs with the picture of the thing you'd share
+   rather than wedged into the figures. */
+.entry .d-share {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 116px; min-height: 32px; padding: 8px 6px;
+  background: none; border: 1px solid rgba(255,255,255,0.5); border-radius: 10px;
+  cursor: pointer; font: inherit; color: inherit;
+  font-size: 10.5px; font-weight: 900; letter-spacing: 0.09em; text-transform: uppercase;
+}
+.entry .d-share .gi { width: 12px; height: 12px; }
+.entry .d-share:active { background: rgba(255,255,255,0.12); }
+.entry .d-share[aria-busy="true"] { opacity: 0.5; }
 .entry .d-info { flex: 1; min-width: 0; }
 /* The record's height must not depend on which aircraft it describes, or the
    guarantee below (a whole record fits the list's own share of the screen)
@@ -198,9 +252,10 @@ body.row-open { --list-h: max(30vh, 236px); }
 .entry .d-r { font-size: 13px; min-height: 30px; margin-top: 4px; line-height: 1.25; }
 .entry .d-r .codes { display: block; font-weight: 900; letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .entry .d-r .cities { display: block; font-size: 11px; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Three across, not two: five cells in two rows instead of three keeps the
-   whole record inside the list's own height, so the eight figures the brief
-   protects are all on screen at once rather than one scroll down. */
+/* Three across, one row. The record used to repeat the collapsed line's own
+   figures back at you — the row already prints altitude and distance, and its
+   own .phase already names the type — so the record now carries ONLY what the
+   line cannot: the exact model, the filed route, and speed / heading / climb. */
 .entry .d-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px 10px; margin-top: 10px; }
 .entry .d-cell .k { display: block; font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; opacity: 0.82; }
 .entry .d-cell .v { display: block; font-size: 16px; font-weight: 900; letter-spacing: -0.02em; margin-top: 1px; white-space: nowrap; }
@@ -264,7 +319,7 @@ body.row-open { --list-h: max(30vh, 236px); }
 }
 #rng button[data-km="5"] .rng-circle { transform: scale(0.7); }
 #rng button[data-km="10"] .rng-circle { transform: scale(0.85); }
-#rng button.on .rng-circle { background: #fff; border-color: #fff; color: var(--void); }
+#rng button.on .rng-circle { background: #fff; border-color: #fff; color: var(--grad-a); }
 #rng button:active .rng-circle { filter: brightness(0.9); }
 
 /* the count is the live one: what is on the map right now */
@@ -302,7 +357,7 @@ body.row-open { --list-h: max(30vh, 236px); }
 .sheet-links { display: none; }
 
 /* ---- THE GATE: the app writes its own name in smoke ---- */
-.gate { position: fixed; inset: 0; z-index: 90; background: var(--void); display: flex; flex-direction: column; padding: 30px 22px calc(26px + env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
+.gate { position: fixed; inset: 0; z-index: 90; background: var(--sky-grad); display: flex; flex-direction: column; padding: 30px 22px calc(26px + env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
 .gate.hidden { display: none; }
 .gate-inner { width: 100%; max-width: 460px; margin: 0 auto; display: flex; flex-direction: column; flex: 1; }
 /* the name is set in the gate's own type, not painted into a canvas: it grows
@@ -328,7 +383,7 @@ body.row-open { --list-h: max(30vh, 236px); }
 .gate-headline { font-size: clamp(30px, 9.4vw, 46px); font-weight: 900; line-height: 1.0; letter-spacing: -0.04em; margin: auto 0 0; }
 .gate-intro { font-size: 15px; font-weight: 600; line-height: 1.42; opacity: 0.85; margin: 16px 0 0; max-width: 34ch; }
 .gate-action { margin-top: 26px; }
-.primary { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; background: #fff; color: var(--void); border: 0; border-radius: 16px; padding: 20px; cursor: pointer; font-size: 16px; font-weight: 900; letter-spacing: -0.01em; transition: transform 0.15s; }
+.primary { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; background: #fff; color: var(--grad-a); border: 0; border-radius: 16px; padding: 20px; cursor: pointer; font-size: 16px; font-weight: 900; letter-spacing: -0.01em; transition: transform 0.15s; }
 .primary:active { transform: scale(0.985); }
 .primary .gi { width: 16px; height: 16px; }
 .addr-or { font-size: 13px; font-weight: 600; line-height: 1.45; opacity: 0.85; margin: 20px 0 8px; max-width: 44ch; }
@@ -380,6 +435,7 @@ body.row-open { --list-h: max(30vh, 236px); }
 .gi-sun { -webkit-mask-image: url(icons/sun.svg); mask-image: url(icons/sun.svg); }
 .gi-moon { -webkit-mask-image: url(icons/moon.svg); mask-image: url(icons/moon.svg); }
 .gi-ground { -webkit-mask-image: url(icons/ground.svg); mask-image: url(icons/ground.svg); }
+.gi-share { -webkit-mask-image: url(icons/share.svg); mask-image: url(icons/share.svg); }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition-duration: 0.01ms !important; } }
 @media (max-height: 680px) {
@@ -652,6 +708,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       unitsTip: "Switch between everyday metric units (m, km/h) and the feet/knots used in aviation",
       support: "support",
       shareTip: "Share this aircraft",
+      share: "Share",
       shareSpottedOver: "spotted over {place}",
       shareTagline: "Spot planes near you — try Overhead",
       shareCopiedDownloaded: "Caption copied · image saved",
@@ -712,6 +769,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       unitsTip: "Basculer entre les unités métriques (m, km/h) et les pieds/nœuds de l'aviation",
       support: "soutenir",
       shareTip: "Partager cet avion",
+      share: "Partager",
       shareSpottedOver: "repéré au-dessus de {place}",
       shareTagline: "Repérez les avions près de chez vous — essayez Overhead",
       shareCopiedDownloaded: "Légende copiée · image enregistrée",
@@ -772,6 +830,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       unitsTip: "Alternar entre unidades métricas (m, km/h) e os pés/nós usados na aviação",
       support: "apoiar",
       shareTip: "Partilhar esta aeronave",
+      share: "Partilhar",
       shareSpottedOver: "avistado sobre {place}",
       shareTagline: "Veja aviões perto de si — experimente o Overhead",
       shareCopiedDownloaded: "Legenda copiada · imagem guardada",
@@ -832,6 +891,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       unitsTip: "Zwischen metrischen Einheiten (m, km/h) und den in der Luftfahrt üblichen Fuß/Knoten wechseln",
       support: "Unterstützen",
       shareTip: "Dieses Flugzeug teilen",
+      share: "Teilen",
       shareSpottedOver: "gesichtet über {place}",
       shareTagline: "Flugzeuge in Ihrer Nähe entdecken — mit Overhead",
       shareCopiedDownloaded: "Bildunterschrift kopiert · Bild gespeichert",
@@ -892,6 +952,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       unitsTip: "在公制单位（米、公里/小时）与航空常用的英尺/节之间切换",
       support: "支持",
       shareTip: "分享这架飞机",
+      share: "分享",
       shareSpottedOver: "发现于 {place} 上空",
       shareTagline: "发现附近的飞机——试试 Overhead",
       shareCopiedDownloaded: "文字已复制 · 图片已保存",
@@ -929,7 +990,12 @@ body.row-open { --list-h: max(30vh, 236px); }
   const CLOUD_MODELS = ["ukmo_seamless", "dmi_seamless"];
   const CLOUD_POLL_MS = 20 * 60 * 1000;
   const CLOUD_MIN_COVER_PCT = 25; // a "ceiling" needs an actual layer, not one stray puff (ukmo reports base 0 on clear sky)
-  const CLOUD_DIM_ALPHA = 0.4;    // aircraft above the ceiling draw at this opacity
+  // Aircraft above the ceiling draw at this opacity. 0.4 still read as a
+  // perfectly solid aircraft that happened to be a bit softer; the point of
+  // the dimming is to SAY "there is cloud between you and this one, you
+  // probably cannot see it", so it now sits close to the floor of what stays
+  // legible at all.
+  const CLOUD_DIM_ALPHA = 0.2;
   // "Low" / "on the ground" checks measure against the USER's own ground
   // elevation (groundElevM below, free with every cloud-ceiling fetch) — NOT
   // per-aircraft terrain. A per-aircraft Open-Meteo elevation lookup existed
@@ -947,7 +1013,7 @@ body.row-open { --list-h: max(30vh, 236px); }
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v89";
+  const APP_VERSION = "v90";
   const NM_PER_KM = 0.539957;
 
   // ---------- variation switch ----------
@@ -992,16 +1058,29 @@ body.row-open { --list-h: max(30vh, 236px); }
   // elements instead of one — each concurrent reveal gets its own element,
   // so their sounds genuinely overlap rather than fighting over one.
   const DETECT_SOUND_POOL_SIZE = 6; // comfortably more than any realistic burst of near-simultaneous reveals
-  const detectSoundPool = Array.from({ length: DETECT_SOUND_POOL_SIZE }, () => {
-    const a = new Audio("sounds/seatbelt-1.wav");
+  // TWO sounds, one per answer to "can I actually go outside and see it".
+  // A contact below the cloud ceiling gets the first bip; one revealed ABOVE
+  // the ceiling — the same aircraft the canvas dims to CLOUD_DIM_ALPHA —
+  // gets the second, so the distinction is audible before you have even
+  // looked at the screen. Same round-robin pool per sound, for the same
+  // reason (see below); the two pools are independent so a below-cloud and
+  // an above-cloud reveal in the same instant still both play.
+  const makeDetectPool = (src) => Array.from({ length: DETECT_SOUND_POOL_SIZE }, () => {
+    const a = new Audio(src);
     a.volume = 0.6;
     return a;
   });
-  let detectSoundIdx = 0;
-  function playDetectSound() {
+  const detectSoundPools = {
+    below: makeDetectPool("sounds/seatbelt-1.wav"),
+    above: makeDetectPool("sounds/seatbelt-2.wav")
+  };
+  const detectSoundIdxs = { below: 0, above: 0 };
+  function playDetectSound(aboveClouds) {
     try {
-      const inst = detectSoundPool[detectSoundIdx];
-      detectSoundIdx = (detectSoundIdx + 1) % detectSoundPool.length;
+      const key = aboveClouds ? "above" : "below";
+      const pool = detectSoundPools[key];
+      const inst = pool[detectSoundIdxs[key]];
+      detectSoundIdxs[key] = (detectSoundIdxs[key] + 1) % pool.length;
       // Setting currentTime before the browser has loaded ANY media data
       // (readyState 0) throws InvalidStateError in some browsers — which,
       // unguarded, aborted the whole try block before play() was ever
@@ -1025,7 +1104,7 @@ body.row-open { --list-h: max(30vh, 236px); }
   // autoplay exemption per-element, not per-page, so priming only the first
   // one would leave the rest of the pool blocked the first time they're used.
   function primeDetectSound() {
-    for (const inst of detectSoundPool) {
+    for (const inst of [...detectSoundPools.below, ...detectSoundPools.above]) {
       try {
         inst.play().then(() => { inst.pause(); inst.currentTime = 0; })
           .catch((e) => console.warn("could not prime detect sound:", e && e.message));
@@ -1135,6 +1214,7 @@ body.row-open { --list-h: max(30vh, 236px); }
   let cssSize = 0, DPR = 1, cx = 0, cy = 0, R = 0;
   let cssW = 0, cssH = 0; // round 3 draws to the whole stage, not a square
   let fitW = -1, fitH = -1; // the stage box resize() last fitted to
+  let mapHPx = 0;           // height of the map area resize() last fitted (see discCenterY)
 
   function resize() {
     const stage = cv.parentElement;
@@ -1162,7 +1242,8 @@ body.row-open { --list-h: max(30vh, 236px); }
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     fitW = stage.clientWidth; fitH = stage.clientHeight;
     cx = res.left + mapW / 2;
-    cy = mapH * MAP_CY_FRAC;
+    mapHPx = mapH;          // draw() re-derives cy from this every frame — see discCenterY()
+    cy = mapH * MAP_CY_FRAC; // the FLAT-view centre; R is sized against it so R never changes with tilt
     R = (cssSize / 2) * MAP_R_SCALE - 6;
     // A direction may deliberately run the outer ring off the screen edges,
     // but it must never run into the gauge's own strip — that is the whole
@@ -1219,6 +1300,28 @@ body.row-open { --list-h: max(30vh, 236px); }
   let tiltFactor = 0;    // smoothed current value, animates toward desiredTilt
   let currentSquish = 1; // 1 - tiltFactor*(1-TILT_COS), recomputed each frame
   function squishY(y) { return cy + (y - cy) * currentSquish; }
+
+  // ---------- where the disc sits, and what is left above it ----------
+  // Tilting squashes the disc vertically around cy. With cy pinned at the
+  // middle of the map area that left a band of dead space BELOW the disc
+  // exactly as large as the band above it — and the band above is the one
+  // the app needs, because that is where altitude is drawn. So the disc is
+  // now placed by its BOTTOM EDGE rather than its centre: it sits just above
+  // the bottom of the map area at every tilt, and the whole of the space the
+  // squash frees up ends up above it, where the altitude stack can use it.
+  // At zero tilt this is a no-op — an unsquashed disc fills the box anyway.
+  const DISC_BOTTOM_MARGIN = 12; // px between the disc's lowest point and the bottom of the map
+  const LIFT_TOP_MARGIN = 28;    // px kept clear above the highest possible aircraft, for its tally badge
+  function discCenterY() {
+    const half = R * currentSquish;
+    // never push the disc's TOP off the canvas on a very short/wide viewport
+    return Math.max(half + 4, mapHPx - DISC_BOTTOM_MARGIN - half);
+  }
+  // Vertical room between the top of the disc and the top of the canvas —
+  // the budget altitudeLiftPx() gets to spend.
+  function liftHeadroomPx() {
+    return Math.max(0, (cy - R * currentSquish) - LIFT_TOP_MARGIN);
+  }
   // Aircraft float above their ground point in proportion to altitude, so the
   // tilted view reads as a stack of altitudes rather than a flat plate with
   // icons pasted on it. Scales with R so it holds at any screen size, and
@@ -1238,7 +1341,13 @@ body.row-open { --list-h: max(30vh, 236px); }
   function altitudeLiftPx(altM) {
     const aglM = Math.max(0, (altM || 0) - (groundElevM ?? 0));
     const t = Math.min(1, Math.log(1 + aglM / LIFT_LOG_KNEE_M) / LIFT_LOG_DENOM);
-    return t * R * 0.5 * tiltFactor;
+    // The ceiling is the space actually available above the disc, not a
+    // fixed fraction of R. Moving the disc down (see discCenterY) frees a
+    // real band of sky up there; spending it is the entire point of having
+    // moved it, and it means tilting further buys visibly more altitude
+    // separation instead of only flattening the ellipse. Still scaled by
+    // tiltFactor so a top-down view has no lift at all.
+    return t * liftHeadroomPx() * tiltFactor;
   }
   function haversineKm(a, b) {
     const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
@@ -1595,7 +1704,7 @@ body.row-open { --list-h: max(30vh, 236px); }
     box.classList.remove("hidden");
   }
   function isAboveClouds(p) {
-    return cloudCeilMslM != null && p.alt != null && p.alt > cloudCeilMslM;
+    return cloudCeilMslM != null && p != null && p.alt != null && p.alt > cloudCeilMslM;
   }
 
   // ---------- height above the user's ground level ----------
@@ -1734,11 +1843,25 @@ body.row-open { --list-h: max(30vh, 236px); }
       // aircraft was actually at, and each segment ages independently.
       // Pruned by age first, then by count — a burst of quick-retry polls
       // must not shorten the visible trail's real-world duration.
-      const trail = prev
-        ? [...prev.trail, { lat: prev.lat, lon: prev.lon, alt: prev.alt, t: prev.posTime }]
-            .filter(f => now - f.t < CONTRAIL_LIFE_MS)
-            .slice(-CONTRAIL_MAX_FIXES)
-        : [];
+      //
+      // The fix being appended is where the aircraft REALLY was at
+      // prev.posTime — but the display had already dead-reckoned it well
+      // past that point, so dropping it in raw makes the tail of the trail
+      // snap backwards on every poll. fromLat/fromLon/fromAlt record where
+      // the head was actually drawn at this instant, and the renderer eases
+      // the fix from there onto its true position (see trailFix /
+      // TRAIL_MORPH_MS) — the trail drifts into place like cloud on wind.
+      let trail = [];
+      if (prev) {
+        const shown = estimatedPosition(prev, now);
+        trail = [...prev.trail, {
+          lat: prev.lat, lon: prev.lon, alt: prev.alt, t: prev.posTime,
+          fromLat: shown.lat, fromLon: shown.lon, fromAlt: estimatedAltitude(prev, now),
+          morphAt: now
+        }]
+          .filter(f => now - f.t < CONTRAIL_LIFE_MS)
+          .slice(-CONTRAIL_MAX_FIXES);
+      }
       // "ground" carries no baro altitude of its own — settle at the user's
       // own ground elevation (close enough for a rolling/taxiing aircraft).
       const altM = a.alt_baro === "ground" ? (groundElevM ?? 0) : altMeters(a.alt_baro ?? a.alt_geom);
@@ -1931,7 +2054,12 @@ body.row-open { --list-h: max(30vh, 236px); }
       }
       planes.set(icao, np);
     }
-    for (const [icao, p] of planes) if (!seen.has(icao) && now - p.seen > 90000) planes.delete(icao);
+    // A pruned aircraft leaves its contrail behind to age out on its own —
+    // the sky does not erase a line just because its source stopped
+    // transmitting (see ghostTrails).
+    for (const [icao, p] of planes) {
+      if (!seen.has(icao) && now - p.seen > 90000) { stashGhostTrail(p); planes.delete(icao); }
+    }
     // no updateCountDisplay() here — draw() refreshes it every frame off the
     // tally it already computes, so a poll-time call would only duplicate it
   }
@@ -2104,6 +2232,12 @@ body.row-open { --list-h: max(30vh, 236px); }
     // the user last dragged it)
     tiltFactor += (desiredTilt - tiltFactor) * (1 - Math.exp(-dtMs / TILT_TAU_MS));
     currentSquish = 1 - tiltFactor * (1 - TILT_COS);
+    // The disc rides the bottom of the map area, so tilting opens sky ABOVE
+    // it rather than dead space below it. Recomputed here, before anything
+    // this frame reads cy — project/squishY/edgePoint/hitTest all key off it,
+    // and hitTest runs between frames against whatever the last frame drew,
+    // so they stay in agreement by construction.
+    cy = discCenterY();
 
     // range change (5/10/20km) also animates: displayRangeKm eases toward
     // the selected rangeKm so switching zooms smoothly instead of snapping
@@ -2143,7 +2277,10 @@ body.row-open { --list-h: max(30vh, 236px); }
         const liveProj = project(estimatedPosition(p, now));
         if (liveProj.dist > displayRangeKm * RANGE_MARGIN || !nakedEyeVisible(p, liveProj.dist)) {
           // out of range, or too small/far to see right now — has to be
-          // re-revealed by a fresh crossing if and when it comes back
+          // re-revealed by a fresh crossing if and when it comes back.
+          // Its contrail is NOT wiped with it: a real one hangs in the sky
+          // after the aircraft that drew it has gone (see ghostTrails).
+          if (revealedIcaos.has(p.icao)) stashGhostTrail(p);
           revealedIcaos.delete(p.icao);
           continue;
         }
@@ -2162,6 +2299,9 @@ body.row-open { --list-h: max(30vh, 236px); }
           pendingReveal.push({ icao: p.icao, dist: liveProj.dist });
           continue;
         }
+        // back on screen and drawing its own trail again — drop the ghost so
+        // the two copies can't overlay each other
+        if (ghostTrails.size) ghostTrails.delete(p.icao);
         visible.push({ p, proj: liveProj, altM: estimatedAltitude(p, now), trackDeg: p.track });
         // Header count: same aircraft the icons come from, but held to the
         // strictly SELECTED range rather than the wider display margin the
@@ -2191,7 +2331,9 @@ body.row-open { --list-h: max(30vh, 236px); }
       const next = pendingReveal[0];
       revealedIcaos.add(next.icao);
       activeBlips.set(next.icao, { startedAt: now });
-      playDetectSound();
+      // which of the two bips depends on whether this contact is above the
+      // cloud ceiling — i.e. whether stepping outside would actually show it
+      playDetectSound(isAboveClouds(planes.get(next.icao)));
       nextRevealAt = now + REVEAL_STAGGER_MS;
     }
 
@@ -2229,18 +2371,14 @@ body.row-open { --list-h: max(30vh, 236px); }
     ctx.lineWidth = 1;
     // UI.rings keeps the OUTERMOST n of the three — the outer ring is the
     // horizon of the selected range and is the last thing to go
-    // THE LENS: the disc inside the outer ring is a wash of lighter sky, so
-    // there is a visible difference between what is in range and what is in
-    // the margin band beyond it. Drawn inside the squish, under the rings.
-    {
-      const rOuter = ringRadiusPx(3);
-      const lens = ctx.createRadialGradient(cx, cy, 0, cx, cy, rOuter);
-      lens.addColorStop(0, `rgba(255,255,255,0.13)`);
-      lens.addColorStop(0.72, `rgba(255,255,255,0.075)`);
-      lens.addColorStop(1, `rgba(255,255,255,0.0)`);
-      ctx.fillStyle = lens;
-      ctx.beginPath(); ctx.arc(cx, cy, rOuter, 0, Math.PI * 2); ctx.fill();
-    }
+    // NO DISC WASH. There used to be a "lens" here — a white fill inside the
+    // outer ring, to mark in-range from the margin band beyond it. First it
+    // was a radial gradient (bright in the middle), then a flat one; both
+    // were wrong for the same reason. The sky is ONE colour. Any wash inside
+    // the ring makes the middle of the screen a different shade from the
+    // background around it, which reads as a lit disc with no light source.
+    // The outer ring line alone marks the range. **Do not put a fill back
+    // inside it.**
     for (let i = 1 + (3 - UI.rings); i <= 3; i++) {
       ctx.strokeStyle = i === 3 ? theme.ringMajor : theme.ringMinor;
       ctx.beginPath(); ctx.arc(cx, cy, ringRadiusPx(i), 0, Math.PI * 2); ctx.stroke();
@@ -2267,7 +2405,7 @@ body.row-open { --list-h: max(30vh, 236px); }
 
     if (UI.groundShadow) {
       for (const { p, proj } of visible) {
-        try { drawTrail(p, proj); } catch (e) { console.warn("skipped trail", p.icao, e); }
+        try { drawTrail(p, proj, now); } catch (e) { console.warn("skipped trail", p.icao, e); }
       }
     }
     ctx.restore(); // end ground-plane squish
@@ -2303,8 +2441,11 @@ body.row-open { --list-h: max(30vh, 236px); }
     }
     if (UI.northTick) {
       // no letters, but north still has to be findable — one tick on the rim
+      // Same 1px weight as the rings it sits on. At 2.5 it was the boldest
+      // stroke on the canvas and read as a marker of something important
+      // rather than a graduation — north is a reference, not an event.
       const a = toRad(-90) - rot;
-      ctx.strokeStyle = `rgba(${theme.sweepRgb},0.92)`; ctx.lineWidth = 2.5;
+      ctx.strokeStyle = `rgba(${theme.sweepRgb},0.92)`; ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(cx + (R - 1) * Math.cos(a), squishY(cy + (R - 1) * Math.sin(a)));
       ctx.lineTo(cx + (R - 9) * Math.cos(a), squishY(cy + (R - 9) * Math.sin(a)));
@@ -2315,6 +2456,9 @@ body.row-open { --list-h: max(30vh, 236px); }
 
     // Contrails go over the sun and moon (a real one crosses them) but under
     // every aircraft, so each plane sits at the head of its own trail.
+    // Trails left by aircraft that have gone (out of range, or pruned from
+    // the feed) go first — they're the oldest thing in the sky.
+    try { drawGhostTrails(now); } catch (e) { console.warn("ghost trails", e); }
     for (const { p, proj, altM } of visible) {
       try { drawContrail(p, proj, altM, now); } catch (e) { console.warn("skipped contrail", p.icao, e); }
     }
@@ -2408,9 +2552,11 @@ body.row-open { --list-h: max(30vh, 236px); }
   // runs. It is deliberately near-invisible — sky-coloured but darker, the
   // way a real shadow is — because the moment it competes with the contrail
   // above it, the sky stops reading as sky and starts reading as a chart.
-  function drawTrail(p, headProj) {
+  function drawTrail(p, headProj, now) {
     if (!p.trail.length) return;
-    const pts = [...p.trail.map(project), headProj];
+    // same settling animation as the contrail above it, or the shadow would
+    // snap to the raw fix while the trail it belongs to was still gliding
+    const pts = [...p.trail.map(f => project(trailFix(f, now))), headProj];
     if (pts.length < 2) return;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
@@ -2451,6 +2597,21 @@ body.row-open { --list-h: max(30vh, 236px); }
   // pixels, and a spread-out segment painted 20px wide across an 8px span is a
   // round white ball, not a trail. Observed immediately on the first frames.
   const CONTRAIL_MAX_W_PER_LEN = 0.85;
+  // ONE CURVE, NOT A ROW OF DASHES. Every fix used to be joined to the next
+  // by a straight line stroked at that segment's own width, with a round cap
+  // on each end — so a 48-fix trail was 47 separate capped rods of slightly
+  // different thickness, which is exactly what "straight lines connected by
+  // dots" describes. The path is now resampled through a Catmull-Rom spline
+  // and stroked in many short pieces whose width and opacity vary smoothly
+  // from one to the next, so it reads as a single curved trail that tapers.
+  const CONTRAIL_SUBDIV = 7;      // samples per real fix-to-fix segment
+  // A newly-arrived fix does not sit where the display had already
+  // dead-reckoned the aircraft to, so the tail end of the trail used to
+  // snap backwards the instant a poll landed. Each fix now enters at the
+  // position the head was DRAWN at when it was recorded and settles onto its
+  // true position over this window — the trail drifts into place instead of
+  // jumping, the way a real one is pushed around by wind.
+  const TRAIL_MORPH_MS = 1800;
   // Contrails are a high-altitude phenomenon — the air has to be cold enough
   // for the exhaust moisture to freeze, which in practice means cruise. A
   // Cessna at 400m leaves nothing. Rather than cut low aircraft off entirely
@@ -2458,6 +2619,23 @@ body.row-open { --list-h: max(30vh, 236px); }
   // toward the ground until it is a bare thread.
   const CONTRAIL_ALT_FULL_M = 7000; // AGL at which a trail is at full strength
   const CONTRAIL_ALT_FLOOR = 0.18;  // what is left of it down on the deck
+  // A fix, as it should be drawn RIGHT NOW: normally its own recorded
+  // position, but for the first TRAIL_MORPH_MS after it was recorded it eases
+  // there from wherever the aircraft was actually drawn at that moment (see
+  // TRAIL_MORPH_MS). Returns the fix itself once settled, so the common case
+  // allocates nothing.
+  function trailFix(f, now) {
+    if (!f.morphAt) return f;
+    const u = (now - f.morphAt) / TRAIL_MORPH_MS;
+    if (u >= 1 || u < 0) return f;
+    const w = 1 - sstep(u); // 1 = still where it was drawn, 0 = on its true fix
+    return {
+      lat: f.lat + (f.fromLat - f.lat) * w,
+      lon: f.lon + (f.fromLon - f.lon) * w,
+      alt: f.alt + ((f.fromAlt ?? f.alt) - f.alt) * w,
+      t: f.t
+    };
+  }
   function contrailPoint(f) {
     const pr = project(f);
     return { x: pr.x, y: squishY(pr.y) - altitudeLiftPx(f.alt) };
@@ -2466,50 +2644,129 @@ body.row-open { --list-h: max(30vh, 236px); }
     const agl = Math.max(0, (altM || 0) - (groundElevM ?? 0));
     return CONTRAIL_ALT_FLOOR + (1 - CONTRAIL_ALT_FLOOR) * Math.min(1, agl / CONTRAIL_ALT_FULL_M);
   }
+  // Catmull-Rom through four control points, at parameter u in [0,1] between
+  // p1 and p2. The curve passes THROUGH every fix (unlike the quadratic
+  // midpoint trick the ground shadow uses), which matters here because a fix
+  // is a place the aircraft genuinely was.
+  function catmull(p0, p1, p2, p3, u) {
+    const u2 = u * u, u3 = u2 * u;
+    const f = (a, b, c, d) =>
+      0.5 * ((2 * b) + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u2 + (-a + 3 * b - 3 * c + d) * u3);
+    return { x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y) };
+  }
+  // Stroke one trail as a single smooth, smoothly-tapering curve.
+  // pts/ages/strs are parallel arrays, oldest first.
+  function strokeContrail(pts, ages, strs) {
+    if (pts.length < 2) return;
+    const at = i => pts[Math.max(0, Math.min(pts.length - 1, i))];
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    // Resample first, so width and opacity can be interpolated per sample
+    // rather than held constant across a whole fix-to-fix leg — a constant
+    // width per leg is what made the joints read as beads.
+    const samples = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const legLen = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+      for (let s = 0; s < CONTRAIL_SUBDIV; s++) {
+        const u = s / CONTRAIL_SUBDIV;
+        const pt = catmull(at(i - 1), pts[i], pts[i + 1], at(i + 2), u);
+        const age = ages[i] + (ages[i + 1] - ages[i]) * u;
+        const str = strs[i] + (strs[i + 1] - strs[i]) * u;
+        // The "never wider than it is long" clamp is measured on the REAL
+        // leg, not on the resampled step: out near the rim the steps are a
+        // pixel or two each, and clamping to those would erase the trail.
+        samples.push({ x: pt.x, y: pt.y, age, str, legLen });
+      }
+    }
+    samples.push({
+      x: pts[pts.length - 1].x, y: pts[pts.length - 1].y,
+      age: ages[ages.length - 1], str: strs[strs.length - 1],
+      legLen: Math.hypot(pts[pts.length - 1].x - pts[pts.length - 2].x,
+                         pts[pts.length - 1].y - pts[pts.length - 2].y)
+    });
+    // One pass per blur layer, each drawn as a chain of short overlapping
+    // strokes: consecutive widths differ by a fraction of a pixel now, so
+    // the round caps land inside their neighbours instead of reading as a
+    // string of dots.
+    for (const [wk, ak] of CONTRAIL_PASSES) {
+      for (let i = 1; i < samples.length; i++) {
+        const a0 = samples[i - 1], b0 = samples[i];
+        const age = (a0.age + b0.age) / 2, str = (a0.str + b0.str) / 2;
+        // squared falloff: a trail holds its brightness for the first minutes,
+        // then goes quickly — which is what makes the fresh end read as fresh
+        const a = CONTRAIL_PEAK_A * (1 - age) * (1 - age) * str;
+        if (a * ak <= 0.004) continue;
+        let w = CONTRAIL_FRESH_W + (CONTRAIL_SPREAD_W - CONTRAIL_FRESH_W) * Math.pow(age, 0.65) * str;
+        w = Math.min(w, Math.max(CONTRAIL_FRESH_W, b0.legLen * CONTRAIL_MAX_W_PER_LEN));
+        ctx.strokeStyle = `rgba(255,255,255,${a * ak})`;
+        ctx.lineWidth = w * wk;
+        ctx.beginPath(); ctx.moveTo(a0.x, a0.y); ctx.lineTo(b0.x, b0.y); ctx.stroke();
+      }
+    }
+    return samples;
+  }
   function drawContrail(p, headProj, headAltM, now) {
     if (!p.trail.length) return;
-    const pts = p.trail.map(contrailPoint);
-    const ages = p.trail.map(f => Math.min(1, Math.max(0, (now - f.t) / CONTRAIL_LIFE_MS)));
-    const strs = p.trail.map(f => contrailStrength(f.alt));
+    const fixes = p.trail.map(f => trailFix(f, now));
+    const pts = fixes.map(contrailPoint);
+    const ages = fixes.map(f => Math.min(1, Math.max(0, (now - f.t) / CONTRAIL_LIFE_MS)));
+    const strs = fixes.map(f => contrailStrength(f.alt));
     pts.push({ x: headProj.x, y: squishY(headProj.y) - altitudeLiftPx(headAltM) });
     ages.push(0);
     strs.push(contrailStrength(headAltM));
-    if (pts.length < 2) return;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    for (let i = 1; i < pts.length; i++) {
-      const age = (ages[i - 1] + ages[i]) / 2;
-      const str = (strs[i - 1] + strs[i]) / 2;
-      // squared falloff: a trail holds its brightness for the first minutes,
-      // then goes quickly — which is what makes the fresh end read as fresh
-      const a = CONTRAIL_PEAK_A * (1 - age) * (1 - age) * str;
-      if (a <= 0.004) continue;
-      const from = pts[i - 1], to = pts[i];
-      const segLen = Math.hypot(to.x - from.x, to.y - from.y);
-      let w = CONTRAIL_FRESH_W + (CONTRAIL_SPREAD_W - CONTRAIL_FRESH_W) * Math.pow(age, 0.65) * str;
-      w = Math.min(w, Math.max(CONTRAIL_FRESH_W, segLen * CONTRAIL_MAX_W_PER_LEN));
-      for (const [wk, ak] of CONTRAIL_PASSES) {
-        ctx.strokeStyle = `rgba(255,255,255,${a * ak})`;
-        ctx.lineWidth = w * wk;
-        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
-      }
-    }
+    const samples = strokeContrail(pts, ages, strs);
+    if (!samples) return;
     // The signature detail: the freshest stretch is TWO parallel hairlines,
     // one per engine group, before they merge. This is the thing that makes
-    // it read as a contrail rather than a route line drawn on a map.
-    const n = pts.length;
-    const a0 = pts[n - 2], b0 = pts[n - 1];
+    // it read as a contrail rather than a route line drawn on a map. Taken
+    // off the last RESAMPLED pair so it follows the curve's own final
+    // direction rather than the raw fix-to-fix chord.
+    const n = samples.length;
+    const a0 = samples[n - 2], b0 = samples[n - 1];
     const dx = b0.x - a0.x, dy = b0.y - a0.y, len = Math.hypot(dx, dy);
-    if (len > 7) {
-      const nx = (-dy / len) * 1.25, ny = (dx / len) * 1.25;
+    if (len > 1.2) {
+      const back = Math.min(4, n - 1); // a short stretch, not one micro-step
+      const s0 = samples[n - 1 - back];
+      const ux = (b0.x - s0.x), uy = (b0.y - s0.y), ul = Math.hypot(ux, uy) || 1;
+      const nx = (-uy / ul) * 1.25, ny = (ux / ul) * 1.25;
       ctx.strokeStyle = `rgba(255,255,255,${0.6 * contrailStrength(headAltM)})`;
       ctx.lineWidth = 0.9;
       for (const s of [-1, 1]) {
         ctx.beginPath();
-        ctx.moveTo(a0.x + nx * s, a0.y + ny * s);
+        ctx.moveTo(s0.x + nx * s, s0.y + ny * s);
         ctx.lineTo(b0.x + nx * s, b0.y + ny * s);
         ctx.stroke();
       }
+    }
+  }
+
+  // ---------- trails that outlive their aircraft ----------
+  // A contrail used to vanish the instant its aircraft left the range ring or
+  // went quiet — the sky wiped a line that, in reality, hangs there for
+  // minutes after the plane is out of sight. A trail now survives its
+  // aircraft and ages out on its own clock: it fades over CONTRAIL_LIFE_MS
+  // exactly as it would have if the aircraft were still being tracked, and
+  // only disappears once there is nothing left to see.
+  const ghostTrails = new Map(); // icao -> { trail }
+  function stashGhostTrail(p) {
+    if (!p || !p.trail || !p.trail.length) return;
+    // include the aircraft's own last known fix — it is the head of the
+    // trail it is leaving behind
+    const trail = [...p.trail, { lat: p.lat, lon: p.lon, alt: p.alt, t: p.posTime }];
+    ghostTrails.set(p.icao, { trail });
+  }
+  function drawGhostTrails(now) {
+    for (const [icao, g] of ghostTrails) {
+      // fully dissolved, or its aircraft is back on screen drawing its own
+      if (now - g.trail[g.trail.length - 1].t >= CONTRAIL_LIFE_MS) { ghostTrails.delete(icao); continue; }
+      try {
+        const fixes = g.trail.map(f => trailFix(f, now));
+        strokeContrail(
+          fixes.map(contrailPoint),
+          fixes.map(f => Math.min(1, Math.max(0, (now - f.t) / CONTRAIL_LIFE_MS))),
+          fixes.map(f => contrailStrength(f.alt))
+        );
+      } catch (e) { /* one bad ghost must not take the sky down */ }
     }
   }
 
@@ -2522,23 +2779,58 @@ body.row-open { --list-h: max(30vh, 236px); }
     // R can now run past the map area (a direction may deliberately bleed the
     // ring off the edges), so the celestial ring is the largest circle that
     // still sits inside the map's own reserved box.
+    //
+    // The two VERTICAL clamps have to be measured in squished space. This
+    // circle is squished by `currentSquish` before it is drawn (see
+    // celestialPoint), so a raw `cy` / `cssH - cy` limit is asking the
+    // unsquished radius to fit inside the squished budget — it under-reports
+    // by 1/squish. That was harmless while the disc sat mid-canvas and both
+    // limits were ~R anyway, but the disc now rides the BOTTOM of the map
+    // (discCenterY), which makes `cssH - cy` small: the sun and moon
+    // collapsed onto a circle barely half the radar's own, i.e. they read as
+    // much nearer than the ring they are supposed to sit on. Dividing by the
+    // squish restores them to the horizon ring, which is where a body at
+    // infinite distance belongs.
     const res = gaugeReserve();
-    const rEdge = Math.min(R, cx - res.left, cy, cssW - cx,
-                           (cssH - res.bottom) - cy) - 14;
+    const sq = Math.max(0.05, currentSquish);
+    const rEdge = Math.max(24, Math.min(
+      R,
+      cx - res.left - 14,                        // the gauge's strip
+      cssW - cx - 14,                            // the right edge
+      (cy - 14) / sq,                            // the top edge, after squish
+      ((cssH - res.bottom) - cy - 14) / sq       // the bottom edge, after squish
+    ));
     return { x: cx + rEdge * Math.cos(ang), y: cy + rEdge * Math.sin(ang) };
+  }
+  // ...and LIFTED off the ground plane the same way an aircraft is, so the
+  // sun is not sitting on the deck underneath every plane in the sky. The
+  // height is the honest one: an object at this body's real elevation angle,
+  // placed at the far end of the widest range the app offers, would be
+  // CELESTIAL_REF_RANGE_KM · tan(elevation) above the ground — and that
+  // height goes through altitudeLiftPx, the exact same log ramp the aircraft
+  // icons use. A sun 30° up therefore floats at the height of an aircraft
+  // 20 km out and ~11 km up, and reads as being in the sky rather than on it.
+  // Above ~45° the lift saturates at the same ceiling aircraft do, which is
+  // correct: the map has no more "up" to give either of them.
+  const CELESTIAL_REF_RANGE_KM = 20;
+  function celestialLiftPx(altDeg) {
+    const e = Math.min(89, Math.max(0, altDeg));
+    const heightM = Math.tan(toRad(e)) * CELESTIAL_REF_RANGE_KM * 1000;
+    return altitudeLiftPx(heightM + (groundElevM ?? 0));
+  }
+  // Final screen position of a celestial body: its azimuth on the rim, its
+  // elevation as lift. One function so the sun, the moon, and the moon's own
+  // "which way is the sun" terminator can never disagree about where a body is.
+  function celestialPoint(pos) {
+    const pt = edgePoint(pos.az);
+    return { x: pt.x, y: squishY(pt.y) - celestialLiftPx(pos.alt) };
   }
   function drawCelestial() {
     // moon first, sun second — when their azimuths bring them close, the
     // sun must layer ABOVE the moon (explicit ask, round 52; the gauge's
     // mini glyphs follow the same order)
-    if (moonPos && moonPos.alt > -0.3) {
-      const pt = edgePoint(moonPos.az);
-      drawMoonIcon({ x: pt.x, y: squishY(pt.y) });
-    }
-    if (sunPos && sunPos.alt > -0.83) {
-      const pt = edgePoint(sunPos.az);
-      drawSunIcon({ x: pt.x, y: squishY(pt.y) });
-    }
+    if (moonPos && moonPos.alt > -0.3) drawMoonIcon(celestialPoint(moonPos));
+    if (sunPos && sunPos.alt > -0.83) drawSunIcon(celestialPoint(sunPos));
   }
   // ---------- sun and moon, drawn as the real things ----------
   // The old symbol glyphs (a spiky sun, a bitten-disc moon, both vendored
@@ -2589,11 +2881,16 @@ body.row-open { --list-h: max(30vh, 236px); }
     const el = sunPos ? sunPos.alt : -20;
     const night = Math.min(1, Math.max(0, (2 - el) / 14));
     const face = shade(skyAt(el), 0.14 + 0.78 * night);
-    let tilt = -Math.PI / 2; // lit side up, if we have no sun to point at
-    if (sunPos) {
-      const sp = edgePoint(sunPos.az);
-      tilt = Math.atan2(squishY(sp.y) - pt.y, sp.x - pt.x);
-    }
+    // FIXED ORIENTATION. The lit limb used to be turned to face the sun's own
+    // position on the ring, which is astronomically correct and visually
+    // wrong here: the sun's screen position moves with the map's rotation and
+    // with the sun's own motion, so the moon spun on its own axis while you
+    // watched, and flipped side to side whenever the sun crossed it. A moon
+    // is a landmark, not an instrument — it has to look like the same moon
+    // every time you glance at it. The lit limb is always on the right.
+    // The PHASE still changes (over days, as it really does); only the angle
+    // is pinned.
+    const tilt = 0; // +x, i.e. the lit limb faces screen-right, always
     // signed semi-axis of the terminator ellipse: >0 crescent, <0 gibbous
     const a = r * (1 - 2 * Math.min(1, Math.max(0, moonIllum)));
     ctx.save();
@@ -2650,10 +2947,11 @@ body.row-open { --list-h: max(30vh, 236px); }
   function elevationDeg(heightM, distKm) {
     return Math.atan2(Math.max(0, heightM), Math.max(0, distKm) * 1000) * 180 / Math.PI;
   }
-  // Read-only overlay, not a drag surface — a touch landing here that hits
-  // no aircraft must do nothing at all, not spin/tilt the radar the way the
-  // rest of empty canvas does. An aircraft drawn over the ladder still wins:
-  // hitTest runs before this zone is consulted.
+  // Not a drag surface — a touch landing here that hits neither an aircraft
+  // icon nor a ladder bead must do nothing at all, not spin/tilt the radar
+  // the way the rest of empty canvas does. An aircraft drawn over the ladder
+  // still wins: hitTest runs before this zone is consulted, and the bead
+  // hit-test (see the pointerdown handler) runs before this one.
   function inElevGaugeZone(px, py) {
     if (inGaugeZone(px, py)) { cycleGauge(); return true; }
     return false;
@@ -2886,11 +3184,16 @@ body.row-open { --list-h: max(30vh, 236px); }
     if (orbit || tapCandidate) return; // one active touch/drag at a time
     const rect = cv.getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
-    const hit = hitTest(px, py);
-    // The gauge is a read-only overlay: a touch on it must not orbit or
-    // count as tap-outside — but an aircraft drawn OVER the gauge stays
+    // Three ways to pick the same aircraft — its icon on the map, its row in
+    // the list, its numbered bead on the ladder — and all three land on the
+    // same toggleRow()/selected state. The ladder is the one that answers
+    // "how far up do I look", so being able to tap the figure you are about
+    // to go outside and find is the point.
+    const hit = hitTest(px, py) || gaugeHitTest(px, py);
+    // Otherwise the gauge strip is a dead zone: a touch on it must not orbit
+    // or count as tap-outside — but an aircraft drawn OVER the gauge stays
     // tappable (round 52): hitTest runs first, and the dead zone only
-    // swallows touches that hit no plane.
+    // swallows touches that hit neither a plane nor a bead.
     if (!hit && inElevGaugeZone(px, py)) return;
     const hint = document.getElementById("hint"); if (hint) hint.style.opacity = "0";
     cv.setPointerCapture(e.pointerId);
@@ -3103,10 +3406,16 @@ body.row-open { --list-h: max(30vh, 236px); }
     const p = planes.get(selected);
     if (!p) { closeSheet(); return; }
     document.getElementById("d-call").textContent = p.call;
-    // lead with a plain-language category, keep the exact model as detail
-    const parts = [typeLabel(p)];
+    // LEAN: the collapsed row this record expands out of already prints the
+    // plain-language category in its own .phase line, so repeating it here
+    // spent the record's first line saying nothing new. This line now carries
+    // only what the row cannot: the exact model, and the registration when
+    // that isn't already the callsign (it is, for most GA traffic). The
+    // plain-language label is still the fallback when the feed gives neither.
+    const parts = [];
     if (p.typeDesc) parts.push(p.typeDesc);          // e.g. "Airbus A320"
-    document.getElementById("d-type").innerHTML = parts.join(" · ");
+    if (p.reg && p.reg !== p.call) parts.push(p.reg);
+    document.getElementById("d-type").innerHTML = parts.length ? parts.join(" · ") : typeLabel(p);
     // ☁️ = flying above the current cloud ceiling (it's why the icon is dimmed).
     // Below AGL_ON_GROUND_M over the user's ground, the altitude figure is
     // REPLACED by "on the ground" (Sullivan's spec) — not annotated.
@@ -3381,11 +3690,16 @@ body.row-open { --list-h: max(30vh, 236px); }
     showShareToast(copied ? t("shareCopiedDownloaded") : t("shareDownloadedOnly"));
   }
 
-  async function shareCard() {
-    if (shareBtn.getAttribute("aria-busy") === "true") return;
+  // `btn` is whichever control was tapped — the (hidden) sheet's own button,
+  // or the share button inside the selected aircraft's list record. It only
+  // carries the busy state, so the two can never disagree about which one is
+  // spinning.
+  async function shareCard(btn) {
+    if (!btn || btn.nodeType !== 1) btn = shareBtn;
+    if (btn.getAttribute("aria-busy") === "true") return;
     const p = planes.get(selected);
     if (!p || !me) return;
-    shareBtn.setAttribute("aria-busy", "true");
+    btn.setAttribute("aria-busy", "true");
     try {
       const { blob, caption, filename } = await buildShareAssets(p);
       const file = new File([blob], filename, { type: "image/png" });
@@ -3415,10 +3729,10 @@ body.row-open { --list-h: max(30vh, 236px); }
     } catch (err) {
       console.warn("share failed", err);
     } finally {
-      shareBtn.removeAttribute("aria-busy");
+      btn.removeAttribute("aria-busy");
     }
   }
-  shareBtn.addEventListener("click", shareCard);
+  shareBtn.addEventListener("click", () => shareCard(shareBtn));
 
   // The old "swipe the sheet down to dismiss" drag handlers (pointerdown/
   // pointermove/pointerup on #sheet, SHEET_ENGAGE_PX/SHEET_DISMISS_PX) were
@@ -3613,6 +3927,9 @@ body.row-open { --list-h: max(30vh, 236px); }
     // fresh sweep (a plane that was already revealed at the OLD location has
     // no meaning at the new one).
     revealedIcaos.clear(); activeBlips.clear(); nextRevealAt = 0;
+    // trails outlive their aircraft, but not a change of location — they are
+    // drawn relative to where the user is standing
+    ghostTrails.clear();
     clearInterval(celestialTimer); celestialTimer = null; sunPos = null; moonPos = null;
     clearInterval(cloudTimer); cloudTimer = null;
     cloudCeilM = null; cloudCeilMslM = null; cloudFetchedAt = 0; groundElevM = null;
@@ -3946,6 +4263,27 @@ body.row-open { --list-h: max(30vh, 236px); }
   function inGaugeZone(px, py) { return px <= GAUGE_LADDER_W; }
   function cycleGauge() { /* one shape now — the strip is inert */ }
 
+  // Where each aircraft's bead was actually painted this frame, so the rail
+  // can be tapped. Written by drawFlatGauge (the one place that knows the
+  // rail's geometry) and read by gaugeHitTest — the same
+  // "render and hit-test share one source of truth" discipline hitTest() and
+  // draw() already follow for the map icons.
+  let gaugeBeads = [];
+  // The bead is small, and the whole 56px strip is otherwise dead space, so
+  // the target is a generous vertical band across the full rail width rather
+  // than the disc itself. Nearest bead by vertical distance wins, which is
+  // the only axis the rail actually uses.
+  const GAUGE_TAP_DY = 14;
+  function gaugeHitTest(px, py) {
+    if (px > GAUGE_LADDER_W) return null;
+    let best = null, bestD = GAUGE_TAP_DY;
+    for (const b of gaugeBeads) {
+      const d = Math.abs(b.y - py);
+      if (d < bestD) { bestD = d; best = b.icao; }
+    }
+    return best;
+  }
+
   // LOG SCALE. Linear degrees put nearly every aircraft in the bottom fifth
   // of the rail: a jet at 10 km and 10 km up is only 45° away, and most of
   // what you actually look at sits under 20°. With a knee of 8°, 0–20° takes
@@ -4006,10 +4344,12 @@ body.row-open { --list-h: max(30vh, 236px); }
     if (moonPos && moonPos.alt > -0.3) drawMoonDisc({ x, y: py(moonPos.alt) }, 5);
     if (sunPos && sunPos.alt > -0.83) drawSunDisc({ x, y: py(sunPos.alt) }, 3.4, 15);
 
+    gaugeBeads = [];
     for (const { p } of list) {
       try {
         const e = gaugeElev(p, now);
         const y = py(e), sel = p.icao === selected;
+        gaugeBeads.push({ icao: p.icao, y }); // makes this bead tappable — see gaugeHitTest
         // the same number the row and the map icon carry: which bead is
         // which was otherwise unanswerable, and the ladder is the one place
         // that tells you how far up to tilt your head
@@ -4061,8 +4401,12 @@ body.row-open { --list-h: max(30vh, 236px); }
   // ladder bead and the list row can all say the same thing. Written once per
   // list tick from the SAME nearest-first ordering the rows are built from.
   const planeIdx = new Map();
-  const DETAIL_KEYS = { alt: "altitude", spd: "speed", dist: "distance",
-                        hdg: "heading", vr: "climb" };
+  // LEAN. The collapsed line above the record already prints altitude (.up)
+  // and distance (.sub), so the record used to answer two of its five cells
+  // with figures already on screen an inch higher. It now carries only the
+  // three the line has no room for. (Heading stays: the line shows the
+  // 8-point compass name, this shows the degrees.)
+  const DETAIL_KEYS = { spd: "speed", hdg: "heading", vr: "climb" };
 
   function silhouetteFor(p) {
     const bucket = SHAPE_BUCKET[typeKey(p)] || "Unidentified";
@@ -4152,7 +4496,19 @@ body.row-open { --list-h: max(30vh, 236px); }
       // the padding lives on this inner row, not on .detail-in: a collapsed
       // 0fr grid row still renders its own padding, which leaked a few px
       const drow = el("div", null, dwrap);
-      el("div", "d-sil", drow).appendChild(silhouetteFor(p));
+      // left column: the silhouette, given real size now, and the one action
+      // this record offers
+      const left = el("div", "d-left", drow);
+      el("div", "d-sil", left).appendChild(silhouetteFor(p));
+      const sh = el("button", "d-share", left);
+      sh.type = "button";
+      sh.innerHTML = `<span class="gi gi-share" aria-hidden="true"></span><span class="lbl">${t("share")}</span>`;
+      sh.title = t("shareTip");
+      sh.setAttribute("aria-label", t("shareTip"));
+      // the record is inside the row's own <button>-less area, but the click
+      // still bubbles to nothing that would toggle the row — guard anyway,
+      // since a share tap must never collapse the record it came from
+      sh.addEventListener("click", (ev) => { ev.stopPropagation(); shareCard(sh); });
       const info = el("div", "d-info", drow);
       const dtype = el("div", "d-t", info);
       const droute = el("div", "d-r", info);
@@ -4180,9 +4536,7 @@ body.row-open { --list-h: max(30vh, 236px); }
       if (r.p.icao === selected) {
         ref.dtype.innerHTML = readHtml("d-type");
         ref.droute.innerHTML = readHtml("d-route");
-        ref.cells.alt.innerHTML = readHtml("d-alt");
         ref.cells.spd.innerHTML = readHtml("d-spd");
-        ref.cells.dist.innerHTML = readHtml("d-dist");
         ref.cells.hdg.innerHTML = readHtml("d-hdg");
         ref.cells.vr.innerHTML = readHtml("d-vr");
       }
@@ -4286,41 +4640,19 @@ body.row-open { --list-h: max(30vh, 236px); }
     return c;
   }
 
-  // The chip behind the followed aircraft's ID. Not a rectangle with soft
-  // corners — a lump of smoke: three overlapping ellipses under a body, then
-  // blurred, so its outline never repeats itself twice the same way.
-  const chipCache = new Map();
-  function puffChip(w, h) {
-    const key = Math.round(w) + "x" + Math.round(h);
-    let c = chipCache.get(key);
-    if (c) return c;
-    const pad = Math.ceil(h * 0.9);
-    const off = document.createElement("canvas");
-    off.width = Math.ceil(w) + pad * 2; off.height = Math.ceil(h) + pad * 2;
-    const c2 = off.getContext("2d");
-    c2.fillStyle = "#fff";
-    if (typeof c2.filter === "string") c2.filter = `blur(${h * 0.19}px)`;
-    const cy0 = pad + h / 2, r = h * 0.52;
-    c2.beginPath();
-    c2.rect(pad + r * 0.5, pad + h * 0.06, w - r, h * 0.88);
-    c2.fill();
-    // the lumps: deterministic, so the chip does not shimmer frame to frame
-    const lumps = [[0.06, 0.42], [0.3, 0.56], [0.56, 0.44], [0.82, 0.55], [0.97, 0.4]];
-    for (const [fx, fr] of lumps) {
-      c2.beginPath();
-      c2.ellipse(pad + w * fx, cy0, r * fr * 1.6, r * fr * 1.75, 0, 0, Math.PI * 2);
-      c2.fill();
-    }
-    // a second pass over the same shape: the blur thins the core, and the ID
-    // is knocked out of this, so the middle has to stay opaque
-    c2.beginPath();
-    c2.rect(pad + r * 0.4, pad + h * 0.12, w - r * 0.8, h * 0.76);
-    c2.fill();
-    if (typeof c2.filter === "string") c2.filter = "none";
-    c = { canvas: off, pad };
-    chipCache.set(key, c);
-    if (chipCache.size > 24) chipCache.delete(chipCache.keys().next().value);
-    return c;
+  // The chip behind the followed aircraft's ID. It used to be a lump of
+  // smoke — three blurred ellipses under a body, so no two chips had the
+  // same outline. It looked like weather sitting on the one label that has
+  // to be read instantly, and the soft edge cost the ID its contrast against
+  // a bright sky. It is now a plain solid white plate: opaque, hard-edged,
+  // the same shape every time, with the ID knocked out of it in sky colour.
+  const CHIP_RADIUS = 5;
+  function drawChip(x, y, w, h) {
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, CHIP_RADIUS);
+    else ctx.rect(x, y, w, h); // Safari < 16 has no roundRect; square corners are a fine fallback
+    ctx.fill();
   }
 
   // ============================================================
@@ -4369,8 +4701,7 @@ body.row-open { --list-h: max(30vh, 236px); }
     ctx.lineTo(dir > 0 ? bx : bx + w, by + chipH / 2);
     ctx.stroke();
 
-    const chip = puffChip(chipW, chipH);
-    ctx.drawImage(chip.canvas, bx - chip.pad, by - chip.pad);
+    drawChip(bx, by, chipW, chipH);
     ctx.fillStyle = theme.voidHex;
     ctx.font = '900 15px "Field", sans-serif';
     ctx.fillText(call, bx + 9, by + 16);
