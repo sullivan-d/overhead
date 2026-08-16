@@ -113,8 +113,17 @@
   --gap: 14px;
   /* One opened record, in px. Every aircraft's record is exactly this tall
      (see .d-t / .d-r / .d-sil), which is what lets body.row-open promise
-     that opening one moves nothing on a screen that already fits it. */
-  --record-h: 230px;
+     that opening one moves nothing on a screen that already fits it.
+     It grew from 230 when the record became a two-page carousel: the pages
+     themselves are a constant --page-h, and the rail under them (dots left,
+     share right) is the fixed cost the old under-silhouette share button
+     used to pay inside the left column. */
+  --record-h: 278px;
+  /* Both pages are exactly this tall — page 1 is sized by its left column
+     (silhouette + rarity chip), page 2 clamps its description to match. A
+     carousel whose two slides differ in height jumps the whole list on
+     every swipe. */
+  --page-h: 158px;
 }
 :root[data-theme="light"] { color-scheme: light; }
 
@@ -242,7 +251,29 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
    can see. It flips back the instant .on lands, i.e. as the row opens. */
 .entry:not(.on) .detail-in { visibility: hidden; }
 /* indented past the tally only, so the record gets the silhouette's width back */
-.entry .detail-in > div { display: flex; gap: 14px; align-items: flex-start; padding: 0 0 14px 29px; }
+.entry .d-rec { display: flex; flex-direction: column; padding: 0 0 14px 29px; container-type: inline-size; }
+/* THE RECORD IS TWO PAGES, SWIPED. Page 1 is the figures, page 2 is what the
+   aircraft actually IS — its name, its nickname and why anyone calls it that.
+   Native scroll-snap rather than a JS gesture: the browser already does
+   rubber-banding, momentum and interruption correctly on a touch screen, and
+   the app has been burnt before hand-rolling gesture classification (see the
+   rejected two-finger tilt+rotate in CLAUDE.md). JS only mirrors the scroll
+   position onto the dots and drives the dots' own taps.
+   overflow-x on a child of the list's vertical scroller is fine — the axes
+   don't compete — but the pages must NOT be scroll targets while the record
+   is collapsed, hence the visibility rule above covering them too. */
+.entry .d-pages {
+  display: flex; height: var(--page-h);
+  overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x mandatory; scroll-behavior: smooth;
+  overscroll-behavior-x: contain; scrollbar-width: none;
+}
+.entry .d-pages::-webkit-scrollbar { display: none; }
+.entry .d-page {
+  flex: 0 0 100%; height: 100%; min-width: 0;
+  display: flex; gap: 14px; align-items: flex-start;
+  scroll-snap-align: start; scroll-snap-stop: always;
+}
 /* THE SILHOUETTE IS SIZED BY THE REAL AIRCRAFT, NOT BY THE BOX.
    Every vendored shape already carries an intrinsic width/height that
    shapes/refit-shapes.js log-scaled by that type's true size — an A380 is
@@ -267,12 +298,97 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   filter: invert(1); opacity: 0.95;
 }
 .entry .d-left { flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-/* Share sits under the silhouette: the record's own left column already has
-   the width, and the action belongs with the picture of the thing you'd share
-   rather than wedged into the figures. */
+
+/* ---- RARITY — how often this type actually passes over you ----
+   It sits under the silhouette, where the share button used to: the badge
+   belongs with the picture of the thing it grades, and the share action is
+   a control, not a fact about the aeroplane. It moved to the rail.
+
+   THE COLOURS ARE THE APP'S OWN, and the ramp is deliberately one of
+   loudness, not of hue variety. Common is --grad-a, the flat navy painted
+   across the top third of the sky behind it, so a 737 badge is a label you
+   can read and nothing more. Uncommon steps up to --void, the mid sky blue.
+   Rare takes --hot and Legendary --gold — the app's only two warm colours,
+   both already tuned to clear 3:1 on this background — so the two that are
+   worth looking up for are the only two that reach out of the blue.
+   Legendary additionally carries a soft gold bloom, because "Rare" and
+   "Legendary" have to be tellable apart at a glance and amber-vs-gold alone
+   is a small step in daylight. */
+.entry .d-rar {
+  width: 116px; padding: 4px 6px; border-radius: 999px; text-align: center;
+  font-size: 10px; font-weight: 900; letter-spacing: 0.11em; text-transform: uppercase;
+  border: 1px solid transparent;
+}
+.entry .d-rar.c { background: var(--grad-a); color: var(--ink-faint); border-color: rgba(255,255,255,0.22); }
+.entry .d-rar.u { background: var(--void); color: var(--ink); }
+.entry .d-rar.r { background: var(--hot); color: var(--on-hot); }
+.entry .d-rar.l { background: var(--gold); color: var(--panel); box-shadow: 0 0 12px rgba(255,219,89,0.55); }
+/* an aircraft whose ICAO type the database doesn't carry gets no grade at
+   all rather than a guessed one — but the box still occupies its height, or
+   page 1 would be shorter for unknown types and the carousel would jump */
+.entry .d-rar.none { visibility: hidden; }
+
+.entry .d-info { flex: 1; min-width: 0; }
+
+/* ---- PAGE 2 — what the aircraft is ----
+   Same silhouette, smaller: keeping it means the page you swiped to is
+   visibly still about the same aeroplane, and at 76px it leaves the prose a
+   readable measure instead of a 20-character gutter. 160 × 0.475 = 76, so
+   the largest shape in the set still exactly fills the box (same rule as
+   .d-sil — never fit the image to the box, scale it uniformly). */
+.entry .d-sil.sm { width: 76px; height: 76px; --sil-k: 0.475; }
+.entry .d-lore { flex: 1; min-width: 0; }
+/* the official type name, quiet, above the name people actually use */
+.entry .d-lore .k {
+  display: block; font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase;
+  opacity: 0.82; height: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.entry .d-lore .nick {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  font-size: 17px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.1;
+  height: 38px; margin-top: 1px;
+}
+/* Clamped, not free-flowing: the longest description in the set would run
+   past the page and the carousel's constant height is what stops the whole
+   list moving under your thumb. Six lines holds every entry in the database
+   at this measure. */
+.entry .d-lore .bd {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden;
+  font-size: 11.5px; font-weight: 600; line-height: 1.42; opacity: 0.9; margin-top: 6px;
+}
+/* Measured across all 110 entries × 5 languages: at 360px and wider every
+   description clears six lines with room to spare. At 320 (an SE, the
+   narrowest screen this is used on) three of them ran a line over — French
+   and Portuguese are the long ones. The silhouette gives the width back
+   rather than the prose losing a sentence, since page 2 is the one place
+   the app has something to say.
+   A CONTAINER query, not a viewport one: what decides whether the prose fits
+   is the record's own measure, which is the screen less the list padding and
+   the tally indent — and a container query is also the only one of the two
+   that can be tested without emulating a device. 300cqi is the record width
+   on a ~360px screen. */
+@container (max-width: 300px) {
+  .entry .d-sil.sm { width: 62px; height: 62px; --sil-k: 0.3875; }
+  .entry .d-lore .bd { font-size: 11px; }
+}
+
+/* ---- THE RAIL — pagination on the left, the one action on the right ---- */
+.entry .d-rail { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.entry .d-dots { display: flex; align-items: center; gap: 7px; margin-right: auto; }
+/* 8px of ink inside a 26px tap target — a 2-stop pager is small by nature
+   and the dot must not be the hit area */
+.entry .d-dot {
+  width: 26px; height: 26px; margin: 0 -9px; padding: 0; border: 0; background: none;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.entry .d-dot::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ink); opacity: 0.34; transition: opacity 0.2s, transform 0.2s;
+}
+.entry .d-dot[aria-selected="true"]::before { opacity: 1; transform: scale(1.15); }
 .entry .d-share {
   display: flex; align-items: center; justify-content: center; gap: 7px;
-  width: 116px; min-height: 32px; padding: 8px 6px;
+  min-height: 32px; padding: 8px 14px;
   background: none; border: 1px solid rgba(255,255,255,0.5); border-radius: 10px;
   cursor: pointer; font: inherit; color: inherit;
   font-size: 10.5px; font-weight: 900; letter-spacing: 0.09em; text-transform: uppercase;
@@ -280,7 +396,6 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
 .entry .d-share .gi { width: 12px; height: 12px; }
 .entry .d-share:active { background: rgba(255,255,255,0.12); }
 .entry .d-share[aria-busy="true"] { opacity: 0.5; }
-.entry .d-info { flex: 1; min-width: 0; }
 /* The record's height must not depend on which aircraft it describes, or the
    guarantee below (a whole record fits the list's own share of the screen)
    holds for a Cessna and fails for an "Airbus A350-900 · Air France". Two
@@ -755,6 +870,11 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
       support: "support",
       shareTip: "Share this aircraft",
       share: "Share",
+      rarityCommon: "Common", rarityUncommon: "Uncommon",
+      rarityRare: "Rare", rarityLegendary: "Legendary",
+      rarityTip: "How often an aircraft of this type passes overhead",
+      pageFigures: "Figures", pageAbout: "About this aircraft",
+      loreUnknown: "No field notes for this type yet — Overhead doesn't recognise its ICAO type code.",
       shareSpottedOver: "spotted over {place}",
       shareTagline: "Spot planes near you — try Overhead",
       shareCopiedDownloaded: "Caption copied · image saved",
@@ -815,6 +935,11 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
       unitsTip: "Basculer entre les unités métriques (m, km/h) et les pieds/nœuds de l'aviation",
       support: "soutenir",
       shareTip: "Partager cet avion",
+      rarityCommon: "Courant", rarityUncommon: "Peu courant",
+      rarityRare: "Rare", rarityLegendary: "Légendaire",
+      rarityTip: "À quelle fréquence un appareil de ce type passe au-dessus de vous",
+      pageFigures: "Chiffres", pageAbout: "À propos de cet appareil",
+      loreUnknown: "Pas encore de fiche pour ce type — Overhead ne reconnaît pas son code OACI.",
       share: "Partager",
       shareSpottedOver: "repéré au-dessus de {place}",
       shareTagline: "Repérez les avions près de chez vous — essayez Overhead",
@@ -876,6 +1001,11 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
       unitsTip: "Alternar entre unidades métricas (m, km/h) e os pés/nós usados na aviação",
       support: "apoiar",
       shareTip: "Partilhar esta aeronave",
+      rarityCommon: "Comum", rarityUncommon: "Pouco comum",
+      rarityRare: "Raro", rarityLegendary: "Lendário",
+      rarityTip: "Com que frequência uma aeronave deste tipo passa por cima de si",
+      pageFigures: "Números", pageAbout: "Sobre esta aeronave",
+      loreUnknown: "Ainda sem ficha para este tipo — o Overhead não reconhece o seu código OACI.",
       share: "Partilhar",
       shareSpottedOver: "avistado sobre {place}",
       shareTagline: "Veja aviões perto de si — experimente o Overhead",
@@ -937,6 +1067,11 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
       unitsTip: "Zwischen metrischen Einheiten (m, km/h) und den in der Luftfahrt üblichen Fuß/Knoten wechseln",
       support: "Unterstützen",
       shareTip: "Dieses Flugzeug teilen",
+      rarityCommon: "Häufig", rarityUncommon: "Selten",
+      rarityRare: "Sehr selten", rarityLegendary: "Legendär",
+      rarityTip: "Wie oft ein Flugzeug dieses Typs über dich hinwegfliegt",
+      pageFigures: "Werte", pageAbout: "Über dieses Flugzeug",
+      loreUnknown: "Noch kein Steckbrief für diesen Typ — Overhead kennt seinen ICAO-Code nicht.",
       share: "Teilen",
       shareSpottedOver: "gesichtet über {place}",
       shareTagline: "Flugzeuge in Ihrer Nähe entdecken — mit Overhead",
@@ -998,6 +1133,11 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
       unitsTip: "在公制单位（米、公里/小时）与航空常用的英尺/节之间切换",
       support: "支持",
       shareTip: "分享这架飞机",
+      rarityCommon: "常见", rarityUncommon: "少见",
+      rarityRare: "稀有", rarityLegendary: "传奇",
+      rarityTip: "这一机型从你头顶飞过的频繁程度",
+      pageFigures: "数据", pageAbout: "关于这架飞机",
+      loreUnknown: "暂无此机型的资料 —— Overhead 无法识别它的 ICAO 机型代码。",
       share: "分享",
       shareSpottedOver: "发现于 {place} 上空",
       shareTagline: "发现附近的飞机——试试 Overhead",
@@ -1084,7 +1224,7 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   const APP_URL = "https://sullivan-d.github.io/overhead/";
   // Shown next to the support link, bottom-right of the sheet footer. Keep in
   // lockstep with sw.js's CACHE version — bump both together on every release.
-  const APP_VERSION = "v96";
+  const APP_VERSION = "v97";
   const NM_PER_KM = 0.539957;
 
   // ---------- variation switch ----------
@@ -4521,6 +4661,167 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
   }
 
   // ============================================================
+  //  THE AIRCRAFT DATABASE — rarity + field notes, 110 types
+  // ============================================================
+  // The ADS-B feed answers "what is it doing"; this answers "what IS it".
+  // Every entry carries a rarity grade (how often a type of this kind
+  // actually passes over a given patch of sky), the type's official name,
+  // the name people who work around it actually use, and one line on why —
+  // in all five of the app's languages, because the record is the one place
+  // the app stops reciting figures and talks to you.
+  //
+  // KEYED ON THE ICAO TYPE DESIGNATOR (`a.t`, already inline in the feed —
+  // no second lookup, same as the silhouettes). Matching is by regex over
+  // the SAME normalisation the shape loader uses (upper-case, strip
+  // non-alphanumerics), because feeds vary on "A-350" vs "A350".
+  //
+  // ORDER IS SIGNIFICANT and the array is generated in it: the handful of
+  // rows no type code can distinguish — a BBJ is a 737, a Voyager is an
+  // A330 — match on the free-text `desc` instead and are listed FIRST, so a
+  // government 737 doesn't come back as an ordinary airliner. Everything
+  // after them is code-matched and the patterns are anchored, so overlap is
+  // rare by construction.
+  //
+  // Fields are one letter each because this table is 110 entries × 5
+  // languages inline in the page: r = rarity (c/u/r/l), n = official name,
+  // k = nickname (absent when the type has none), m = ICAO-code pattern,
+  // x = desc pattern, d = the description per language.
+  //
+  // The generator lives in the repo history; to re-derive it from a fresh
+  // CSV, regenerate the whole literal rather than hand-editing rows.
+  const AIRCRAFT_DB = [
+    {r:"r",n:"Boeing Business Jet / Airbus Corporate Jet",x:/(BBJ|BUSINESS JET|CORPORATE JET|ACJ)/,d:{en:"VIP-configured versions of the 737 and A320 family, used by governments, heads of state and wealthy owners.",fr:"Des versions VIP du 737 et de la famille A320, utilisées par des gouvernements, chefs d'État et propriétaires fortunés.",pt:"Versões VIP do 737 e da família A320, usadas por governos, chefes de Estado e proprietários endinheirados.",de:"VIP-Versionen der 737 und der A320-Familie, genutzt von Regierungen, Staatsoberhäuptern und wohlhabenden Eigentümern.",zh:"737和A320系列的贵宾定制版本,供各国政府、国家元首及富豪机主使用。"}},
+    {r:"l",n:"VC-25A",k:"Air Force One",m:/^VC25$/,x:/VC25/,d:{en:"The call sign 'Air Force One' has become permanently attached to this specific pair of modified 747s.",fr:"L'indicatif « Air Force One » est resté définitivement associé à cette paire spécifique de 747 modifiés.",pt:"O indicativo «Air Force One» ficou permanentemente associado a este par específico de 747 modificados.",de:"Das Rufzeichen „Air Force One“ ist fest an dieses spezielle Paar modifizierter 747 gebunden.",zh:"「空军一号」这一呼号如今已固定专属于这两架特别改装的747飞机。"}},
+    {r:"r",n:"HC-144 Ocean Sentry / MH-65 Dolphin",m:/^(CN35|C144)$/,x:/(OCEAN SENTRY|MH65|DOLPHIN)/,d:{en:"US Coast Guard fixed-wing and helicopter assets that patrol harbors and coastal waters.",fr:"Des appareils à voilure fixe et des hélicoptères des garde-côtes américains qui patrouillent ports et eaux côtières.",pt:"Aeronaves de asa fixa e helicópteros da Guarda Costeira dos EUA que patrulham portos e águas costeiras.",de:"Starrflügel- und Hubschraubereinheiten der US-Küstenwache, die Häfen und Küstengewässer patrouillieren.",zh:"美国海岸警卫队的固定翼飞机和直升机,负责巡逻港口和沿海水域。"}},
+    {r:"l",n:"DA42 MPP Guardian",x:/(MPP|GUARDIAN)/,d:{en:"A Diamond DA42 trainer converted into a surveillance platform, with camera turrets under the nose and belly.",fr:"Un avion-école Diamond DA42 converti en plateforme de surveillance, avec des tourelles de caméra sous le nez et le ventre.",pt:"Um avião de treino Diamond DA42 convertido numa plataforma de vigilância, com torretas de câmara sob o nariz e a fuselagem.",de:"Ein Diamond-DA42-Schulflugzeug, umgebaut zur Überwachungsplattform mit Kameratürmen unter Nase und Rumpf.",zh:"戴蒙德DA42教练机改装而成的监视平台,机头和机腹下方装有摄像头转塔。"}},
+    {r:"l",n:"GlobalEye",x:/GLOBALEYE/,d:{en:"A newer airborne early warning platform built on a business-jet airframe rather than an airliner.",fr:"Une plateforme de détection aéroportée plus récente, construite sur une cellule de jet d'affaires plutôt qu'un avion de ligne.",pt:"Uma plataforma de deteção aérea mais recente, construída sobre uma estrutura de jato executivo em vez de um avião de linha.",de:"Eine neuere Luftraumfrühwarnplattform auf Basis eines Geschäftsreisejets statt eines Linienflugzeugs.",zh:"一款较新型的空中预警平台,基于公务机机身而非客机打造。"}},
+    {r:"l",n:"Voyager KC2/KC3",x:/VOYAGER/,d:{en:"The UK's version of the same A330 tanker platform as the French Phénix; some airframes double as leased airliners.",fr:"La version britannique de la même plateforme de ravitailleur A330 que le Phénix français ; certains appareils sont aussi loués comme avions de ligne.",pt:"A versão britânica da mesma plataforma de petroleiro A330 que o Phénix francês; algumas aeronaves também são alugadas como aviões de linha.",de:"Die britische Version derselben A330-Tankerplattform wie der französische Phénix; manche Maschinen dienen zeitweise als geleaste Linienflugzeuge.",zh:"英国版本的同款A330加油机平台,与法国的「凤凰」同源;部分机身还会作为租赁客机使用。"}},
+    {r:"l",n:"Phénix",m:/^(A33M|KC30|MRTT)$/,x:/MRTT/,d:{en:"France's aerial refuelling tanker and VIP/troop transport, based on the A330 — the French equivalent of the KC-135.",fr:"Le ravitailleur aérien et transport VIP/troupes de la France, basé sur l'A330 — l'équivalent français du KC-135.",pt:"O petroleiro de reabastecimento aéreo e transporte VIP/tropas de França, baseado no A330 — o equivalente francês do KC-135.",de:"Frankreichs Luftbetankungstanker und VIP-/Truppentransporter auf A330-Basis – das französische Gegenstück zur KC-135.",zh:"法国基于A330打造的空中加油机兼贵宾/部队运输机——相当于法国版的KC-135。"}},
+    {r:"l",n:"VH-3D Sea King / VH-60N White Hawk / VH-92A Patriot",k:"Marine One",m:/^(VH3|VH60|VH92)$/,x:/(MARINE ONE|VH-?3D|VH-?60N|VH-?92)/,d:{en:"The call sign used only when the US president is aboard — typically escorting presidential trips alongside Air Force One.",fr:"L'indicatif radio utilisé uniquement lorsque le président américain est à bord — accompagne en général les déplacements présidentiels avec Air Force One.",pt:"O indicativo de chamada usado apenas quando o presidente dos EUA está a bordo — normalmente acompanha as deslocações presidenciais junto de Air Force One.",de:"Das Rufzeichen wird nur verwendet, wenn der US-Präsident an Bord ist – begleitet Präsidentenreisen meist gemeinsam mit Air Force One.",zh:"只有在美国总统登机时才会使用的呼号——通常伴随「空军一号」一同护送总统出行。"}},
+    {r:"r",n:"Bell 412 / Bell 429 / Bell 407 / Cessna 208EX",x:/NYPD/,d:{en:"New York's police helicopter fleet, handling air-sea rescue, patrol, quick response and counter-terrorism work.",fr:"La flotte d'hélicoptères de la police de New York, chargée du sauvetage air-mer, de la patrouille et de la lutte antiterroriste.",pt:"A frota de helicópteros da polícia de Nova Iorque, encarregue de resgate ar-mar, patrulha e trabalho antiterrorista.",de:"Die Hubschrauberflotte der New Yorker Polizei, zuständig für Luft-See-Rettung, Streifendienst und Terrorismusbekämpfung.",zh:"纽约警察局的直升机机队,负责海空救援、巡逻及反恐任务。"}},
+    {r:"u",n:"A220",k:"Canabus",m:/^(BCS[13]|A220|A22[0-9]N?)$/,d:{en:"Originally the Bombardier CSeries, built in Canada — hence the nickname 'Canabus' after Airbus took over.",fr:"À l'origine le CSeries de Bombardier, construit au Canada — d'où le surnom « Canabus » depuis le rachat par Airbus.",pt:"Originalmente o CSeries da Bombardier, construído no Canadá — daí a alcunha «Canabus» depois de a Airbus o adquirir.",de:"Ursprünglich die Bombardier CSeries, in Kanada gebaut – daher der Spitzname „Canabus“ nach der Übernahme durch Airbus.",zh:"最初是庞巴迪的CSeries客机,在加拿大制造——空客接手后因此得名「加拿大空客」(Canabus)。"}},
+    {r:"c",n:"A320 / A321",k:"Scarebus / Nintendo Jet",m:/^(A318|A319|A320|A321|A19N|A20N|A21N|A32[0-9])$/,d:{en:"Early fly-by-wire spooked veteran pilots ('Scarebus'); its sidestick feels like a game controller ('Nintendo Jet').",fr:"Les premières commandes de vol électriques ont effrayé les pilotes chevronnés (« Scarebus ») ; son manche latéral évoque une manette de jeu (« Nintendo Jet »).",pt:"Os primeiros comandos de voo eletrónicos assustaram pilotos experientes («Scarebus»); o manche lateral lembra um comando de jogos («Nintendo Jet»).",de:"Die frühe Fly-by-Wire-Technik verunsicherte erfahrene Piloten („Scarebus“); der Seitenstick erinnert an einen Spielecontroller („Nintendo Jet“).",zh:"早期电传操纵系统让老飞行员心生畏惧(「恐惧客车」);其侧杆操纵手感像游戏手柄(「任天堂喷气机」)。"}},
+    {r:"u",n:"A330",m:/^(A330|A33[23]|A33[89])$/,d:{en:"A dependable long-haul widebody twin — oddly, one of the few Airbus types that never picked up a real nickname.",fr:"Un gros-porteur long-courrier fiable — étrangement, l'un des rares Airbus à n'avoir jamais reçu de vrai surnom.",pt:"Um bimotor de longo curso fiável — curiosamente, um dos poucos Airbus que nunca ganhou uma alcunha a sério.",de:"Ein zuverlässiger Langstrecken-Zweistrahler – seltsamerweise einer der wenigen Airbus-Typen ohne echten Spitznamen.",zh:"可靠的远程双发宽体客机——奇怪的是,它是少数几款从未有过响亮绰号的空客机型之一。"}},
+    {r:"r",n:"A340",k:"Hairdryer",m:/^(A340|A34[0-9])$/,d:{en:"Its four engines are the same size used on single-aisle jets, giving it a famously slow, underpowered climb.",fr:"Ses quatre moteurs sont de la même taille que ceux des monocouloirs, ce qui lui donne une montée notoirement poussive.",pt:"Os quatro motores são do mesmo tamanho dos usados em aviões de corredor único, o que lhe dá uma subida notoriamente lenta.",de:"Die vier Triebwerke entsprechen jenen von Schmalrumpfjets – das macht den Steigflug berüchtigt träge und untermotorisiert.",zh:"它的四台发动机与窄体客机使用的型号相同,导致爬升速度出了名地缓慢乏力。"}},
+    {r:"u",n:"A350 XWB",k:"Raccoon",m:/^(A350|A359|A35K)$/,d:{en:"The black-painted cockpit window surround genuinely looks like a raccoon's mask from the outside.",fr:"Le contour noir des vitres du cockpit ressemble vraiment à un masque de raton laveur vu de l'extérieur.",pt:"O contorno preto das janelas do cockpit parece mesmo uma máscara de guaxinim visto do exterior.",de:"Die schwarze Umrandung der Cockpitscheiben sieht von außen tatsächlich wie eine Waschbärmaske aus.",zh:"驾驶舱窗户周围的黑色涂装从外面看起来真的很像浣熊的面罩。"}},
+    {r:"r",n:"A380",k:"Whalejet / Flying Forehead / Megabus",m:/^(A380|A388)$/,d:{en:"The world's largest passenger jet, a double-decker giant with a broad, blunt nose that inspired all three nicknames.",fr:"Le plus grand avion de ligne du monde, un géant à deux ponts au nez large et arrondi qui a inspiré ses trois surnoms.",pt:"O maior avião de passageiros do mundo, um gigante de dois pisos com um nariz largo e arredondado que inspirou as três alcunhas.",de:"Der größte Passagierjet der Welt – ein zweistöckiger Riese mit breiter, stumpfer Nase, die alle drei Spitznamen inspirierte.",zh:"全球最大的客机,双层机身配上宽阔钝圆的机头,三个绰号都由此而来。"}},
+    {r:"l",n:"Ruslan",k:"Condor",m:/^A124$/,d:{en:"One of the world's largest cargo planes; 'Condor' is literally its official NATO reporting name.",fr:"L'un des plus gros avions cargo au monde ; « Condor » est littéralement son nom de code OTAN officiel.",pt:"Um dos maiores aviões de carga do mundo; «Condor» é literalmente o seu nome de código oficial da NATO.",de:"Eines der größten Frachtflugzeuge der Welt; „Condor“ ist buchstäblich sein offizieller NATO-Codename.",zh:"全球最大的货运飞机之一;「秃鹰」其实是北约赋予它的官方代号。"}},
+    {r:"r",n:"An-72 / An-74",m:/^(AN72|AN74|A72|A74)$/,d:{en:"A distinctive STOL cargo jet with engines mounted above the wing to blow extra lift over it on takeoff.",fr:"Un avion cargo ADAC reconnaissable, moteurs montés au-dessus des ailes pour souffler davantage de portance au décollage.",pt:"Um avião de carga STOL inconfundível, com motores montados sobre as asas para soprar mais sustentação na descolagem.",de:"Ein markanter STOL-Frachtjet mit über der Tragfläche montierten Triebwerken für zusätzlichen Auftrieb beim Start.",zh:"一款外形独特的短距起降货机,发动机装在机翼上方,起飞时能吹出额外升力。"}},
+    {r:"u",n:"ATR 72",k:"The Pig",m:/^AT[47][0-9]$/,d:{en:"A flat nose and pointy tail, plus a sluggish climb and descent, earned this regional turboprop its nickname.",fr:"Un nez plat, une queue pointue et une montée poussive ont valu à ce turbopropulseur régional son surnom.",pt:"Um nariz achatado, uma cauda pontiaguda e uma subida lenta valeram a este turbopropulsor regional a sua alcunha.",de:"Eine flache Nase, ein spitzes Heck und ein träger Steig- und Sinkflug brachten diesem Regional-Turboprop seinen Spitznamen ein.",zh:"扁平的机头、尖尖的机尾,加上迟缓的爬升和下降表现,让这款支线涡桨客机得到了这个绰号。"}},
+    {r:"r",n:"146",k:"Smurfjet / Whisperjet",m:/^(B46[123]|RJ1H|RJ70|RJ85|RJ100)$/,d:{en:"Four tiny engines led to the joke that it needs '5 APUs'; 'Whisperjet' nods to its unusually quiet engines.",fr:"Ses quatre petits moteurs ont inspiré la blague qu'il « a besoin de 5 APU » ; « Whisperjet » évoque ses moteurs étonnamment silencieux.",pt:"Os quatro motores minúsculos inspiraram a piada de que «precisa de 5 APU»; «Whisperjet» remete para os seus motores invulgarmente silenciosos.",de:"Vier winzige Triebwerke führten zum Scherz, es brauche „5 APUs“; „Whisperjet“ verweist auf seine ungewöhnlich leisen Triebwerke.",zh:"四台迷你发动机催生了「需要5个辅助动力装置」的玩笑;「耳语喷气机」则源自它异常安静的发动机。"}},
+    {r:"r",n:"727",m:/^B72[0-9]$/,d:{en:"An old trijet design, mostly retired from passenger service, but a handful still fly cargo and charter routes.",fr:"Un ancien trijet, largement retiré du transport de passagers, mais quelques exemplaires volent encore en fret et charter.",pt:"Um trirreator antigo, praticamente retirado do transporte de passageiros, mas alguns ainda voam em carga e charter.",de:"Ein altes Dreistrahler-Design, größtenteils aus dem Passagierdienst ausgeschieden, doch einige fliegen noch Fracht und Charter.",zh:"一款老式三发客机,已基本退出客运市场,但仍有少数在执飞货运和包机航线。"}},
+    {r:"c",n:"737",k:"Guppy / Baby Boeing / FLUF",m:/^(B73[0-9]|B3[789]M|B3XM)$/,d:{en:"Early stubby variants looked like a chubby fish ('Guppy'); FLUF stands for Fat Little Ugly Fucker.",fr:"Les premières versions trapues ressemblaient à un poisson dodu (« Guppy ») ; FLUF signifie Fat Little Ugly Fucker.",pt:"As primeiras versões atarracadas pareciam um peixe rechonchudo («Guppy»); FLUF significa Fat Little Ugly Fucker.",de:"Frühe, gedrungene Varianten sahen aus wie ein pummeliger Fisch („Guppy“); FLUF steht für Fat Little Ugly Fucker.",zh:"早期短粗的机型看起来像条圆滚滚的鱼(「小胖鱼」);FLUF是「矮胖丑陋的家伙」的粗俗简称。"}},
+    {r:"r",n:"747",k:"Queen of the Skies / Jumbo Jet",m:/^(B74[0-9]|B74[SRD])$/,d:{en:"The undisputed monarch of long-haul travel for decades, instantly recognizable by its upper-deck hump.",fr:"Le monarque incontesté des longs courriers pendant des décennies, reconnaissable entre tous à sa bosse à l'étage supérieur.",pt:"O monarca incontestado dos voos de longo curso durante décadas, reconhecível de imediato pela bossa do piso superior.",de:"Jahrzehntelang der unangefochtene König der Langstrecke, sofort erkennbar an seinem Oberdeck-Buckel.",zh:"数十年来无可争议的远程航线之王,凭借上层机身的驼峰造型一眼可辨。"}},
+    {r:"u",n:"757",k:"Flying Pencil",m:/^B75[0-9]$/,d:{en:"An exceptionally narrow, long fuselage paired with unusually powerful engines for its size.",fr:"Un fuselage exceptionnellement étroit et long, associé à des moteurs étonnamment puissants pour sa taille.",pt:"Uma fuselagem excecionalmente estreita e longa, associada a motores surpreendentemente potentes para o seu tamanho.",de:"Ein außergewöhnlich schmaler, langer Rumpf gepaart mit für seine Größe ungewöhnlich starken Triebwerken.",zh:"机身异常细长,却配备了相对机身尺寸而言异常强劲的发动机。"}},
+    {r:"u",n:"767",k:"The Slug",m:/^B76[0-9]$/,d:{en:"A capable, reliable widebody, but noticeably less punchy off the ground than its sibling the 757.",fr:"Un gros-porteur fiable et compétent, mais nettement moins vif au décollage que son cousin le 757.",pt:"Um avião de fuselagem larga fiável e competente, mas visivelmente menos vigoroso na descolagem do que o seu irmão, o 757.",de:"Ein fähiger, zuverlässiger Großraumjet, jedoch beim Start spürbar weniger druckvoll als sein Geschwister, die 757.",zh:"一款可靠能干的宽体客机,但起飞爬升力度明显不如它的「兄弟」757。"}},
+    {r:"u",n:"777",k:"Triple Seven / Bigfoot",m:/^(B77[0-9]|B77[LW])$/,d:{en:"'Bigfoot' refers to its massive six-wheel main landing gear bogies — some of the largest ever fitted.",fr:"« Bigfoot » fait référence à son imposant train d'atterrissage à six roues, l'un des plus gros jamais installés.",pt:"«Bigfoot» refere-se ao imponente trem de aterragem principal de seis rodas, um dos maiores alguma vez instalados.",de:"„Bigfoot“ bezieht sich auf sein massives sechsrädriges Hauptfahrwerk – eines der größten, die je verbaut wurden.",zh:"「大脚」(Bigfoot)指的是它那巨大的六轮主起落架,是有史以来安装过的最大起落架之一。"}},
+    {r:"u",n:"Dreamliner",k:"Tupperjet / Plastic Fantastic",m:/^(B78[0-9]|B78X)$/,d:{en:"Its fuselage is made of carbon-fibre composite rather than traditional aluminium.",fr:"Son fuselage est en matériau composite à fibre de carbone plutôt qu'en aluminium traditionnel.",pt:"A sua fuselagem é feita de material compósito de fibra de carbono em vez do alumínio tradicional.",de:"Sein Rumpf besteht aus Kohlefaserverbundwerkstoff anstelle des traditionellen Aluminiums.",zh:"机身采用碳纤维复合材料制造,而非传统铝合金。"}},
+    {r:"u",n:"Regional Jet",k:"Barbie Jet",m:/^CRJ[0-9X]$/,d:{en:"A cramped, plastic-heavy cabin that feels toy-like compared to a mainline jet.",fr:"Une cabine exiguë et très plastique qui semble presque miniature à côté d'un avion de ligne classique.",pt:"Uma cabina apertada e cheia de plástico que parece quase um brinquedo comparada com um avião de linha comum.",de:"Eine enge, stark verkunststoffte Kabine, die im Vergleich zu einem großen Linienjet spielzeughaft wirkt.",zh:"机舱狭窄且大量使用塑料材质,相比主流客机显得像个玩具。"}},
+    {r:"r",n:"C919",m:/^(C919|C99[0-9])$/,d:{en:"China's first homegrown mainline airliner, currently flown almost only by Chinese carriers on domestic routes.",fr:"Le premier avion de ligne conçu en Chine, actuellement exploité presque uniquement par des compagnies chinoises sur des lignes intérieures.",pt:"O primeiro avião de linha totalmente concebido na China, operado atualmente quase só por companhias chinesas em rotas domésticas.",de:"Chinas erster selbst entwickelter Mittelstreckenjet, derzeit fast ausschließlich von chinesischen Fluggesellschaften im Inland geflogen.",zh:"中国首款自主研制的干线客机,目前几乎只由中国航空公司执飞国内航线。"}},
+    {r:"u",n:"Q400 / Dash 8",k:"Dash-Trash / Shake-Eight",m:/^DH8[A-D]$/,d:{en:"A rugged commuter turboprop known among regular passengers for its cabin vibration and engine noise.",fr:"Un turbopropulseur régional robuste, connu des habitués pour les vibrations en cabine et le bruit des moteurs.",pt:"Um turbopropulsor regional resistente, conhecido dos passageiros habituais pelas vibrações na cabina e pelo ruído dos motores.",de:"Ein robuster Regional-Turboprop, bei Stammfluggästen bekannt für Kabinenvibrationen und Triebwerkslärm.",zh:"一款结实耐用的支线涡桨客机,常客们都熟知它机舱震动大、发动机噪音响的特点。"}},
+    {r:"u",n:"Twin Otter",m:/^DHC6$/,d:{en:"A rugged short-takeoff utility twin turboprop used for island-hopping routes, skydiving and bush flying.",fr:"Un bimoteur turbopropulseur robuste à décollage court, utilisé pour les liaisons insulaires, le parachutisme et le vol de brousse.",pt:"Um bimotor turbopropulsor resistente de descolagem curta, usado em ligações entre ilhas, paraquedismo e voo de mato.",de:"Ein robuster Kurzstart-Zweimot-Turboprop für Inselverbindungen, Fallschirmsprung-Einsätze und Buschflüge.",zh:"一款皮实耐用的短距起降双发涡桨飞机,常用于岛屿间航线、跳伞运营和丛林飞行。"}},
+    {r:"u",n:"E170 / E175 / E190 / E195",m:/^(E1[79][05]|E7[05][LS]|E29[05])$/,d:{en:"Embraer's second-generation regional jet family, now one of the most common regional types across Europe.",fr:"La famille de jets régionaux de deuxième génération d'Embraer, aujourd'hui l'un des types régionaux les plus courants en Europe.",pt:"A família de jatos regionais de segunda geração da Embraer, hoje um dos tipos regionais mais comuns na Europa.",de:"Embraers Regionaljet-Familie der zweiten Generation, heute einer der häufigsten Regionaltypen in ganz Europa.",zh:"巴西航空工业第二代支线客机家族,如今是欧洲最常见的支线机型之一。"}},
+    {r:"u",n:"ERJ",k:"Jungle Jet",m:/^(E13[05]|E14[05]|E45X)$/,d:{en:"A nod to Embraer's Brazilian, Amazon-adjacent manufacturing roots.",fr:"Un clin d'œil aux racines brésiliennes d'Embraer, tout près de l'Amazonie.",pt:"Uma referência às raízes brasileiras da Embraer, junto à Amazónia.",de:"Eine Anspielung auf Embraers brasilianische Wurzeln nahe dem Amazonas.",zh:"这一绰号源于巴西航空工业地处亚马逊雨林附近的巴西根源。"}},
+    {r:"r",n:"Fokker 70 / 100",m:/^(F70|F100)$/,d:{en:"Dutch-built 1990s regional jets, mostly retired but a few still fly VIP, corporate or smaller-operator routes.",fr:"Des jets régionaux néerlandais des années 1990, en grande partie retirés, mais quelques-uns volent encore en VIP ou pour de petits opérateurs.",pt:"Jatos regionais neerlandeses dos anos 90, na sua maioria retirados, mas alguns ainda voam em rotas VIP, corporativas ou de pequenos operadores.",de:"Niederländisch gebaute Regionaljets aus den 1990ern, größtenteils ausgemustert, einige fliegen noch VIP-, Firmen- oder Kleinbetreiber-Routen.",zh:"荷兰制造的1990年代支线客机,大多已退役,少数仍执飞公务机、企业包机或小型运营商航线。"}},
+    {r:"l",n:"Il-76",k:"Candid / The Brick",m:/^(IL76|IL7[68])$/,d:{en:"'Candid' is its official NATO reporting name; 'Brick' nods to its brute-force, boxy build.",fr:"« Candid » est son nom de code OTAN officiel ; « Brick » évoque sa construction massive et carrée.",pt:"«Candid» é o seu nome de código oficial da NATO; «Brick» remete para a sua construção maciça e retangular.",de:"„Candid“ ist sein offizieller NATO-Codename; „Brick“ verweist auf seine wuchtige, kastenförmige Bauweise.",zh:"「坦率」(Candid)是北约赋予它的官方代号;「砖头」(Brick)则形容它那粗犷方正的机身。"}},
+    {r:"r",n:"MD-11",k:"Three-Holer / The Scud",m:/^MD11$/,d:{en:"Three engines — two on the wings, one in the tail — give it the 'Three-Holer' name; 'Scud' is cargo-crew slang.",fr:"Trois moteurs — deux sous les ailes, un dans la queue — lui valent le surnom « Three-Holer » ; « Scud » est un terme de jargon fret.",pt:"Três motores — dois nas asas, um na cauda — valem-lhe a alcunha «Three-Holer»; «Scud» é gíria das tripulações de carga.",de:"Drei Triebwerke – zwei an den Tragflächen, eines im Heck – bringen ihm den Namen „Three-Holer“ ein; „Scud“ ist Frachtcrew-Jargon.",zh:"三台发动机——两台在机翼,一台在尾部——因此得名「三孔机」;「飞毛腿」则是货运机组人员的俚语。"}},
+    {r:"r",n:"MD-80 / MD-88",k:"Mad Dog",m:/^(MD8[0-9]|MD9[0-9])$/,d:{en:"A loud, long, skin-tight fuselage that's notoriously tricky to handle in a crosswind.",fr:"Un fuselage bruyant, long et étroitement ajusté, réputé difficile à piloter par vent de travers.",pt:"Uma fuselagem ruidosa, longa e muito estreita, notoriamente difícil de pilotar com vento de través.",de:"Ein lauter, langer, eng anliegender Rumpf, der bei Seitenwind berüchtigt schwer zu beherrschen ist.",zh:"机身狭长、噪音大,在侧风条件下操控出了名地棘手。"}},
+    {r:"r",n:"Saab 340 / 2000",m:/^(SF34|SB20)$/,d:{en:"Swedish-built regional turboprops, still flown by a handful of European commuter and cargo operators.",fr:"Des turbopropulseurs régionaux suédois, encore exploités par quelques compagnies européennes de proximité et de fret.",pt:"Turbopropulsores regionais suecos, ainda operados por algumas companhias europeias de proximidade e de carga.",de:"Schwedisch gebaute Regional-Turboprops, noch bei einigen europäischen Regional- und Frachtbetreibern im Einsatz.",zh:"瑞典制造的支线涡桨客机,目前仍有少数欧洲支线和货运航空公司在使用。"}},
+    {r:"c",n:"H125 / AS350",k:"The Ecureuil (Squirrel)",m:/^(AS50|AS55|EC30|H125|H130)$/,d:{en:"'Écureuil' is French for squirrel — one of the most common light helicopters worldwide for tourism and utility work.",fr:"« Écureuil » est le nom officiel de cet appareil — l'un des hélicoptères légers les plus répandus au monde pour le tourisme et l'utilitaire.",pt:"«Écureuil» é a designação oficial deste aparelho — um dos helicópteros ligeiros mais comuns do mundo para turismo e trabalho utilitário.",de:"„Écureuil“ ist Französisch für Eichhörnchen – einer der weltweit verbreitetsten Leichthubschrauber für Touristik und Nutzarbeiten.",zh:"「Écureuil」在法语中意为「松鼠」——这是全球最常见的轻型直升机之一,常用于旅游观光和实用作业。"}},
+    {r:"r",n:"H135 / EC135 / EC635",m:/^(EC35|EC135|H135)$/,d:{en:"Widely used across Europe for police patrol and air-ambulance duty; the EC635 is its militarised sibling.",fr:"Largement utilisé en Europe pour les patrouilles de police et les évacuations sanitaires ; l'EC635 en est la version militarisée.",pt:"Muito utilizado na Europa em patrulhas policiais e evacuações sanitárias; o EC635 é a sua versão militarizada.",de:"In Europa weit verbreitet für Polizeieinsätze und Rettungsflüge; die EC635 ist die militarisierte Schwesterversion.",zh:"在欧洲广泛用于警务巡逻和空中救护;EC635是其军用型号。"}},
+    {r:"r",n:"H145 / EC145",m:/^(EC45|EC145|H145|BK17)$/,d:{en:"The backbone of many European medical rescue helicopter fleets, including French air ambulance units.",fr:"L'épine dorsale de nombreuses flottes d'hélicoptères de secours médical en Europe, dont les unités françaises.",pt:"A espinha dorsal de muitas frotas europeias de helicópteros de socorro médico, incluindo as unidades francesas.",de:"Das Rückgrat vieler europäischer Rettungshubschrauber-Flotten, einschließlich der französischen Luftrettungseinheiten.",zh:"许多欧洲医疗救援直升机机队的中坚力量,包括法国的空中救护部队。"}},
+    {r:"l",n:"Caracal",m:/^(EC25|H225|AS3[23]2)$/,d:{en:"A heavy military helicopter used by France for combat rescue and special-forces missions.",fr:"Un hélicoptère militaire lourd utilisé par la France pour le sauvetage au combat et les missions des forces spéciales.",pt:"Um helicóptero militar pesado usado por França em missões de resgate em combate e forças especiais.",de:"Ein schwerer Militärhubschrauber, den Frankreich für Gefechtsrettung und Spezialkräfte-Einsätze nutzt.",zh:"法国用于战斗搜救和特种部队任务的重型军用直升机。"}},
+    {r:"l",n:"Osprey",k:"The Widowmaker",m:/^(V22|MV22|CV22)$/,d:{en:"A hybrid tiltrotor blending helicopter and airplane traits; the nickname comes from crashes during its troubled development.",fr:"Un giravion hybride mêlant hélicoptère et avion ; son surnom vient des accidents survenus lors de son développement mouvementé.",pt:"Uma aeronave híbrida que combina helicóptero e avião; a alcunha vem dos acidentes ocorridos durante o seu desenvolvimento atribulado.",de:"Ein hybrides Kipprotorflugzeug zwischen Hubschrauber und Flugzeug; der Spitzname stammt von Abstürzen während der turbulenten Entwicklung.",zh:"一种融合直升机与固定翼飞机特点的倾转旋翼机;绰号源自其研发过程中多次坠机事故。"}},
+    {r:"l",n:"Chinook",k:"Shithook / Death Banana",m:/^(H47|CH47)$/,d:{en:"A tandem-rotor heavy lifter — troops mock its long, banana-curved fuselage and loud, thumping rotor blades.",fr:"Un gros porteur à rotors tandem — les troupes se moquent de son fuselage courbé en banane et du vacarme de ses pales.",pt:"Um transportador pesado de rotores em tandem — as tropas troçam da sua fuselagem curva em banana e do ruído das pás.",de:"Ein Tandemrotor-Schwerlasthubschrauber – Soldaten machen sich über den bananenförmig gekrümmten Rumpf und die lauten Rotorblätter lustig.",zh:"纵列双旋翼重型运输直升机——士兵们常调侃它那弯曲如香蕉的机身和轰鸣的旋翼声。"}},
+    {r:"l",n:"AS532 Cougar / AS565 Panther / SA342 Gazelle",m:/^(AS32|AS65|GAZL|SA34[0-9])$/,d:{en:"Older French military utility and light helicopters, still flying alongside the newer Caïman and Tigre.",fr:"D'anciens hélicoptères militaires français utilitaires et légers, toujours en service aux côtés des Caïman et Tigre plus récents.",pt:"Helicópteros militares franceses utilitários e ligeiros mais antigos, ainda em serviço ao lado dos mais recentes Caïman e Tigre.",de:"Ältere französische Militärhubschrauber für Transport- und Leichtaufgaben, noch im Einsatz neben den neueren Caïman und Tigre.",zh:"较旧的法国军用通用型和轻型直升机,如今仍与较新的「凯门鳄」和「虎」式并肩服役。"}},
+    {r:"l",n:"Tigre / Tiger",m:/^(TIGR|EC65)$/,d:{en:"France's dedicated attack helicopter, developed jointly with Germany for armed reconnaissance and close support.",fr:"L'hélicoptère de combat dédié de la France, développé conjointement avec l'Allemagne pour la reconnaissance armée et l'appui rapproché.",pt:"O helicóptero de ataque dedicado de França, desenvolvido em conjunto com a Alemanha para reconhecimento armado e apoio próximo.",de:"Frankreichs eigener Kampfhubschrauber, gemeinsam mit Deutschland entwickelt für bewaffnete Aufklärung und Nahunterstützung.",zh:"法国专用武装直升机,与德国联合研发,用于武装侦察和近距离支援任务。"}},
+    {r:"r",n:"AW139 / AW169",m:/^(A139|A169|A109|A119|A189)$/,d:{en:"Italian-built medium helicopters common in European police, search-and-rescue and offshore fleets.",fr:"Des hélicoptères moyens italiens fréquents dans les flottes européennes de police, de secours et offshore.",pt:"Helicópteros médios italianos comuns nas frotas europeias de polícia, busca e salvamento e operações offshore.",de:"Italienisch gebaute Mittelklasse-Hubschrauber, verbreitet bei europäischen Polizei-, Rettungs- und Offshore-Flotten.",zh:"意大利制造的中型直升机,常见于欧洲警务、搜救和海上作业机队。"}},
+    {r:"l",n:"Caïman",m:/^(NH90|EH10)$/,d:{en:"A European multi-national medium helicopter; France flies it as the Caïman for troop transport and naval roles.",fr:"Un hélicoptère moyen multinational européen ; la France le pilote sous le nom de Caïman pour le transport de troupes et les missions navales.",pt:"Um helicóptero médio multinacional europeu; a França opera-o como Caïman para transporte de tropas e missões navais.",de:"Ein europäischer multinationaler Mittelklasse-Hubschrauber; Frankreich fliegt ihn als Caïman für Truppentransport und Marineaufgaben.",zh:"一款欧洲多国联合研发的中型直升机;法国将其命名为「凯门鳄」,用于运兵和海军任务。"}},
+    {r:"c",n:"R22",m:/^R22$/,d:{en:"The smaller, cheaper sibling of the R44/R66 — the helicopter most student pilots worldwide actually learn on.",fr:"Le petit frère plus abordable du R44/R66 — l'hélicoptère sur lequel la plupart des élèves-pilotes apprennent réellement.",pt:"O irmão mais pequeno e barato do R44/R66 — o helicóptero em que a maioria dos alunos-piloto realmente aprende.",de:"Der kleinere, günstigere Bruder von R44/R66 – der Hubschrauber, an dem die meisten Flugschüler weltweit tatsächlich lernen.",zh:"R44/R66的小型平价版本——全球大多数学员实际学习驾驶的入门直升机。"}},
+    {r:"c",n:"R44 / R66",m:/^(R44|R66)$/,d:{en:"The world's best-selling light helicopter — a flight-school and private-owner staple.",fr:"L'hélicoptère léger le plus vendu au monde — un incontournable des écoles de pilotage et des propriétaires privés.",pt:"O helicóptero ligeiro mais vendido do mundo — um clássico das escolas de voo e dos proprietários privados.",de:"Der weltweit meistverkaufte Leichthubschrauber – ein fester Bestandteil von Flugschulen und Privatbesitzern.",zh:"全球销量最高的轻型直升机——飞行学校和私人机主的常见之选。"}},
+    {r:"l",n:"Black Hawk",k:"The Hawk / Catfish",m:/^(H60|S70|UH60)$/,d:{en:"Its low-slung nose and wide cockpit fairings resemble a bottom-feeding catfish from the front.",fr:"Son nez bas et ses carénages de cockpit larges lui donnent, de face, l'allure d'un poisson-chat.",pt:"O nariz baixo e as carenagens largas da cabina dão-lhe, de frente, um ar de peixe-gato.",de:"Die tief angesetzte Nase und breite Cockpitverkleidung lassen ihn von vorn wie einen Wels aussehen.",zh:"低垂的机头和宽大的驾驶舱整流罩,从正面看酷似一条鲶鱼。"}},
+    {r:"l",n:"MB-339-A/PAN",m:/^(M339|MB39)$/,d:{en:"The trainer jet flown by Italy's aerobatic display team — the world's largest military aerobatic formation.",fr:"L'avion-école piloté par la patrouille acrobatique italienne — la plus grande formation acrobatique militaire au monde.",pt:"O avião de treino pilotado pela esquadrilha acrobática italiana — a maior formação acrobática militar do mundo.",de:"Das Schulflugzeug der italienischen Kunstflugstaffel – die größte militärische Kunstflugformation der Welt.",zh:"意大利空军特技飞行表演队所使用的教练机——世界上规模最大的军事特技飞行编队。"}},
+    {r:"l",n:"BelugaXL",k:"The Beluga / The Flying Whale",m:/^(A337|A3ST|BLXL)$/,d:{en:"Built with a bulbous overhead hull to carry aircraft parts — the shape is a deliberate homage to the whale.",fr:"Doté d'une coque bombée au-dessus du fuselage pour transporter des pièces d'avion — la forme rend hommage à la baleine.",pt:"Construído com um casco bojudo sobre a fuselagem para transportar peças de avião — a forma presta homenagem à baleia.",de:"Mit einem bauchigen Aufbau über dem Rumpf gebaut, um Flugzeugteile zu transportieren – die Form ist eine bewusste Hommage an den Wal.",zh:"机身上方设计有球状隆起用于运输飞机部件——这一造型是对鲸鱼的刻意致敬。"}},
+    {r:"l",n:"Atlas",k:"The Fatlass",m:/^A400$/,d:{en:"A portmanteau of its official name 'Atlas' and its wide, stubby, heavy-lift silhouette.",fr:"Un mot-valise entre son nom officiel « Atlas » et sa silhouette large et trapue de gros porteur.",pt:"Um trocadilho entre o seu nome oficial «Atlas» e a sua silhueta larga e atarracada de transporte pesado.",de:"Ein Wortspiel aus seinem offiziellen Namen „Atlas“ und seiner breiten, gedrungenen Schwerlast-Silhouette.",zh:"由官方名称「Atlas」与其宽厚粗壮的重型运输机外形组合而成的双关绰号。"}},
+    {r:"l",n:"Goodyear Blimp / Zeppelin NT",m:/^(ZEPP|ZNT|SHIP|BLMP)$/,d:{en:"Modern airships used for advertising and aerial TV coverage — most fly with a standard transponder, so they're trackable.",fr:"Des dirigeables modernes utilisés pour la publicité et les retransmissions télé aériennes — la plupart portent un transpondeur standard, donc traçables.",pt:"Dirigíveis modernos usados em publicidade e cobertura televisiva aérea — a maioria voa com um transponder normal, por isso são rastreáveis.",de:"Moderne Luftschiffe für Werbung und Luftbild-TV-Übertragungen – meist mit Standard-Transponder ausgestattet und daher verfolgbar.",zh:"用于广告宣传和电视航拍的现代飞艇——大多配有标准应答机,因此可被追踪。"}},
+    {r:"l",n:"An-2 / Colt",k:"Annushka / Annie",m:/^AN2$/,d:{en:"A beloved Soviet biplane — 'Annushka' (little Annie) is genuinely how generations of Eastern Bloc pilots know it.",fr:"Un biplan soviétique très aimé — « Annushka » (petite Annie) est le nom que lui donnent réellement des générations de pilotes de l'Est.",pt:"Um biplano soviético muito estimado — «Annushka» (pequena Annie) é como gerações de pilotos do antigo bloco de Leste realmente lhe chamam.",de:"Ein beliebter sowjetischer Doppeldecker – „Annuschka“ (kleine Anna) ist der Name, den Generationen von Ostblock-Piloten wirklich verwenden.",zh:"一款深受喜爱的苏联双翼机——「安努什卡」(小安妮)是几代东欧飞行员对它的真实称呼。"}},
+    {r:"l",n:"Hawk T1",m:/^(HAWK|HK1)$/,d:{en:"The trainer jet flown by the Royal Air Force Aerobatic Team — the UK's answer to the Patrouille de France.",fr:"L'avion-école piloté par la patrouille acrobatique de la Royal Air Force — la réponse britannique à la Patrouille de France.",pt:"O avião de treino pilotado pela esquadrilha acrobática da Royal Air Force — a resposta britânica à Patrouille de France.",de:"Das Schulflugzeug der Kunstflugstaffel der Royal Air Force – Großbritanniens Antwort auf die Patrouille de France.",zh:"英国皇家空军特技飞行表演队所使用的教练机——英国版的「法国巡逻兵」飞行队。"}},
+    {r:"l",n:"Stratofortress",k:"BUFF",m:/^B52$/,d:{en:"BUFF stands for Big Ugly Fat Fucker — the original and still most commonly used expansion of the acronym.",fr:"BUFF signifie Big Ugly Fat Fucker — l'expression d'origine, toujours la plus utilisée pour ce sigle.",pt:"BUFF significa Big Ugly Fat Fucker — a expressão original, ainda a mais usada para esta sigla.",de:"BUFF steht für Big Ugly Fat Fucker – die ursprüngliche und bis heute gebräuchlichste Bedeutung des Akronyms.",zh:"BUFF是「又大又丑又肥的家伙」(Big Ugly Fat Fucker)的缩写——这是该绰号最初也是最常用的全称。"}},
+    {r:"l",n:"Globemaster III",k:"The Moose",m:/^C17$/,d:{en:"Venting fuel-tank pressure on the ramp, it emits a deep, echoing wail that sounds like a moose call.",fr:"En purgeant la pression de ses réservoirs au sol, il émet un grondement grave qui évoque le cri de l'élan.",pt:"Ao purgar a pressão dos depósitos de combustível na plataforma, emite um som grave e ressoante que lembra o bramido de um alce.",de:"Beim Druckablassen der Tanks auf dem Vorfeld erzeugt er ein tiefes, hallendes Heulen, das wie ein Elchruf klingt.",zh:"在停机坪释放油箱压力时,它会发出低沉回响的嘶鸣声,酷似麋鹿的叫声。"}},
+    {r:"l",n:"Sentry",k:"Frisbee / Discodome",m:/^(E3TF|E3CF|E3[0-9]?)$/,d:{en:"Instantly identifiable by the 30-foot rotating radar dish mounted on its back.",fr:"Immédiatement reconnaissable à son radome rotatif de 9 mètres monté sur le dos du fuselage.",pt:"Facilmente identificável pelo radome rotativo de 9 metros montado nas costas da fuselagem.",de:"Sofort erkennbar an der neun Meter großen, rotierenden Radarkuppel auf seinem Rücken.",zh:"凭借背部那个直径约9米的旋转雷达罩,一眼就能认出它。"}},
+    {r:"l",n:"Nightwatch",k:"The Doomsday Plane",m:/^(E4|E4B)$/,d:{en:"A modified 747 acting as a mobile, survivable command post for the US president during a national crisis.",fr:"Un 747 modifié servant de poste de commandement mobile et résistant pour le président américain en cas de crise nationale.",pt:"Um 747 modificado que serve de posto de comando móvel e resistente para o presidente dos EUA em caso de crise nacional.",de:"Eine modifizierte 747 als mobiler, überlebensfähiger Kommandoposten für den US-Präsidenten in nationalen Krisen.",zh:"一架经过改装的747客机,是美国总统在国家危机时刻使用的可生存移动指挥所。"}},
+    {r:"l",n:"E-7A Wedgetail",m:/^(E7|E7A)$/,d:{en:"A 737-based airborne early warning aircraft; Australia is its original and most experienced operator.",fr:"Un avion de détection aéroportée basé sur le 737 ; l'Australie en est l'opérateur d'origine et le plus expérimenté.",pt:"Uma aeronave de deteção e alerta aéreo baseada no 737; a Austrália é o seu operador original e mais experiente.",de:"Ein auf der 737 basierendes Luftraumfrühwarnflugzeug; Australien ist sein ursprünglicher und erfahrenster Betreiber.",zh:"基于737机身研发的空中预警机;澳大利亚是该机型最早也是使用经验最丰富的用户。"}},
+    {r:"l",n:"Super Hornet",k:"The Rhino / Super Bug",m:/^(F18S|F18H|FA18|F18)$/,d:{en:"A prominent nose bump helps carrier deck crews tell it apart from the smaller, older legacy Hornet.",fr:"Une bosse proéminente sur le nez permet aux équipages de pont d'avion de le distinguer de l'ancien Hornet, plus petit.",pt:"Uma protuberância proeminente no nariz ajuda as tripulações do porta-aviões a distingui-lo do Hornet mais antigo e pequeno.",de:"Eine markante Nasenwölbung hilft den Decksmannschaften, ihn vom kleineren, älteren Hornet zu unterscheiden.",zh:"机头明显的隆起有助于航母甲板人员将其与更小的老式「大黄蜂」区分开来。"}},
+    {r:"l",n:"Stratotanker",k:"The Global Gas Station",m:/^(K35R|K35E|C135|KC13)$/,d:{en:"The backbone of aerial refuelling, keeping fighter and bomber wings airborne around the clock.",fr:"L'épine dorsale du ravitaillement en vol, maintenant chasseurs et bombardiers en l'air jour et nuit.",pt:"A espinha dorsal do reabastecimento aéreo, mantendo caças e bombardeiros no ar a qualquer hora.",de:"Das Rückgrat der Luftbetankung – hält Jäger- und Bombergeschwader rund um die Uhr in der Luft.",zh:"空中加油任务的中坚力量,全天候保障战斗机和轰炸机机队持续飞行。"}},
+    {r:"l",n:"Pegasus",m:/^(K46|KC46)$/,d:{en:"The newest US Air Force aerial refuelling tanker, gradually replacing the older KC-135 fleet.",fr:"Le plus récent ravitailleur aérien de l'US Air Force, remplaçant progressivement l'ancienne flotte de KC-135.",pt:"O mais recente petroleiro de reabastecimento aéreo da Força Aérea dos EUA, a substituir gradualmente a antiga frota de KC-135.",de:"Der neueste Luftbetankungstanker der US-Luftwaffe, der die ältere KC-135-Flotte schrittweise ersetzt.",zh:"美国空军最新型的空中加油机,正逐步取代老旧的KC-135机队。"}},
+    {r:"l",n:"Poseidon",k:"The Sub Hunter",m:/^(P8|P8A)$/,d:{en:"Built on a 737 airframe; look for it dropping low over open ocean while hunting submarines.",fr:"Construit sur une cellule de 737 ; on le repère volant bas au-dessus de l'océan à la chasse aux sous-marins.",pt:"Construído sobre a estrutura do 737; procure-o a voar baixo sobre o oceano à caça de submarinos.",de:"Auf einem 737-Rumpf gebaut; erkennbar am Tiefflug über offener See bei der U-Boot-Jagd.",zh:"以737机身为基础打造;常见其低空飞越公海执行反潜搜索任务。"}},
+    {r:"l",n:"Rivet Joint",k:"The Snoopy Nose / The Beak",m:/^(R135|RC13|R35)$/,d:{en:"The extended, elongated nose fitted to signals-intelligence variants is literally called the 'snoopy nose' by crews.",fr:"Le nez allongé équipant les versions de renseignement électronique est littéralement appelé « nez de Snoopy » par les équipages.",pt:"O nariz alongado das versões de recolha de informações é literalmente chamado «nariz de Snoopy» pelas tripulações.",de:"Die verlängerte Nase der Aufklärungsvarianten wird von den Besatzungen wörtlich „Snoopy-Nase“ genannt.",zh:"信号情报型号所配备的加长机头,机组人员直接称之为「史努比鼻子」。"}},
+    {r:"r",n:"CL-415 / CL-515",k:"Super Scooper",m:/^(CL41|CL4T|CL2T|CL5M|CL51)$/,d:{en:"An amphibious firefighting aircraft that skims lakes or the sea to scoop water, then drops it on wildfires.",fr:"Un avion amphibie de lutte contre les incendies qui écope l'eau des lacs ou de la mer avant de la larguer sur les feux.",pt:"Um avião anfíbio de combate a incêndios que recolhe água em lagos ou no mar antes de a largar sobre incêndios florestais.",de:"Ein amphibisches Löschflugzeug, das Wasser aus Seen oder dem Meer schöpft und über Waldbränden abwirft.",zh:"一种水陆两栖消防飞机,能在湖泊或海面上取水,然后将水投放到野火上灭火。"}},
+    {r:"l",n:"Tweet",k:"6,000 lb Dog Whistle",m:/^(T37|T137)$/,d:{en:"Its tiny engines made a piercing, high-frequency scream, famous across generations of USAF jet trainees.",fr:"Ses minuscules moteurs produisaient un sifflement aigu et perçant, célèbre auprès de générations d'élèves-pilotes de l'US Air Force.",pt:"Os seus motores minúsculos produziam um assobio agudo e penetrante, célebre entre gerações de alunos-piloto da Força Aérea dos EUA.",de:"Seine winzigen Triebwerke erzeugten ein durchdringendes, hohes Kreischen, berühmt bei Generationen von US-Luftwaffen-Flugschülern.",zh:"小巧的发动机发出尖锐刺耳的高频啸叫声,是几代美国空军学员的共同记忆。"}},
+    {r:"l",n:"Mirage 2000",m:/^(MIR2|M200|MRG2)$/,d:{en:"An older French delta-wing fighter, still flown in several variants alongside the newer Rafale.",fr:"Un ancien chasseur français à voilure delta, toujours en service dans plusieurs versions aux côtés du Rafale plus récent.",pt:"Um caça francês mais antigo de asa delta, ainda em serviço em várias versões ao lado do Rafale mais recente.",de:"Ein älterer französischer Deltaflügel-Jäger, noch in mehreren Varianten neben dem neueren Rafale im Einsatz.",zh:"较早期的法国三角翼战斗机,如今仍以多个改型与较新的「阵风」战机并肩服役。"}},
+    {r:"l",n:"Rafale",m:/^(RFAL|RAFL)$/,d:{en:"France's own frontline multirole fighter, flown by both the Air and Space Force and the Navy.",fr:"Le chasseur polyvalent de première ligne de la France, mis en œuvre à la fois par l'Armée de l'air et de l'espace et la Marine.",pt:"O caça polivalente de primeira linha de França, operado tanto pela Força Aérea e Espacial como pela Marinha.",de:"Frankreichs eigener Frontlinien-Mehrzweckkampfjet, geflogen sowohl von der Luft- und Raumfahrtwaffe als auch der Marine.",zh:"法国自主研发的一线多用途战斗机,由法国空天军和海军共同使用。"}},
+    {r:"l",n:"Alpha Jet",m:/^(AJET|ALPH)$/,d:{en:"The trainer jet flown by the Patrouille de France, France's equivalent of the Red Arrows or Blue Angels.",fr:"L'avion-école piloté par la Patrouille de France, l'équivalent français des Red Arrows ou des Blue Angels.",pt:"O avião de treino pilotado pela Patrouille de France, o equivalente francês das Red Arrows ou das Blue Angels.",de:"Das Schulflugzeug der Patrouille de France, Frankreichs Gegenstück zu den Red Arrows oder Blue Angels.",zh:"法国「巡逻兵」飞行表演队所使用的教练机,相当于法国版的「红箭」或「蓝天使」飞行队。"}},
+    {r:"l",n:"KC-390 Millennium",m:/^(K390|C390|E390)$/,d:{en:"A Brazilian-built tactical airlifter and tanker, a modern medium-lift rival to the C-130.",fr:"Un avion de transport tactique et ravitailleur construit au Brésil, rival moderne du C-130 en capacité moyenne.",pt:"Um avião de transporte tático e petroleiro construído no Brasil, rival moderno do C-130 na categoria de média capacidade.",de:"Ein in Brasilien gebauter taktischer Transporter und Tanker, ein moderner Konkurrent der C-130 im mittleren Lastsegment.",zh:"巴西制造的战术运输机兼加油机,是C-130在中型运力级别的现代竞争对手。"}},
+    {r:"l",n:"Typhoon",k:"The Tiffie",m:/^(EUFI|TYPH)$/,d:{en:"A classic, affectionate British truncation of its official name 'Typhoon'.",fr:"Une abréviation britannique affectueuse et classique de son nom officiel « Typhoon ».",pt:"Uma abreviatura britânica afetuosa e clássica do seu nome oficial «Typhoon».",de:"Eine klassische, liebevolle britische Abkürzung seines offiziellen Namens „Typhoon“.",zh:"英国人对其官方名称「台风」(Typhoon)的经典昵称式简称。"}},
+    {r:"l",n:"Thunderbolt II",k:"Warthog / The Hog",m:/^(A10|A10C)$/,d:{en:"Built to fly low and fire a 30mm cannon — function was prioritized entirely over form.",fr:"Conçu pour voler bas et tirer un canon de 30 mm — la fonction a été privilégiée sur l'esthétique.",pt:"Concebido para voar baixo e disparar um canhão de 30 mm — a função foi totalmente priorizada em relação à estética.",de:"Konzipiert für Tiefflug und den Einsatz einer 30-mm-Kanone – Funktion ging hier vollständig vor Form.",zh:"专为低空飞行和发射30毫米机炮而设计——功能性完全压倒了外观美感。"}},
+    {r:"l",n:"Reaper",m:/^(MQ9|Q9|RQ9)$/,d:{en:"Flown by a remote pilot rather than someone on board — a rare uncrewed aircraft with a normal civil registration.",fr:"Piloté à distance plutôt que par quelqu'un à bord — un rare aéronef sans pilote doté d'une immatriculation civile normale.",pt:"Pilotado à distância em vez de por alguém a bordo — uma rara aeronave não tripulada com matrícula civil normal.",de:"Wird von einem Fernpiloten statt jemandem an Bord geflogen – ein seltenes unbemanntes Flugzeug mit ziviler Zulassung.",zh:"由地面飞行员远程操控,而非机上有人驾驶——这是少见的拥有正常民用注册号的无人机。"}},
+    {r:"l",n:"Fighting Falcon",k:"The Viper / Lawn Dart",m:/^(F16|F16C)$/,d:{en:"'Viper' nods to its Battlestar Galactica resemblance; 'Lawn Dart' dates to early fly-by-wire accidents.",fr:"« Viper » rappelle sa ressemblance avec Battlestar Galactica ; « Lawn Dart » remonte aux premiers accidents liés aux commandes électriques.",pt:"«Viper» remete para a sua semelhança com Battlestar Galactica; «Lawn Dart» remonta aos primeiros acidentes de comandos eletrónicos.",de:"„Viper“ verweist auf die Ähnlichkeit mit Battlestar Galactica; „Lawn Dart“ stammt von frühen Fly-by-Wire-Unfällen.",zh:"「毒蛇」(Viper)源自其与《太空堡垒卡拉狄加》战机的相似之处;「草坪飞镖」则源于早期电传操纵系统的事故。"}},
+    {r:"l",n:"Greyhound",k:"The COD",m:/^(C2|C2A)$/,d:{en:"COD stands for Carrier Onboard Delivery — its actual mission, and the nickname the aircraft itself carries.",fr:"COD signifie Carrier Onboard Delivery — sa mission réelle, et le surnom que porte l'appareil lui-même.",pt:"COD significa Carrier Onboard Delivery — a sua missão real, e a alcunha que a própria aeronave carrega.",de:"COD steht für Carrier Onboard Delivery – seine tatsächliche Aufgabe und zugleich der Spitzname des Flugzeugs selbst.",zh:"COD意为「航母舰载运输」,这既是它的实际任务,也是这架飞机自身的绰号。"}},
+    {r:"l",n:"Hercules",k:"The Herk / Fat Albert",m:/^(C130|C30J|L100|LC30|C13[0-9])$/,d:{en:"'Herk' is universal shorthand; 'Fat Albert' is specifically the US Navy Blue Angels' support aircraft.",fr:"« Herk » est une abréviation universelle ; « Fat Albert » désigne spécifiquement l'appareil de soutien des Blue Angels.",pt:"«Herk» é uma abreviatura universal; «Fat Albert» designa especificamente a aeronave de apoio dos Blue Angels.",de:"„Herk“ ist die universelle Kurzform; „Fat Albert“ bezeichnet speziell das Unterstützungsflugzeug der Blue Angels.",zh:"「Herk」是通用简称;「胖艾伯特」(Fat Albert)则特指美国海军「蓝天使」飞行表演队的保障机。"}},
+    {r:"l",n:"C-5 Galaxy",k:"FRED",m:/^(C5|C5M)$/,d:{en:"FRED is a backronym for Fantastic Ridiculous Economic Disaster — huge capacity, historically maintenance-heavy.",fr:"FRED est un acronyme rétroactif pour Fantastic Ridiculous Economic Disaster — capacité énorme, mais historiquement gourmand en maintenance.",pt:"FRED é um acrónimo retroativo para Fantastic Ridiculous Economic Disaster — capacidade enorme, mas historicamente exigente em manutenção.",de:"FRED ist ein rückwärtiges Akronym für Fantastic Ridiculous Economic Disaster – riesige Kapazität, aber historisch wartungsintensiv.",zh:"FRED是「奇幻荒谬经济灾难」(Fantastic Ridiculous Economic Disaster)的戏称缩写——运力巨大,但历来维护成本高昂。"}},
+    {r:"l",n:"Raptor",k:"The Diva",m:/^(F22|F22A)$/,d:{en:"Demands extensive, climate-controlled hangar time to maintain its delicate stealth coating.",fr:"Nécessite un long entretien en hangar climatisé pour préserver son revêtement furtif délicat.",pt:"Exige longos períodos de manutenção em hangar climatizado para preservar o seu revestimento furtivo delicado.",de:"Benötigt umfangreiche Wartung in klimatisierten Hangars, um die empfindliche Tarnkappenbeschichtung zu erhalten.",zh:"需要在恒温机库中进行大量维护,以保养其脆弱的隐身涂层。"}},
+    {r:"l",n:"Lightning II",k:"Fat Amy / The Panther",m:/^(F35|F35A|F35B|F35C)$/,d:{en:"'Fat Amy' nods to its portly midsection, needed for internal weapons bays; 'Panther' is a Weapons School favourite.",fr:"« Fat Amy » évoque son fuselage central rebondi, nécessaire pour ses soutes internes ; « Panther » est un surnom prisé des instructeurs.",pt:"«Fat Amy» remete para a sua secção central arredondada, necessária para os compartimentos internos de armas; «Panther» é uma alcunha popular entre instrutores.",de:"„Fat Amy“ verweist auf den fülligen Mittelrumpf für die internen Waffenschächte; „Panther“ ist ein beliebter Spitzname der Waffenschule.",zh:"「胖艾米」(Fat Amy)形容它为容纳内置武器舱而略显圆润的中段机身;「黑豹」(Panther)则是武器学校教官钟爱的称呼。"}},
+    {r:"l",n:"U-2",k:"The Dragon Lady",m:/^(U2|TU2)$/,d:{en:"Reaches the edge of space at 70,000 feet; famously hard to land, needing a chase car to guide it down.",fr:"Atteint les confins de l'espace à plus de 21 000 mètres ; réputé difficile à poser, nécessitant une voiture d'escorte à l'atterrissage.",pt:"Atinge as fronteiras do espaço a mais de 21 000 metros; famoso pela dificuldade de aterragem, precisando de um carro de escolta.",de:"Erreicht den Weltraumrand auf über 21.000 Metern; berüchtigt schwer zu landen, benötigt ein Begleitfahrzeug zur Einweisung.",zh:"飞行高度可达21000多米,接近太空边缘;素以着陆困难著称,需要地面车辆引导降落。"}},
+    {r:"l",n:"Eagle / Strike Eagle",k:"Flying Tennis Court / Mudhen",m:/^(F15|F15E)$/,d:{en:"Its wing area is so large it resembles a floating tennis court; the ground-attack model is nicknamed Mudhen.",fr:"Sa surface alaire est si vaste qu'elle évoque un court de tennis flottant ; la version d'attaque au sol est surnommée Mudhen.",pt:"A sua superfície alar é tão vasta que lembra um campo de ténis flutuante; a versão de ataque ao solo tem a alcunha Mudhen.",de:"Seine Flügelfläche ist so groß, dass sie an einen schwebenden Tennisplatz erinnert; die Erdkampfversion trägt den Spitznamen Mudhen.",zh:"机翼面积巨大,像一片漂浮的网球场;对地攻击型号被昵称为「泥母鸡」(Mudhen)。"}},
+    {r:"l",n:"Spirit",k:"The Boomerang",m:/^(B2|B2A)$/,d:{en:"Its flat, tailless flying-wing shape genuinely looks like a boomerang when viewed from above.",fr:"Sa silhouette d'aile volante plate et sans queue ressemble vraiment à un boomerang vue du dessus.",pt:"A sua silhueta plana e sem cauda, em asa voadora, parece mesmo um bumerangue quando vista de cima.",de:"Seine flache, schwanzlose Nurflügel-Form sieht von oben tatsächlich wie ein Bumerang aus.",zh:"扁平无尾的飞翼造型,从上方俯瞰确实酷似一枚回旋镖。"}},
+    {r:"l",n:"Hawkeye",k:"The Hummer / Super Fudd",m:/^(E2|E2C|E2D)$/,d:{en:"'Hummer' comes from the distinctive humming sound of its turboprops; 'Super Fudd' honors its E-1 Tracer predecessor.",fr:"« Hummer » vient du bourdonnement caractéristique de ses turbopropulseurs ; « Super Fudd » rend hommage à son prédécesseur, l'E-1 Tracer.",pt:"«Hummer» vem do zumbido característico dos seus turbopropulsores; «Super Fudd» presta homenagem ao seu antecessor, o E-1 Tracer.",de:"„Hummer“ stammt vom charakteristischen Brummen seiner Turboprops; „Super Fudd“ ehrt seinen Vorgänger, die E-1 Tracer.",zh:"「嗡嗡鸟」(Hummer)源自其涡桨发动机独特的嗡鸣声;「超级弗德」(Super Fudd)则致敬其前身E-1「追踪者」。"}},
+    {r:"l",n:"Talon",k:"The White Rocket",m:/^(T38|T38A)$/,d:{en:"A high-altitude, supersonic USAF/NASA trainer with a thin, needle-like airframe painted glossy white.",fr:"Un avion-école supersonique de haute altitude USAF/NASA, à la silhouette fine en forme d'aiguille peinte en blanc brillant.",pt:"Um avião de treino supersónico de grande altitude da USAF/NASA, de silhueta fina em forma de agulha pintada de branco brilhante.",de:"Ein supersonisches Höhen-Schulflugzeug von USAF/NASA mit schlankem, nadelförmigem Rumpf in glänzendem Weiß.",zh:"美国空军/NASA使用的高空超音速教练机,机身细长如针,涂装为亮白色。"}},
+    {r:"l",n:"Tornado",k:"The Tonka",m:/^(TOR|TORN)$/,d:{en:"Chunky, blocky lines reminiscent of a Tonka toy truck.",fr:"Des lignes trapues et carrées qui rappellent un camion-jouet Tonka.",pt:"Linhas robustas e quadradas que lembram um camião de brincar Tonka.",de:"Klobige, kantige Linien, die an einen Tonka-Spielzeuglaster erinnern.",zh:"线条粗壮方正,神似坦卡(Tonka)玩具卡车。"}},
+    {r:"l",n:"Lancer",k:"The Bone",m:/^(B1|B1B)$/,d:{en:"'B-One' pronounced quickly sounds like 'Bone' — and the nickname stuck.",fr:"« B-One » prononcé rapidement sonne comme « Bone » — et le surnom est resté.",pt:"«B-One» pronunciado depressa soa como «Bone» — e a alcunha ficou.",de:"Schnell ausgesprochen klingt „B-One“ wie „Bone“ – und der Spitzname blieb hängen.",zh:"「B-One」快速念出来听起来像「Bone」(骨头)——这个绰号便这样流传开来。"}},
+    {r:"l",n:"Gripen",m:/^(JAS39|GRIP|J39)$/,d:{en:"A Swedish multirole fighter flown internationally by Czechia, Hungary, Brazil, South Africa and Thailand.",fr:"Un chasseur polyvalent suédois exploité à l'international par la Tchéquie, la Hongrie, le Brésil, l'Afrique du Sud et la Thaïlande.",pt:"Um caça polivalente sueco operado internacionalmente pela Chéquia, Hungria, Brasil, África do Sul e Tailândia.",de:"Ein schwedischer Mehrzweckkampfjet, international geflogen von Tschechien, Ungarn, Brasilien, Südafrika und Thailand.",zh:"瑞典多用途战斗机,已出口至捷克、匈牙利、巴西、南非和泰国等多个国家使用。"}},
+    {r:"l",n:"Spitfire / P-51 Mustang / Yak-3 / T-6 Texan",m:/^(SPIT|P51|T6|YK[0-9]{2}|HURI|B17|P38|C47|DC3|AT6)$/,d:{en:"Privately owned, museum-flown WWII-era fighters and trainers, kept airworthy by dedicated warbird collectors.",fr:"Des chasseurs et avions-écoles de la Seconde Guerre mondiale, privés ou de musée, maintenus en état de vol par des collectionneurs passionnés.",pt:"Caças e aviões de treino da Segunda Guerra Mundial, privados ou de museu, mantidos em condições de voo por colecionadores dedicados.",de:"Privat oder von Museen betriebene Kampfflugzeuge und Trainer aus dem Zweiten Weltkrieg, von engagierten Warbird-Sammlern flugtauglich gehalten.",zh:"由私人或博物馆收藏并保持适航状态的二战时期战斗机和教练机,靠热心的老式军机收藏家悉心维护。"}},
+    {r:"c",n:"King Air 200 / 350",m:/^(BE20|BE30|BE9L|B350|BE10|BE9T)$/,d:{en:"A twin-turboprop workhorse used for corporate shuttle flights, medevac, cargo runs and pilot training.",fr:"Un bimoteur turbopropulseur polyvalent utilisé pour les navettes d'entreprise, l'évacuation médicale, le fret et la formation.",pt:"Um bimotor turbopropulsor versátil usado em voos executivos, evacuação médica, carga e formação de pilotos.",de:"Ein vielseitiger Turboprop-Zweimot für Firmenshuttles, Rettungsflüge, Frachtläufe und Pilotenausbildung.",zh:"一款多用途双发涡桨飞机,广泛用于公务班机、医疗救护、货运及飞行员培训。"}},
+    {r:"u",n:"Global Express / Challenger",m:/^(GLEX|GL5T|GL7T|GL6T|CL30|CL35|CL60|BD70)$/,d:{en:"Canadian-built business jets spanning super-midsize cabins to ultra-long-range flagship models.",fr:"Des jets d'affaires construits au Canada, allant des cabines super-intermédiaires aux modèles phares à très long rayon d'action.",pt:"Jatos executivos construídos no Canadá, desde cabinas super-médias até aos modelos emblemáticos de longuíssimo alcance.",de:"Kanadisch gebaute Geschäftsreisejets, von Super-Midsize-Kabinen bis zu Ultra-Langstrecken-Flaggschiffen.",zh:"加拿大制造的公务机系列,涵盖超中型客舱到超远程旗舰机型。"}},
+    {r:"c",n:"Caravan",k:"The Box",m:/^(C208|C20[89])$/,d:{en:"A single-engine utility turboprop shaped like a flying aluminium container, common on regional cargo runs.",fr:"Un turbopropulseur utilitaire monomoteur en forme de conteneur d'aluminium volant, fréquent sur les liaisons cargo régionales.",pt:"Um turbopropulsor utilitário monomotor com forma de contentor de alumínio voador, comum em rotas regionais de carga.",de:"Ein einmotoriger Nutz-Turboprop in Form eines fliegenden Aluminiumcontainers, verbreitet auf regionalen Frachtrouten.",zh:"单发涡桨多用途飞机,形似会飞的铝制集装箱,常见于支线货运航线。"}},
+    {r:"u",n:"Citation",k:"Slowtation / Nearjet",m:/^(C[4-7][0-9]{2}|C25[ABC]|C51[0-9]|C56X|C68A|C700)$/,d:{en:"Early models prioritized short-field safety over raw speed, so pilots joked they were slow next to a Learjet.",fr:"Les premiers modèles privilégiaient la sécurité sur piste courte plutôt que la vitesse, d'où la blague comparée au Learjet.",pt:"Os primeiros modelos privilegiavam a segurança em pistas curtas em vez da velocidade, daí a piada comparando com o Learjet.",de:"Frühe Modelle setzten auf Kurzstart-Sicherheit statt reiner Geschwindigkeit, daher der Scherzvergleich mit dem Learjet.",zh:"早期型号更重视短跑道起降安全性而非速度,飞行员因此戏称它比里尔喷气机慢。"}},
+    {r:"c",n:"TBM 900 / 960",m:/^TBM[0-9]$/,d:{en:"A fast single-engine turboprop built by Daher in Tarbes, France — genuinely French-made.",fr:"Un turbopropulseur monomoteur rapide construit par Daher à Tarbes, en France — véritablement made in France.",pt:"Um turbopropulsor monomotor rápido construído pela Daher em Tarbes, França — genuinamente fabricado em França.",de:"Ein schneller einmotoriger Turboprop, gebaut von Daher in Tarbes, Frankreich – tatsächlich französischen Ursprungs.",zh:"由法国达赫公司在塔尔布制造的高速单发涡桨飞机——地道的法国制造。"}},
+    {r:"u",n:"Falcon 900 / 2000 / 7X / 8X",m:/^(FA[0-9]{2}|F900|F2TH|FA7X|FA8X|F[0-9]TH)$/,d:{en:"France's own business jet family, built by Dassault Aviation — a common sight around Paris-Le Bourget.",fr:"La famille de jets d'affaires française de Dassault Aviation — un spectacle courant autour de Paris-Le Bourget.",pt:"A família de jatos executivos francesa da Dassault Aviation — uma presença comum em torno de Paris-Le Bourget.",de:"Frankreichs eigene Geschäftsreisejet-Familie von Dassault Aviation – ein häufiger Anblick rund um Paris-Le Bourget.",zh:"法国达索航空自主研制的公务机系列——在巴黎勒布尔歇机场周边十分常见。"}},
+    {r:"u",n:"Legacy / Praetor / Phenom",m:/^(E50P|E55P|E545|E550|E135|E35L|E45[0-9])$/,d:{en:"Embraer's executive-jet line, ranging from light Phenoms to long-range Legacy models.",fr:"La gamme de jets d'affaires d'Embraer, des légers Phenom aux modèles Legacy à long rayon d'action.",pt:"A gama de jatos executivos da Embraer, desde os ligeiros Phenom até aos modelos Legacy de longo alcance.",de:"Embraers Geschäftsreisejet-Reihe, von den leichten Phenom bis zu den Langstrecken-Legacy-Modellen.",zh:"巴西航空工业的公务机系列,从轻型的Phenom到远程的Legacy机型一应俱全。"}},
+    {r:"u",n:"G450 / G550 / G650",m:/^(GLF[2-8]|G150|G280|GALX|ASTR|G[2-8][0-9]{2})$/,d:{en:"American long-range business jets, among the most common heavy bizjets in global corporate fleets.",fr:"Des jets d'affaires américains longue distance, parmi les plus courants des jets lourds dans les flottes d'entreprise.",pt:"Jatos executivos americanos de longo alcance, entre os mais comuns nas frotas corporativas de grande porte a nível mundial.",de:"Amerikanische Langstrecken-Geschäftsjets, unter den verbreitetsten schweren Businessjets in globalen Firmenflotten.",zh:"美国远程公务机,是全球企业机队中最常见的大型公务机之一。"}},
+    {r:"r",n:"Learjet 45 / 60 / 75",m:/^LJ[0-9]{2}$/,d:{en:"The original light/midsize business jet family, gradually being phased out as its fleet ages.",fr:"La famille originelle des jets d'affaires légers et intermédiaires, progressivement retirée à mesure que la flotte vieillit.",pt:"A família original de jatos executivos ligeiros e médios, progressivamente retirada à medida que a frota envelhece.",de:"Die ursprüngliche Familie leichter/mittlerer Geschäftsjets, die mit alternder Flotte allmählich ausgemustert wird.",zh:"最早的轻型/中型公务机系列,随着机队老化正逐渐退出市场。"}},
+    {r:"r",n:"Avanti",k:"The Pasta Rocket",m:/^(P180|PIAG)$/,d:{en:"An Italian executive turboprop with distinctive rear-facing pusher props and a loud, buzzing sound.",fr:"Un turbopropulseur exécutif italien aux hélices propulsives arrière caractéristiques et au son vrombissant.",pt:"Um turbopropulsor executivo italiano com hélices propulsoras traseiras distintivas e um som zumbido característico.",de:"Ein italienischer Business-Turboprop mit markanten, nach hinten gerichteten Druckpropellern und lautem Brummen.",zh:"意大利制造的公务涡桨飞机,配有独特的后置推进式螺旋桨,声音嗡鸣响亮。"}},
+    {r:"c",n:"PC-12",m:/^PC12$/,d:{en:"A single-engine turboprop popular for feeder-airline routes, VIP transport and medevac.",fr:"Un turbopropulseur monomoteur prisé pour les liaisons régionales, le transport VIP et l'évacuation médicale.",pt:"Um turbopropulsor monomotor popular em rotas de alimentação regional, transporte VIP e evacuação médica.",de:"Ein einmotoriger Turboprop, beliebt für Zubringerflüge, VIP-Transport und Rettungseinsätze.",zh:"单发涡桨飞机,广泛用于支线接驳航班、贵宾接送和医疗救护任务。"}},
+    {r:"c",n:"Bonanza (Model 35)",k:"The Doctor Killer",m:/^BE3[3-6]$/,d:{en:"High performance met wealthy owner-pilots who had the money but not always the flying hours to match.",fr:"Ses hautes performances ont attiré des propriétaires-pilotes fortunés qui n'avaient pas toujours l'expérience nécessaire.",pt:"O seu elevado desempenho atraiu proprietários-pilotos abastados que nem sempre tinham a experiência necessária.",de:"Hohe Leistung traf auf wohlhabende Eigentümerpiloten, denen es nicht immer an nötiger Flugerfahrung fehlte.",zh:"高性能吸引了不少有钱但未必有足够飞行经验的私人机主,由此得名。"}},
+    {r:"c",n:"Skyhawk",k:"The Skyhawk",m:/^C172$/,d:{en:"The most-produced aircraft in aviation history — it gets you there predictably, without much style.",fr:"L'avion le plus produit de l'histoire de l'aviation — il vous amène à destination sans surprise, mais sans grand style.",pt:"A aeronave mais produzida da história da aviação — leva-o ao destino de forma previsível, embora sem grande estilo.",de:"Das meistgebaute Flugzeug der Luftfahrtgeschichte – bringt einen zuverlässig ans Ziel, wenn auch ohne viel Stil.",zh:"航空史上产量最高的机型——它能可靠地带你抵达目的地,虽然没什么风格可言。"}},
+    {r:"c",n:"SR22",k:"The Chute Plane",m:/^(SR22|S22T|SR20)$/,d:{en:"Features a built-in ballistic parachute that can lower the entire airframe safely to the ground.",fr:"Doté d'un parachute balistique intégré capable de faire redescendre l'appareil entier en toute sécurité.",pt:"Equipado com um paraquedas balístico integrado capaz de fazer descer toda a aeronave em segurança.",de:"Verfügt über einen eingebauten Rettungsfallschirm, der das gesamte Flugzeug sicher zu Boden bringen kann.",zh:"配备内置弹道降落伞系统,可将整架飞机安全降落至地面。"}},
+    {r:"c",n:"DA40 Diamond Star / DA42 Twin Star",m:/^(DA40|DA42|DA62|DA20|DV20)$/,d:{en:"Composite-built, glass-cockpit trainers extremely common at flight schools worldwide.",fr:"Des avions-écoles en matériaux composites à cockpit tout écran, extrêmement répandus dans les écoles de pilotage.",pt:"Aviões de treino em material compósito com cabina de vidro, extremamente comuns em escolas de voo em todo o mundo.",de:"Verbundwerkstoff-Schulflugzeuge mit Glascockpit, weltweit äußerst verbreitet an Flugschulen.",zh:"复合材料机身配玻璃座舱的教练机,是全球飞行学校最常见的机型之一。"}},
+    {r:"u",n:"Extra 300 / Pitts Special",m:/^(E300|EA30|PTS[0-9SA]|EXTR|PTSS)$/,d:{en:"Purpose-built aerobatic aircraft flown by competition and display pilots — look for tight, sharp maneuvering.",fr:"Des avions de voltige conçus pour la compétition et les démonstrations — repérables à leurs manœuvres serrées et précises.",pt:"Aviões de acrobacia concebidos para competição e demonstrações — reconhecíveis pelas manobras apertadas e precisas.",de:"Speziell für Kunstflug gebaute Flugzeuge für Wettbewerbe und Vorführungen – erkennbar an engen, scharfen Manövern.",zh:"专为特技飞行竞赛和表演打造的飞机——留意其急转陡升等紧凑凌厉的飞行动作。"}},
+    {r:"c",n:"PA-28 Cherokee / Warrior / Archer",m:/^(P28[ABRT]|PA28)$/,d:{en:"One of the most-produced light aircraft in history, alongside the Cessna 172 — a flight-school mainstay.",fr:"L'un des avions légers les plus produits de l'histoire, avec le Cessna 172 — un pilier des écoles de pilotage.",pt:"Uma das aeronaves ligeiras mais produzidas da história, a par do Cessna 172 — um pilar das escolas de voo.",de:"Eines der meistgebauten Leichtflugzeuge der Geschichte, neben der Cessna 172 – ein fester Bestandteil von Flugschulen.",zh:"航空史上产量最高的轻型飞机之一,与塞斯纳172齐名——飞行学校的中坚机型。"}},
+    {r:"c",n:"DR400",m:/^(DR40|DR22|DR25|R400)$/,d:{en:"A classic French-built wooden/composite touring aircraft, a mainstay of French flying clubs.",fr:"Un avion de tourisme français classique, en bois et composite, un pilier des aéroclubs français.",pt:"Um clássico avião de turismo francês, em madeira e material compósito, um pilar dos aeroclubes franceses.",de:"Ein klassisches, in Frankreich gebautes Reiseflugzeug aus Holz und Verbundwerkstoff, fest verankert in französischen Flugclubs.",zh:"经典的法国制造木质/复合材料旅行飞机,是法国飞行俱乐部的中坚力量。"}},
+    {r:"c",n:"TB-9 Tampico / TB-20 Trinidad",m:/^(TB09|TB1[05]|TB2[01])$/,d:{en:"French-built light touring aircraft, extremely common at flying clubs across France.",fr:"Des avions de tourisme légers construits en France, extrêmement répandus dans les aéroclubs français.",pt:"Aviões de turismo ligeiros construídos em França, extremamente comuns nos aeroclubes por todo o país.",de:"In Frankreich gebaute leichte Reiseflugzeuge, äußerst verbreitet in Flugclubs im ganzen Land.",zh:"法国制造的轻型旅行飞机,在法国各地飞行俱乐部中十分常见。"}},
+    {r:"u",n:"RV-6 / RV-7 / RV-10, etc.",m:/^(RV[0-9]{1,2}|RV1[0-4])$/,d:{en:"The best-selling family of homebuilt kit aircraft in the world, built and flown by private owners.",fr:"La famille d'avions à construire soi-même la plus vendue au monde, construite et pilotée par des particuliers.",pt:"A família de aviões de construção caseira mais vendida do mundo, construída e pilotada por particulares.",de:"Die weltweit meistverkaufte Familie von Selbstbau-Bausatzflugzeugen, gebaut und geflogen von Privatpersonen.",zh:"全球最畅销的自制套件飞机系列,由私人机主自行组装并驾驶。"}}
+  ];
+
+  const RARITY_LABEL = { c: "rarityCommon", u: "rarityUncommon", r: "rarityRare", l: "rarityLegendary" };
+  // Same normalisation as silhouetteFor()/setShape(): feeds send "A-350-900",
+  // "A350-900" and "A350" for the same aeroplane.
+  const normCode = s => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  // Cached on the plane object: 110 anchored regexes is cheap, but this runs
+  // per list rebuild and the answer can never change for a given aircraft.
+  function aircraftLore(p) {
+    if (p._lore !== undefined) return p._lore;
+    const code = normCode(p.typeCode), desc = (p.typeDesc || "").toUpperCase();
+    let hit = null;
+    for (const e of AIRCRAFT_DB) {
+      if (e.x && e.x.test(desc)) { hit = e; break; }
+      if (e.m && code && e.m.test(code)) { hit = e; break; }
+    }
+    p._lore = hit;
+    return hit;
+  }
+
+  // ============================================================
   //  THE LIST — one row per aircraft, the row IS the detail panel
   // ============================================================
   // Selecting an aircraft, from the list or from the map, expands its row in
@@ -4603,10 +4904,15 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
     }
   }
 
+  // Which page of the OPEN record is showing, and the element that shows it.
+  // Survives a list rebuild; reset when the selection itself changes.
+  let recPage = 0, openPages = null;
+
   function buildList(rows) {
     listEl.textContent = "";
     rowFor.clear();
     planeIdx.clear();
+    openPages = null;
     if (!rows.length) { emptyNote(); return; }
     rows.forEach((r, i) => {
       const p = r.p, on = p.icao === selected;
@@ -4633,21 +4939,21 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
       const dwrap = el("div", "detail-in", det);
       // the padding lives on this inner row, not on .detail-in: a collapsed
       // 0fr grid row still renders its own padding, which leaked a few px
-      const drow = el("div", null, dwrap);
-      // left column: the silhouette, given real size now, and the one action
-      // this record offers
-      const left = el("div", "d-left", drow);
+      const drow = el("div", "d-rec", dwrap);
+      const lore = aircraftLore(p);
+
+      // ---- the two pages ----
+      const pages = el("div", "d-pages", drow);
+
+      // PAGE 1 — what it is doing right now
+      const pg1 = el("div", "d-page", pages);
+      const left = el("div", "d-left", pg1);
       el("div", "d-sil", left).appendChild(silhouetteFor(p));
-      const sh = el("button", "d-share", left);
-      sh.type = "button";
-      sh.innerHTML = `<span class="gi gi-share" aria-hidden="true"></span><span class="lbl">${t("share")}</span>`;
-      sh.title = t("shareTip");
-      sh.setAttribute("aria-label", t("shareTip"));
-      // the record is inside the row's own <button>-less area, but the click
-      // still bubbles to nothing that would toggle the row — guard anyway,
-      // since a share tap must never collapse the record it came from
-      sh.addEventListener("click", (ev) => { ev.stopPropagation(); shareCard(sh); });
-      const info = el("div", "d-info", drow);
+      // the grade sits under the silhouette, where the share button used to
+      const rar = el("div", "d-rar " + (lore ? lore.r : "none"), left);
+      rar.textContent = lore ? t(RARITY_LABEL[lore.r]) : "—";
+      if (lore) rar.title = t("rarityTip");
+      const info = el("div", "d-info", pg1);
       const dtype = el("div", "d-t", info);
       const droute = el("div", "d-r", info);
       const grid = el("div", "d-grid", info);
@@ -4657,6 +4963,69 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
         el("span", "k", c).textContent = t(DETAIL_KEYS[k]);
         cells[k] = el("span", "v", c);
       }
+
+      // PAGE 2 — what it IS. Nothing here changes between frames, so unlike
+      // page 1 it is filled once here and never touched by refreshList().
+      const pg2 = el("div", "d-page", pages);
+      el("div", "d-sil sm", pg2).appendChild(silhouetteFor(p));
+      const lorebox = el("div", "d-lore", pg2);
+      // Title is the NICKNAME where one exists — that is the name this page
+      // is for — with the official designation as the quiet kicker above it.
+      // With no nickname the official name takes the title and the kicker
+      // holds the aircraft's own type line, so neither slot is ever blank
+      // (a blank line here would shorten the page and jog the carousel).
+      const officialName = lore ? lore.n : (p.typeDesc || p.typeCode || "");
+      const title = lore && lore.k ? lore.k : officialName;
+      el("span", "k", lorebox).textContent =
+        (lore && lore.k ? officialName : typeLabel(p)) || typeLabel(p);
+      el("span", "nick", lorebox).textContent = title || typeLabel(p);
+      el("span", "bd", lorebox).textContent =
+        lore ? (lore.d[lang] || lore.d.en) : t("loreUnknown");
+
+      // ---- the rail: pager left, the one action right ----
+      const rail = el("div", "d-rail", drow);
+      const dots = el("div", "d-dots", rail);
+      // aria-selected only means something inside a tablist; a bare button
+      // carrying it is invalid and reads as nothing to a screen reader
+      dots.setAttribute("role", "tablist");
+      const dotEls = [t("pageFigures"), t("pageAbout")].map((lbl, di) => {
+        const b = el("button", "d-dot", dots);
+        b.type = "button";
+        b.setAttribute("role", "tab");
+        b.setAttribute("aria-label", lbl);
+        // seeded from recPage, not from 0: after a rebuild the scroll
+        // position is restored below, and a scroll event is asynchronous —
+        // the dots must not spend a frame disagreeing with the pages
+        b.setAttribute("aria-selected", di === (on ? recPage : 0) ? "true" : "false");
+        b.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          pages.scrollTo({ left: di * pages.clientWidth, behavior: "smooth" });
+        });
+        return b;
+      });
+      // The dots follow the scroll rather than the tap, so a swipe, a dot
+      // tap and an interrupted flick all end up saying the same thing.
+      // It also records which page the OPEN record is on, because the list
+      // rebuilds itself whenever two aircraft swap distance rank — without
+      // this, reading page 2 while the traffic reorders snapped you back to
+      // the figures mid-sentence.
+      pages.addEventListener("scroll", () => {
+        const at = pages.clientWidth ? Math.round(pages.scrollLeft / pages.clientWidth) : 0;
+        dotEls.forEach((b, di) => b.setAttribute("aria-selected", di === at ? "true" : "false"));
+        if (p.icao === selected) recPage = at;
+      }, { passive: true });
+      if (on) openPages = pages;
+
+      const sh = el("button", "d-share", rail);
+      sh.type = "button";
+      sh.innerHTML = `<span class="gi gi-share" aria-hidden="true"></span><span class="lbl">${t("share")}</span>`;
+      sh.title = t("shareTip");
+      sh.setAttribute("aria-label", t("shareTip"));
+      // the record is inside the row's own <button>-less area, but the click
+      // still bubbles to nothing that would toggle the row — guard anyway,
+      // since a share tap must never collapse the record it came from
+      sh.addEventListener("click", (ev) => { ev.stopPropagation(); shareCard(sh); });
+
       rowFor.set(p.icao, { root, up, sub, dtype, droute, cells });
     });
   }
@@ -4690,8 +5059,19 @@ body.row-open { --list-h: max(30vh, var(--record-h)); }
                 (rows.length ? "" : "|" + listState());
     if (force || sig !== listSig) {
       const changedSelection = listSig.split("|")[1] !== (selected || "");
+      // a NEW aircraft opens on its figures; a rebuild under a record you
+      // were already reading puts you back where you were
+      if (changedSelection) recPage = 0;
       listSig = sig;
       buildList(rows);
+      if (recPage && openPages) {
+        // instant, not smooth: this is restoring a position, not travelling
+        // to one, and a 300ms glide here would read as the record sliding
+        // about by itself every time the traffic reorders
+        openPages.style.scrollBehavior = "auto";
+        openPages.scrollLeft = recPage * openPages.clientWidth;
+        openPages.style.scrollBehavior = "";
+      }
       // the list keeps its share of the screen wherever that share can hold a
       // whole record; see the .entries / body.row-open rule for the one case
       // it cannot
